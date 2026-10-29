@@ -1,0 +1,6 @@
+{
+  "name": "Unikorn360 Business Intelligence",
+  "description": "Intelligent Systems for Your Business. Websites, software, cybersecurity, marketing, creator campaigns, AI automation and business intelligence—built around your goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

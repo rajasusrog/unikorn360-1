@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Central Theme Palette */
+  --color-page: #F5F6F7;
+  --color-card: #FFFFFF;
+  --color-alt: #E9EDF0;
+  --color-heading: #30363D;
+  --color-body: #505B66;
+  --color-primary: #214E78;
+  --color-primary-dark: #173858;
+  --color-primary-light: #2c6396;
+  --color-gold: #A57C35;
+  --color-gold-light: #c59746;
+  --color-border: #D8DEE5;
+  --color-border-dark: #b8c4d0;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F6F7;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8DEE5;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #214E78;
+}
+
+/* Selection and base typography */
+::selection {
+  background-color: #214E78;
+  color: #FFFFFF;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #F5F6F7;
+  color: #505B66;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Accessible focus ring */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #214E78;
+  outline-offset: 2px;
+}
+
+/* Micro-interaction keyframes */
+@keyframes checkmarkPop {
+  0% { transform: scale(0.65); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-checkmark {
+  animation: checkmarkPop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
