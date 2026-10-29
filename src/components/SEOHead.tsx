@@ -3,19 +3,28 @@ import React, { useEffect } from 'react';
 export interface SEOHeadProps {
   title: string;
   description: string;
-  canonicalPath: string;
+  canonicalPath?: string;
   schema?: Record<string, any>;
 }
 
 export const SEOHead: React.FC<SEOHeadProps> = ({
-  title,
-  description,
+  title = 'UNIKORN360',
+  description = '',
   canonicalPath,
   schema
 }) => {
   useEffect(() => {
+    const safeTitle = title || 'UNIKORN360';
+    const safeDescription = description || '';
+    const resolvedPath =
+      typeof canonicalPath === 'string' && canonicalPath.trim().length > 0
+        ? canonicalPath.trim()
+        : typeof window !== 'undefined' && window.location?.pathname
+          ? window.location.pathname
+          : '/';
+
     // 1. Update Title
-    document.title = title;
+    document.title = safeTitle;
 
     // 2. Update Meta Description
     let metaDesc = document.querySelector('meta[name="description"]');
@@ -24,11 +33,11 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       metaDesc.setAttribute('name', 'description');
       document.head.appendChild(metaDesc);
     }
-    metaDesc.setAttribute('content', description);
+    metaDesc.setAttribute('content', safeDescription);
 
     // 3. Update Canonical Link
     const baseUrl = 'https://www.unikorn360.com';
-    const canonicalUrl = `${baseUrl}${canonicalPath.startsWith('/') ? canonicalPath : `/${canonicalPath}`}`;
+    const canonicalUrl = `${baseUrl}${resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`}`;
     let canonicalLink = document.querySelector('link[rel="canonical"]');
     if (!canonicalLink) {
       canonicalLink = document.createElement('link');
