@@ -103,6 +103,15 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onNavigate, onOpenReviewMo
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16 space-y-16">
+
+        {/* Corporate Brand Showcase Banner */}
+        <div className="bg-white border border-[#D8DEE5] rounded-xl overflow-hidden shadow-sm">
+          <img
+            src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_44_AM_79f0182e.png"
+            alt="UNIKORN360 Business Intelligence — Software, Digital Services, Automation"
+            className="w-full h-auto object-cover max-h-80 sm:max-h-96"
+          />
+        </div>
         
         {/* Core Narrative */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">

@@ -38,15 +38,19 @@ export const Footer: React.FC<FooterProps> = ({
           
           {/* Col 1 & 2: Brand & Positioning */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white border border-[#D8DEE5] rounded flex items-center justify-center text-[#214E78] shadow-sm">
-                <Shield className="w-5 h-5 text-[#214E78]" />
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white border border-[#D8DEE5] rounded-xl flex items-center justify-center p-1 shadow-sm shrink-0 overflow-hidden">
+                <img 
+                  src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_30_AM_a8896c5c.png" 
+                  alt="UNIKORN360 Logo" 
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div>
-                <span className="text-xl font-serif font-bold tracking-wider text-[#30363D]">
+                <span className="text-2xl sm:text-3xl font-serif font-bold tracking-wider text-[#30363D]">
                   UNIKORN<span className="text-[#A57C35]">360</span>
                 </span>
-                <p className="text-[10px] uppercase tracking-[0.15em] text-[#505B66] font-semibold">
+                <p className="text-[11px] sm:text-xs uppercase tracking-[0.15em] text-[#505B66] font-semibold mt-0.5">
                   Business Intelligence &amp; Technology Partner
                 </p>
               </div>

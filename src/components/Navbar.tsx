@@ -158,19 +158,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           id="nav-brand-logo"
           aria-label="Unikorn360 Home"
         >
-          <div className="w-11 h-11 bg-[#F5F6F7] border border-[#D8DEE5] rounded flex items-center justify-center p-2 group-hover:border-[#214E78] transition-all relative">
-            <Shield className="w-5 h-5 text-[#214E78] fill-[#214E78]/10 group-hover:scale-105 transition-transform" />
+          <div className="w-14 h-14 sm:w-16 sm:h-16 bg-white border border-[#D8DEE5] rounded-xl flex items-center justify-center p-0.5 group-hover:border-[#A57C35] transition-all relative overflow-hidden shadow-sm shrink-0">
+            <img 
+              src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_30_AM_a8896c5c.png" 
+              alt="UNIKORN360 Logo" 
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-bold tracking-[0.15em] text-[#30363D] uppercase font-serif">
+              <span className="text-xl sm:text-2xl font-bold tracking-[0.15em] text-[#30363D] uppercase font-serif">
                 UNIKORN<span className="text-[#A57C35] font-semibold">360</span>
               </span>
               <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#E9EDF0] text-[#214E78] border border-[#D8DEE5] tracking-[0.2em] rounded">
                 BI
               </span>
             </div>
-            <p className="text-[10px] text-[#505B66] uppercase tracking-[0.15em] font-medium mt-0.5">
+            <p className="text-[10px] sm:text-[11px] text-[#505B66] uppercase tracking-[0.15em] font-medium mt-0.5">
               Business Intelligence &amp; Systems
             </p>
           </div>

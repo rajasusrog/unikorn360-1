@@ -94,6 +94,15 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
               </a>
               ).
             </div>
+
+            {/* Corporate Brand Showcase Banner Card */}
+            <div className="mt-6 bg-white border border-[#D8DEE5] rounded-xl overflow-hidden shadow-xs">
+              <img
+                src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_44_AM_79f0182e.png"
+                alt="UNIKORN360 Business Intelligence — Software, Digital Services, Automation"
+                className="w-full h-auto object-cover max-h-64"
+              />
+            </div>
           </div>
         </div>
       </section>

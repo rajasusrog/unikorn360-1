@@ -1,14 +1,12 @@
 import React from 'react';
 import { 
   ArrowRight, 
-  Sparkles, 
   CheckCircle2, 
   Compass,
-  MessageSquare,
-  Shield,
-  Layers
+  MessageSquare
 } from 'lucide-react';
 import { BUSINESS_INFO } from '../data/servicesData';
+import { HeroCarousel } from './HeroCarousel';
 
 interface HeroProps {
   onOpenReviewModal: () => void;
@@ -17,32 +15,36 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({ onOpenReviewModal, onScrollToSection }) => {
   return (
-    <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 border-b border-[#D8DEE5] bg-[#F5F6F7]" id="hero">
+    <section className="relative overflow-hidden pt-4 sm:pt-6 pb-12 lg:pb-16 border-b border-[#D8DEE5] bg-[#F5F6F7]" id="hero">
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Top Badging */}
-        <div className="flex justify-center mb-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white border border-[#D8DEE5] rounded-full text-xs text-[#505B66] shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-[#A57C35]"></span>
-            <span className="text-[#30363D] uppercase tracking-[0.15em] font-bold text-[10px]">
-              UNIKORN360 BUSINESS INTELLIGENCE
-            </span>
-            <span className="text-[#D8DEE5]">|</span>
-            <span className="text-[11px] text-[#505B66]">Business &amp; Technology Partner • Remote Consultations Available</span>
-          </div>
+        {/* Homepage Hero Carousel (Directly below navbar with 16-24px top spacing) */}
+        <div className="mb-6 sm:mb-8">
+          <HeroCarousel />
         </div>
 
-        {/* Main Editorial Headline & Copy */}
+        {/* Top Badging & Main Editorial Headline & Copy */}
         <div className="text-center max-w-4xl mx-auto">
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold text-[#30363D] tracking-tight leading-[1.12]">
+          <div className="flex justify-center mb-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1 bg-white border border-[#D8DEE5] rounded-full text-xs text-[#505B66] shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-[#A57C35]"></span>
+              <span className="text-[#30363D] uppercase tracking-[0.15em] font-bold text-[10px]">
+                UNIKORN360 BUSINESS INTELLIGENCE
+              </span>
+              <span className="text-[#D8DEE5]">|</span>
+              <span className="text-[11px] text-[#505B66]">Business &amp; Technology Partner • Remote Consultations Available</span>
+            </div>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#30363D] tracking-tight leading-[1.15]">
             Intelligent Systems for Your Business.
           </h1>
 
-          <p className="mt-5 text-lg sm:text-xl text-[#505B66] leading-relaxed max-w-2xl mx-auto font-normal">
+          <p className="mt-3 text-base sm:text-lg text-[#505B66] leading-relaxed max-w-2xl mx-auto font-normal">
             Websites, software, cybersecurity, marketing, creator campaigns, AI automation and business intelligence—built around your goals.
           </p>
 
-          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-[#A57C35] font-semibold">
+          <p className="mt-1.5 text-xs uppercase tracking-[0.2em] text-[#A57C35] font-semibold">
             For businesses, founders, teams and creators.
           </p>
 
@@ -77,7 +79,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenReviewModal, onScrollToSection
           </div>
 
           {/* Key Value Proposition Highlights */}
-          <div className="mt-10 pt-8 border-t border-[#D8DEE5] grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
+          <div className="mt-8 pt-8 border-t border-[#D8DEE5] grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
             <div className="p-3.5 bg-white border border-[#D8DEE5] rounded shadow-xs">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35] block mb-1">
                 01. Visibility

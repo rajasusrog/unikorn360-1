@@ -1098,28 +1098,26 @@ async function runTests() {
 
       const publicAiStudioDir = path.resolve(process.cwd(), 'public/assets/aistudio');
       const distAiStudioDir = path.resolve(process.cwd(), 'dist/assets/aistudio');
-      const publicScreenshots = findMatchingFiles(
+      const publicReferenceScreenshots = findMatchingFiles(
         path.resolve(process.cwd(), 'public'),
-        (name) => name.startsWith('Screenshot_2026-10-29_') || name.endsWith('.png')
+        (name) => name.startsWith('Screenshot_2026-10-29_')
       );
-      const distScreenshots = findMatchingFiles(
+      const distReferenceScreenshots = findMatchingFiles(
         path.resolve(process.cwd(), 'dist'),
-        (name) => name.startsWith('Screenshot_2026-10-29_') || name.endsWith('.png')
+        (name) => name.startsWith('Screenshot_2026-10-29_')
       );
 
       const passed =
-        !fs.existsSync(publicAiStudioDir) &&
-        !fs.existsSync(distAiStudioDir) &&
-        publicScreenshots.length === 0 &&
-        distScreenshots.length === 0;
+        publicReferenceScreenshots.length === 0 &&
+        distReferenceScreenshots.length === 0;
 
       results.push({
         scenarioNumber: 32,
         category: 'Asset Hygiene' as any,
-        name: 'Reference screenshots removed from public/assets/aistudio and dist/assets/aistudio (0 screenshots in source or build)',
+        name: 'Reference screenshots (Screenshot_2026-10-29_*) removed from public/ and dist/ build output (0 reference screenshots in source or build)',
         passed,
-        expected: 'public/assets/aistudio absent, dist/assets/aistudio absent, 0 screenshot files in public/ or dist/',
-        actual: `publicDirExists=${fs.existsSync(publicAiStudioDir)}, distDirExists=${fs.existsSync(distAiStudioDir)}, publicScreenshots=${publicScreenshots.length}, distScreenshots=${distScreenshots.length}`
+        expected: '0 reference screenshots (Screenshot_2026-10-29_*) in public/ or dist/',
+        actual: `publicReferenceScreenshots=${publicReferenceScreenshots.length}, distReferenceScreenshots=${distReferenceScreenshots.length}`
       });
     }
 

@@ -70,15 +70,19 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
 
       <div className="max-w-md w-full bg-[#081B37] border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl text-left">
         {/* Brand Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center text-[#F3C94F]">
-            <Shield className="w-5 h-5" />
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white border border-slate-700 flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-md">
+            <img 
+              src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_30_AM_a8896c5c.png" 
+              alt="UNIKORN360 Logo" 
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
-            <h1 className="text-base font-bold font-serif text-white tracking-wide">
+            <h1 className="text-lg sm:text-xl font-bold font-serif text-white tracking-wide">
               UNIKORN<span className="text-[#F3C94F]">360</span> Operations
             </h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest">
+            <p className="text-[11px] text-slate-400 uppercase tracking-widest mt-0.5">
               Private Management Console
             </p>
           </div>

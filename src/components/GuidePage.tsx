@@ -52,7 +52,7 @@ export const GuidePage: React.FC<GuidePageProps> = ({
           name: 'Unikorn360 Business Intelligence',
           logo: {
             '@type': 'ImageObject',
-            url: 'https://www.unikorn360.com/assets/logo.png'
+            url: 'https://www.unikorn360.com/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_30_AM_a8896c5c.png'
           }
         },
         mainEntityOfPage: {
