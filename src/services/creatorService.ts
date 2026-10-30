@@ -102,15 +102,15 @@ export const REGIONAL_DIALECTS = [
   'North Arcot / Vellore / Tirupathur Tamil'
 ];
 
-const STORAGE_KEY = 'unikorn360_creator_network_applications';
+let currentUploadSessionId: string | null = null;
+let currentSubmissionSecret: string | null = null;
 
-// Clean up any deprecated keys on load
 if (typeof window !== 'undefined') {
   localStorage.removeItem('unikorn360_admin_token');
   localStorage.removeItem('unikorn360_admin_pin');
   localStorage.removeItem('unikorn360_admin_session');
+  localStorage.removeItem('unikorn360_creator_network_applications');
 }
-
 export interface UploadResult {
   storagePath: string;
   originalFilename: string;
@@ -129,6 +129,45 @@ function resolveApiUrl(path: string): string {
 }
 
 export const creatorService = {
+  getUploadSessionId: (): string | null => currentUploadSessionId,
+  getSubmissionSecret: (): string | null => currentSubmissionSecret,
+
+  resetUploadSession: (): void => {
+    currentUploadSessionId = null;
+    currentSubmissionSecret = null;
+  },
+
+  ensureUploadSession: async (): Promise<{ uploadSessionId: string; submissionSecret: string }> => {
+    if (currentUploadSessionId && currentSubmissionSecret) {
+      return {
+        uploadSessionId: currentUploadSessionId,
+        submissionSecret: currentSubmissionSecret
+      };
+    }
+
+    const res = await fetch(resolveApiUrl('/api/creators/upload-session'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to initialize upload session (HTTP ${res.status}).`);
+    }
+
+    const data = await res.json();
+    if (!data.uploadSessionId || !data.submissionSecret) {
+      throw new Error('Failed to obtain valid upload session credentials.');
+    }
+
+    currentUploadSessionId = data.uploadSessionId;
+    currentSubmissionSecret = data.submissionSecret;
+
+    return {
+      uploadSessionId: currentUploadSessionId,
+      submissionSecret: currentSubmissionSecret
+    };
+  },
+
   // Obtain active SDK-managed admin access token Bearer header
   getAuthHeaders: async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = {
@@ -141,7 +180,7 @@ export const creatorService = {
     return headers;
   },
 
-  // Secure File Upload using Supabase Signed Upload URLs with Progress Tracking
+  // Secure File Upload using Supabase Signed Upload URLs with Progress Tracking & Session Binding
   uploadFileSecurely: async (
     file: File,
     category: 'video_sample' | 'audience_insight' | 'media_kit',
@@ -149,11 +188,15 @@ export const creatorService = {
   ): Promise<UploadResult> => {
     onProgress(10);
 
-    // 1. Request signature from server
+    const session = await creatorService.ensureUploadSession();
+
+    // 1. Request signature from server with uploadSessionId and submissionSecret
     const signRes = await fetch(resolveApiUrl('/api/creators/upload-sign'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        uploadSessionId: session.uploadSessionId,
+        submissionSecret: session.submissionSecret,
         filename: file.name,
         fileType: file.type || 'application/octet-stream',
         fileSize: file.size,
@@ -171,10 +214,19 @@ export const creatorService = {
           `Upload API unavailable (HTTP ${signRes.status}). This domain is serving static files only without the backend server (server.ts) running.`
         );
       }
+      if (errJson.error && (errJson.error.includes('expired') || errJson.error.includes('session'))) {
+        creatorService.resetUploadSession();
+      }
       throw new Error(errJson.error || `Failed to authorize secure upload (HTTP ${signRes.status}).`);
     }
 
     const signData = await signRes.json();
+    if (signData.uploadSessionId) {
+      currentUploadSessionId = signData.uploadSessionId;
+    }
+    if (signData.submissionSecret) {
+      currentSubmissionSecret = signData.submissionSecret;
+    }
     onProgress(25);
 
     // 2. Direct upload using Supabase signed URL
@@ -213,7 +265,7 @@ export const creatorService = {
       });
     }
 
-    // 3. Fallback: Server Relay Upload (for local dev or if direct url not permitted)
+    // 3. Fallback: Server Relay Upload
     return new Promise<UploadResult>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
@@ -225,6 +277,8 @@ export const creatorService = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              uploadSessionId: currentUploadSessionId,
+              submissionSecret: currentSubmissionSecret,
               storagePath: signData.storagePath,
               fileData: base64,
               fileType: file.type || 'application/octet-stream',
@@ -236,6 +290,9 @@ export const creatorService = {
 
           if (!relayRes.ok) {
             const err = await relayRes.json().catch(() => ({}));
+            if (err.error && (err.error.includes('expired') || err.error.includes('session'))) {
+              creatorService.resetUploadSession();
+            }
             throw new Error(err.error || 'Relay upload failed.');
           }
 
@@ -258,10 +315,18 @@ export const creatorService = {
 
   // Submit Application to Real Backend API
   submitApplication: async (formData: CreatorApplicationFormData): Promise<CreatorApplicationRecord> => {
+    const session = await creatorService.ensureUploadSession();
+
+    const payload = {
+      ...formData,
+      uploadSessionId: session.uploadSessionId,
+      submissionSecret: session.submissionSecret
+    };
+
     const res = await fetch(resolveApiUrl('/api/creators/apply'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(payload)
     });
 
     const contentType = res.headers.get('content-type') || '';
@@ -275,8 +340,13 @@ export const creatorService = {
           `Application API unavailable (HTTP ${res.status}). This domain is serving static files only without the backend server (server.ts) running.`
         );
       }
+      if (data.error && (data.error.includes('expired') || data.error.includes('session'))) {
+        creatorService.resetUploadSession();
+      }
       throw new Error(data.error || `Failed to submit creator application (HTTP ${res.status}). Please check your inputs.`);
     }
+
+    creatorService.resetUploadSession();
 
     const createdRecord: CreatorApplicationRecord = {
       ...formData,
@@ -285,17 +355,6 @@ export const creatorService = {
       submittedAt: new Date().toISOString(),
       status: 'pending'
     };
-
-    // Store in local cache as confirmation backup
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const apps = stored ? JSON.parse(stored) : [];
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([createdRecord, ...apps]));
-      } catch (e) {
-        // Ignore cache storage errors
-      }
-    }
 
     return createdRecord;
   },

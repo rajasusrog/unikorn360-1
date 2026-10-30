@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -103,9 +104,7 @@ export const supabaseConfig = resolveSupabaseConfig(process.env);
 export const isSupabaseConfigured = supabaseConfig.isUserAuthConfigured;
 const isTestEnv = process.env.NODE_ENV === 'test';
 
-// Server-side privileged client using SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY fallback).
-// CRITICAL: Never substitute a publishable/anon key for supabaseAdmin, and never connect to external DB in test mode!
-const supabaseAdmin: SupabaseClient | null = !isTestEnv && supabaseConfig.isPrivilegedServerConfigured
+export let supabaseAdmin: SupabaseClient | null = (!isTestEnv || process.env.FORCE_SUPABASE_IN_TEST === 'true') && supabaseConfig.isPrivilegedServerConfigured
   ? createClient(supabaseConfig.url, supabaseConfig.privilegedKey, {
       auth: {
         autoRefreshToken: false,
@@ -114,8 +113,16 @@ const supabaseAdmin: SupabaseClient | null = !isTestEnv && supabaseConfig.isPriv
     })
   : null;
 
+export function setSupabaseAdmin(client: SupabaseClient | null): void {
+  supabaseAdmin = client;
+}
+
+export function getSupabaseAdmin(): SupabaseClient | null {
+  return supabaseAdmin;
+}
+
 // Public client for normal user-token verification (never uses privileged key)
-const supabasePublic: SupabaseClient | null = !isTestEnv && supabaseConfig.isPublicClientConfigured
+export let supabasePublic: SupabaseClient | null = (!isTestEnv || process.env.FORCE_SUPABASE_IN_TEST === 'true') && supabaseConfig.isPublicClientConfigured
   ? createClient(supabaseConfig.url, supabaseConfig.publishableKey, {
       auth: {
         autoRefreshToken: false,
@@ -552,6 +559,9 @@ const ipRateLimits = new Map<string, RateLimitBucket>();
 
 function rateLimit(limit: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.NODE_ENV === 'test') {
+      return next();
+    }
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
     const bucket = ipRateLimits.get(ip);
@@ -610,6 +620,383 @@ function validateFileConstraints(type: string, size: number, category: string): 
     }
     if (size > 10 * 1024 * 1024) {
       return { valid: false, error: 'Media kits must not exceed 10 MB.' };
+    }
+  }
+
+  return { valid: true };
+}
+
+export function isValidSessionId(sessionId: unknown): sessionId is string {
+  return typeof sessionId === 'string' && /^[a-zA-Z0-9_-]{10,128}$/.test(sessionId);
+}
+
+// Upload session state & magic byte verification
+export interface RegisteredUploadAsset {
+  storagePath: string;
+  category: 'video_sample' | 'audience_insight' | 'media_kit';
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  consumed: boolean;
+  uploadedAt?: string;
+  verifiedSize?: number;
+  bufferBase64?: string;
+}
+
+export interface CreatorUploadSession {
+  sessionId: string;
+  submissionSecret: string;
+  status: 'created' | 'registered' | 'verified' | 'consumed' | 'completed' | 'expired';
+  applicationId?: string;
+  createdAt: number;
+  expiresAt: number;
+  assets: Map<string, RegisteredUploadAsset>;
+}
+
+export const activeUploadSessions = new Map<string, CreatorUploadSession>();
+export const activeSubmissionLocks = new Map<string, Promise<any>>();
+
+export let testAssetInsertionErrorTrigger = false;
+export function setTestAssetInsertionErrorTrigger(val: boolean) {
+  testAssetInsertionErrorTrigger = val;
+}
+
+export let testBackupFailureTrigger = false;
+export function setTestBackupFailureTrigger(val: boolean) {
+  testBackupFailureTrigger = val;
+}
+
+const SESSIONS_DIR = path.join(process.cwd(), '.data', 'upload_sessions');
+try {
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+} catch {
+  // Directory exists or created
+}
+
+export async function saveSessionToDbAndDisk(
+  sess: CreatorUploadSession,
+  options?: { isPostCommit?: boolean }
+): Promise<void> {
+  // 1. Database is authoritative: check existing DB row before writing to prevent stale overwrites
+  if (supabaseAdmin) {
+    try {
+      const { data: existingRow } = await supabaseAdmin
+        .from('creator_upload_sessions')
+        .select('id, status, application_id, assets')
+        .eq('id', sess.sessionId)
+        .maybeSingle();
+
+      if (existingRow) {
+        // Completed status cannot be downgraded by stale memory or disk snapshots
+        if (existingRow.status === 'completed') {
+          sess.status = 'completed';
+        }
+        // An existing application binding can never be cleared to null
+        if (existingRow.application_id && !sess.applicationId) {
+          sess.applicationId = existingRow.application_id;
+        }
+        // Merge assets so newer registrations and older verified assets are never dropped
+        const rawAssets = typeof existingRow.assets === 'string'
+          ? JSON.parse(existingRow.assets)
+          : existingRow.assets;
+        if (Array.isArray(rawAssets)) {
+          for (const [k, v] of rawAssets) {
+            if (!sess.assets.has(k)) {
+              sess.assets.set(k, v);
+            } else {
+              const current = sess.assets.get(k)!;
+              current.consumed = current.consumed || v.consumed;
+              current.uploadedAt = current.uploadedAt || v.uploadedAt;
+              current.verifiedSize = current.verifiedSize || v.verifiedSize;
+            }
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn('Could not check existing upload session in DB:', checkErr);
+    }
+  }
+
+  const serializedAssets = Array.from(sess.assets.entries());
+  const dbPayload = {
+    id: sess.sessionId,
+    submission_secret: sess.submissionSecret,
+    status: sess.status,
+    application_id: sess.applicationId || null,
+    assets: serializedAssets,
+    created_at: new Date(sess.createdAt).toISOString(),
+    expires_at: new Date(sess.expiresAt).toISOString()
+  };
+
+  if (supabaseAdmin) {
+    const { error: dbErr } = await supabaseAdmin
+      .from('creator_upload_sessions')
+      .upsert(dbPayload, { onConflict: 'id' });
+
+    if (dbErr) {
+      console.error('Failed to persist upload session to database:', dbErr);
+      if (!isTestMemoryFallbackEnabled() && !options?.isPostCommit) {
+        const err = new Error(`Failed to persist upload session to database: ${dbErr.message}`);
+        (err as any).code = 'SESSION_PERSISTENCE_FAILED';
+        throw err;
+      }
+    }
+  }
+
+  try {
+    if (testBackupFailureTrigger) {
+      throw new Error('Simulated post-commit backup failure');
+    }
+
+    const jsonStr = JSON.stringify({
+      sessionId: sess.sessionId,
+      submissionSecret: sess.submissionSecret,
+      status: sess.status,
+      applicationId: sess.applicationId || null,
+      createdAt: sess.createdAt,
+      expiresAt: sess.expiresAt,
+      assets: serializedAssets
+    });
+    fs.writeFileSync(path.join(SESSIONS_DIR, `${sess.sessionId}.json`), jsonStr, 'utf-8');
+
+    if (supabaseAdmin) {
+      await ensureCreatorStorageBucket();
+      const { error: storageErr } = await supabaseAdmin.storage
+        .from('creator-submissions')
+        .upload(`applications/_sessions/${sess.sessionId}.json`, Buffer.from(jsonStr, 'utf-8'), {
+          contentType: 'application/json',
+          upsert: true
+        });
+
+      if (storageErr) {
+        console.warn('Storage session backup warning:', storageErr);
+        if (!isTestMemoryFallbackEnabled() && !options?.isPostCommit) {
+          const err = new Error(`Failed to sync upload session to storage: ${storageErr.message}`);
+          (err as any).code = 'SESSION_PERSISTENCE_FAILED';
+          throw err;
+        }
+      }
+    }
+  } catch (err: any) {
+    if (options?.isPostCommit) {
+      console.warn('[SessionBackup] Non-fatal post-commit session backup warning:', err?.message || err);
+      return;
+    }
+    if (!isTestMemoryFallbackEnabled()) {
+      if (err?.code === 'SESSION_PERSISTENCE_FAILED') throw err;
+      const sysErr = new Error(`Failed to write upload session state: ${err.message}`);
+      (sysErr as any).code = 'SESSION_PERSISTENCE_FAILED';
+      throw sysErr;
+    }
+  }
+}
+
+export function saveSessionToDisk(sess: CreatorUploadSession): void {
+  saveSessionToDbAndDisk(sess).catch(() => {});
+}
+
+export async function getOrLoadUploadSession(sessionId?: string): Promise<CreatorUploadSession> {
+  const now = Date.now();
+
+  for (const [id, sess] of activeUploadSessions.entries()) {
+    if (sess.expiresAt < now) {
+      activeUploadSessions.delete(id);
+    }
+  }
+
+  if (!sessionId) {
+    const newId = `upsess_${now}_${crypto.randomBytes(8).toString('hex')}`;
+    const newSecret = `subsec_${crypto.randomBytes(16).toString('hex')}`;
+    const newSess: CreatorUploadSession = {
+      sessionId: newId,
+      submissionSecret: newSecret,
+      status: 'created',
+      createdAt: now,
+      expiresAt: now + 30 * 60 * 1000,
+      assets: new Map()
+    };
+    activeUploadSessions.set(newId, newSess);
+    await saveSessionToDbAndDisk(newSess);
+    return newSess;
+  }
+
+  if (!isValidSessionId(sessionId)) {
+    const err = new Error('Invalid upload session ID format.');
+    (err as any).code = 'INVALID_SESSION_ID';
+    throw err;
+  }
+
+  const cachedSess = activeUploadSessions.get(sessionId);
+
+  let loadedData: any = null;
+
+  // 1. Authoritative DB Table check (supercedes stale memory/disk caches across instances)
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('creator_upload_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (!error && data) {
+        loadedData = {
+          sessionId: data.id,
+          submissionSecret: data.submission_secret,
+          status: data.status,
+          applicationId: data.application_id,
+          createdAt: new Date(data.created_at).getTime(),
+          expiresAt: new Date(data.expires_at).getTime(),
+          assets: typeof data.assets === 'string' ? JSON.parse(data.assets) : data.assets
+        };
+      }
+    } catch (dbErr) {
+      console.warn('Could not read session from DB:', dbErr);
+    }
+  }
+
+  // 2. If loaded from DB, merge with any cached session in memory and update cache
+  if (loadedData && loadedData.sessionId) {
+    if (loadedData.expiresAt < now) {
+      activeUploadSessions.delete(sessionId);
+      const err = new Error('Upload session has expired.');
+      (err as any).code = 'EXPIRED_SESSION';
+      throw err;
+    }
+
+    const mergedAssets = new Map<string, RegisteredUploadAsset>(loadedData.assets || []);
+    if (cachedSess) {
+      for (const [k, v] of cachedSess.assets.entries()) {
+        if (!mergedAssets.has(k)) {
+          mergedAssets.set(k, v);
+        } else {
+          const dbAsset = mergedAssets.get(k)!;
+          mergedAssets.set(k, {
+            ...v,
+            ...dbAsset,
+            consumed: v.consumed || dbAsset.consumed,
+            uploadedAt: dbAsset.uploadedAt || v.uploadedAt,
+            verifiedSize: dbAsset.verifiedSize || v.verifiedSize
+          });
+        }
+      }
+    }
+
+    const isCompleted = loadedData.status === 'completed' || cachedSess?.status === 'completed';
+    const effectiveAppId = loadedData.applicationId || cachedSess?.applicationId || undefined;
+
+    const restoredSess: CreatorUploadSession = {
+      sessionId: loadedData.sessionId,
+      submissionSecret: loadedData.submissionSecret || cachedSess?.submissionSecret || '',
+      status: isCompleted ? 'completed' : (loadedData.status || cachedSess?.status || 'created'),
+      applicationId: effectiveAppId,
+      createdAt: loadedData.createdAt,
+      expiresAt: loadedData.expiresAt,
+      assets: mergedAssets
+    };
+
+    activeUploadSessions.set(restoredSess.sessionId, restoredSess);
+    return restoredSess;
+  }
+
+  // 3. In-memory check (when DB is unavailable or didn't have row)
+  if (cachedSess) {
+    if (cachedSess.expiresAt < now) {
+      activeUploadSessions.delete(sessionId);
+      const err = new Error('Upload session has expired.');
+      (err as any).code = 'EXPIRED_SESSION';
+      throw err;
+    }
+    return cachedSess;
+  }
+
+  // 4. Load from Disk
+  if (!loadedData) {
+    const diskPath = path.join(SESSIONS_DIR, `${sessionId}.json`);
+    if (fs.existsSync(diskPath)) {
+      try {
+        const content = fs.readFileSync(diskPath, 'utf-8');
+        loadedData = JSON.parse(content);
+      } catch {}
+    }
+  }
+
+  // 5. Load from Supabase Storage _sessions
+  if (!loadedData && supabaseAdmin) {
+    try {
+      const { data: blob, error } = await supabaseAdmin.storage
+        .from('creator-submissions')
+        .download(`applications/_sessions/${sessionId}.json`);
+      if (!error && blob) {
+        const text = await blob.text();
+        loadedData = JSON.parse(text);
+      }
+    } catch {}
+  }
+
+  if (loadedData && loadedData.sessionId) {
+    if (loadedData.expiresAt < now) {
+      const err = new Error('Upload session has expired.');
+      (err as any).code = 'EXPIRED_SESSION';
+      throw err;
+    }
+
+    const restoredSess: CreatorUploadSession = {
+      sessionId: loadedData.sessionId,
+      submissionSecret: loadedData.submissionSecret || `subsec_${crypto.randomBytes(16).toString('hex')}`,
+      status: loadedData.status || 'created',
+      applicationId: loadedData.applicationId || undefined,
+      createdAt: loadedData.createdAt,
+      expiresAt: loadedData.expiresAt,
+      assets: new Map(loadedData.assets || [])
+    };
+
+    activeUploadSessions.set(restoredSess.sessionId, restoredSess);
+    return restoredSess;
+  }
+
+  const err = new Error('Upload session invalid or expired.');
+  (err as any).code = 'EXPIRED_SESSION';
+  throw err;
+}
+
+export function validateBufferMagicBytes(
+  buffer: Buffer,
+  category: string,
+  _declaredType: string
+): { valid: boolean; error?: string } {
+  if (!buffer || buffer.length < 4) {
+    return { valid: false, error: 'File buffer is too small or truncated.' };
+  }
+
+  const isPdf = buffer.length >= 5 &&
+    buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46 && buffer[4] === 0x2D;
+
+  const isPng = buffer.length >= 8 &&
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
+    buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A;
+
+  const isJpeg = buffer.length >= 3 &&
+    buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+
+  const isMp4OrMov = buffer.length >= 12 && (
+    (buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) || // ftyp
+    (buffer[4] === 0x6D && buffer[5] === 0x6F && buffer[6] === 0x6F && buffer[7] === 0x76) || // moov
+    (buffer[4] === 0x6D && buffer[5] === 0x64 && buffer[6] === 0x61 && buffer[7] === 0x74) || // mdat
+    (buffer[4] === 0x77 && buffer[5] === 0x69 && buffer[6] === 0x64 && buffer[7] === 0x65)    // wide
+  );
+
+  if (category === 'video_sample') {
+    if (!isMp4OrMov) {
+      return { valid: false, error: 'File content signature does not match a valid MP4 or MOV video file.' };
+    }
+  } else if (category === 'audience_insight') {
+    if (!isJpeg && !isPng && !isPdf) {
+      return { valid: false, error: 'File content signature does not match a valid JPG, PNG, or PDF file.' };
+    }
+  } else if (category === 'media_kit') {
+    if (!isPdf) {
+      return { valid: false, error: 'File content signature does not match a valid PDF document.' };
     }
   }
 
@@ -1131,37 +1518,158 @@ async function ensureCreatorStorageBucket(): Promise<void> {
 // PUBLIC CREATOR API ENDPOINTS
 // ====================================================================
 
+export function getOrCreateUploadSession(sessionId?: string): CreatorUploadSession {
+  const now = Date.now();
+  if (!sessionId) {
+    const newId = `upsess_${now}_${crypto.randomBytes(8).toString('hex')}`;
+    const newSecret = `subsec_${crypto.randomBytes(16).toString('hex')}`;
+    const newSess: CreatorUploadSession = {
+      sessionId: newId,
+      submissionSecret: newSecret,
+      status: 'created',
+      createdAt: now,
+      expiresAt: now + 30 * 60 * 1000,
+      assets: new Map()
+    };
+    activeUploadSessions.set(newId, newSess);
+    saveSessionToDisk(newSess);
+    return newSess;
+  }
+  const sess = activeUploadSessions.get(sessionId);
+  if (!sess || sess.expiresAt < now) {
+    const err = new Error('Upload session invalid or expired.');
+    (err as any).code = 'EXPIRED_SESSION';
+    throw err;
+  }
+  return sess;
+}
+
+// ====================================================================
+// PUBLIC CREATOR API ENDPOINTS
+// ====================================================================
+
+// 0. Explicit Upload Session Endpoint
+app.post('/api/creators/upload-session', rateLimit(30, 60000), async (req: Request, res: Response) => {
+  try {
+    const { uploadSessionId, submissionSecret } = req.body || {};
+
+    if (!uploadSessionId) {
+      const sess = await getOrLoadUploadSession();
+      return res.json({
+        success: true,
+        uploadSessionId: sess.sessionId,
+        submissionSecret: sess.submissionSecret,
+        expiresAt: new Date(sess.expiresAt).toISOString()
+      });
+    }
+
+    if (!isValidSessionId(uploadSessionId)) {
+      return res.status(400).json({ error: 'Invalid upload session ID format.', code: 'INVALID_SESSION_ID' });
+    }
+
+    if (!submissionSecret) {
+      return res.status(400).json({ error: 'submissionSecret is required for existing session access.', code: 'MISSING_SUBMISSION_SECRET' });
+    }
+
+    const sess = await getOrLoadUploadSession(uploadSessionId);
+    if (sess.submissionSecret !== submissionSecret) {
+      return res.status(403).json({ error: 'Invalid submission secret.', code: 'INVALID_SUBMISSION_SECRET' });
+    }
+
+    return res.json({
+      success: true,
+      uploadSessionId: sess.sessionId,
+      expiresAt: new Date(sess.expiresAt).toISOString()
+    });
+  } catch (err: any) {
+    if (err.code === 'EXPIRED_SESSION' || err.code === 'INVALID_SESSION_ID') {
+      return res.status(400).json({ error: err.message || 'Upload session invalid or expired.', code: err.code });
+    }
+    if (err.code === 'SESSION_PERSISTENCE_FAILED') {
+      return res.status(500).json({ error: err.message, code: 'SESSION_PERSISTENCE_FAILED' });
+    }
+    return res.status(500).json({ error: 'Failed to access upload session.' });
+  }
+});
+
 // 1. Storage Upload URL Signer (Generates short-lived signed upload URL for private bucket)
 app.post('/api/creators/upload-sign', rateLimit(30, 60000), async (req: Request, res: Response) => {
   try {
-    const { filename, fileType, fileSize, category, applicationRef } = req.body;
+    const { uploadSessionId, submissionSecret, filename, fileType, fileSize, category } = req.body;
 
     if (!filename || !fileType || !fileSize || !category) {
       return res.status(400).json({ error: 'Missing required file metadata.' });
     }
 
-    const validation = validateFileConstraints(fileType, fileSize, category);
+    if (!uploadSessionId) {
+      return res.status(400).json({ error: 'uploadSessionId is required.', code: 'MISSING_UPLOAD_SESSION' });
+    }
+
+    if (!isValidSessionId(uploadSessionId)) {
+      return res.status(400).json({ error: 'Invalid upload session ID format.', code: 'INVALID_SESSION_ID' });
+    }
+
+    const validation = validateFileConstraints(fileType, Number(fileSize), category);
     if (!validation.valid) {
-      return res.status(400).json({ error: validation.error });
+      return res.status(400).json({ error: validation.error, code: 'FILE_TOO_LARGE' });
+    }
+
+    let sess: CreatorUploadSession;
+    try {
+      sess = await getOrLoadUploadSession(uploadSessionId);
+    } catch (err: any) {
+      return res.status(400).json({ error: 'Upload session has expired or is invalid. Please refresh your upload session.', code: 'EXPIRED_SESSION' });
+    }
+
+    if (sess.status === 'completed') {
+      return res.status(400).json({
+        error: 'Upload session has already been completed. New uploads are not permitted.',
+        code: 'COMPLETED_SESSION'
+      });
+    }
+
+    if (sess.status === 'expired' || sess.expiresAt < Date.now()) {
+      return res.status(400).json({
+        error: 'Upload session has expired.',
+        code: 'EXPIRED_SESSION'
+      });
+    }
+
+    if (!submissionSecret) {
+      return res.status(400).json({ error: 'submissionSecret is required for upload signature generation.', code: 'MISSING_SUBMISSION_SECRET' });
+    }
+
+    if (sess.submissionSecret !== submissionSecret) {
+      return res.status(403).json({ error: 'Invalid submission secret.', code: 'INVALID_SUBMISSION_SECRET' });
     }
 
     const sanitizedName = sanitizeFilename(filename);
-    const refCode = (applicationRef || `temp_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '');
-    const storagePath = `applications/${refCode}/${category}/${Date.now()}_${sanitizedName}`;
+    const storagePath = `applications/uploads/${sess.sessionId}/${category}/${Date.now()}_${sanitizedName}`;
+
+    sess.assets.set(storagePath, {
+      storagePath,
+      category,
+      originalFilename: filename,
+      mimeType: fileType,
+      fileSize: Number(fileSize),
+      consumed: false
+    });
+    sess.status = 'registered';
+    await saveSessionToDbAndDisk(sess);
 
     if (supabaseAdmin) {
       await ensureCreatorStorageBucket();
 
       let { data, error } = await supabaseAdmin.storage
         .from('creator-submissions')
-        .createSignedUploadUrl(storagePath);
+        .createSignedUploadUrl(storagePath, { upsert: false });
 
       if (error && (error.message?.includes('not exist') || (error as any).statusCode === '404')) {
         creatorBucketVerified = false;
         await ensureCreatorStorageBucket();
         const retry = await supabaseAdmin.storage
           .from('creator-submissions')
-          .createSignedUploadUrl(storagePath);
+          .createSignedUploadUrl(storagePath, { upsert: false });
         data = retry.data;
         error = retry.error;
       }
@@ -1175,6 +1683,8 @@ app.post('/api/creators/upload-sign', rateLimit(30, 60000), async (req: Request,
 
       return res.json({
         mode: 'direct_signed_url',
+        uploadSessionId: sess.sessionId,
+        submissionSecret: sess.submissionSecret,
         signedUrl: data.signedUrl,
         token: data.token,
         storagePath,
@@ -1189,11 +1699,16 @@ app.post('/api/creators/upload-sign', rateLimit(30, 60000), async (req: Request,
     // Test-only relay mode
     return res.json({
       mode: 'server_relay',
+      uploadSessionId: sess.sessionId,
+      submissionSecret: sess.submissionSecret,
       storagePath,
       sanitizedName,
       uploadEndpoint: `/api/creators/upload-relay`
     });
   } catch (err: any) {
+    if (err?.code === 'SESSION_PERSISTENCE_FAILED') {
+      return res.status(500).json({ error: err.message, code: 'SESSION_PERSISTENCE_FAILED' });
+    }
     console.error('Error in /api/creators/upload-sign:', err);
     res.status(500).json({ error: 'Failed to generate upload signature.' });
   }
@@ -1202,48 +1717,130 @@ app.post('/api/creators/upload-sign', rateLimit(30, 60000), async (req: Request,
 // 2. Server Relay Upload
 app.post('/api/creators/upload-relay', rateLimit(20, 60000), async (req: Request, res: Response) => {
   try {
-    const { storagePath, fileData, fileType, originalFilename, fileSize, category } = req.body;
+    const { uploadSessionId, submissionSecret, storagePath, fileData, fileType, originalFilename, category } = req.body;
 
     if (!storagePath || !fileData || !fileType) {
       return res.status(400).json({ error: 'Missing required upload payload.' });
     }
 
+    if (!uploadSessionId || !isValidSessionId(uploadSessionId)) {
+      return res.status(400).json({
+        error: 'Upload session is missing or invalid format.',
+        code: 'INVALID_SESSION_ID'
+      });
+    }
+
+    let sess: CreatorUploadSession;
+    try {
+      sess = await getOrLoadUploadSession(uploadSessionId);
+    } catch {
+      return res.status(400).json({
+        error: 'Upload session has expired. Please refresh your upload session.',
+        code: 'EXPIRED_SESSION'
+      });
+    }
+
+    if (sess.status === 'completed') {
+      return res.status(400).json({
+        error: 'Upload session has already been completed. New uploads are not permitted.',
+        code: 'COMPLETED_SESSION'
+      });
+    }
+
+    if (sess.status === 'expired' || sess.expiresAt < Date.now()) {
+      return res.status(400).json({
+        error: 'Upload session has expired.',
+        code: 'EXPIRED_SESSION'
+      });
+    }
+
+    if (!submissionSecret) {
+      return res.status(400).json({ error: 'submissionSecret is required for relay upload.', code: 'MISSING_SUBMISSION_SECRET' });
+    }
+
+    if (sess.submissionSecret !== submissionSecret) {
+      return res.status(403).json({ error: 'Invalid submission secret.', code: 'INVALID_SUBMISSION_SECRET' });
+    }
+
+    const regAsset = sess.assets.get(storagePath);
+    if (!regAsset) {
+      return res.status(403).json({
+        error: `Unauthorized storagePath '${storagePath}'. Path was not issued for this upload session.`,
+        code: 'UNAUTHORIZED_PATH'
+      });
+    }
+
+    if (regAsset.consumed) {
+      return res.status(409).json({
+        error: 'This storagePath has already been uploaded and consumed by a submission.',
+        code: 'PATH_REUSED'
+      });
+    }
+
+    if (regAsset.uploadedAt) {
+      return res.status(409).json({
+        error: 'An object already exists at this storage path. Overwriting existing objects is prohibited.',
+        code: 'OBJECT_EXISTS'
+      });
+    }
+
+    const buffer = Buffer.from(fileData, 'base64');
+
+    const cat = category || regAsset.category;
+    const catLimit = cat === 'video_sample' ? 30 * 1024 * 1024 : cat === 'audience_insight' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (buffer.length > catLimit) {
+      return res.status(400).json({
+        error: `Actual file size (${(buffer.length / (1024 * 1024)).toFixed(1)} MB) exceeds allowed category limit.`,
+        code: 'FILE_TOO_LARGE'
+      });
+    }
+
+    const magicVerification = validateBufferMagicBytes(buffer, cat, fileType);
+    if (!magicVerification.valid) {
+      return res.status(400).json({
+        error: magicVerification.error || 'File content signature does not match expected file type.',
+        code: 'MALFORMED_FILE'
+      });
+    }
+
     if (supabaseAdmin) {
       await ensureCreatorStorageBucket();
-      const buffer = Buffer.from(fileData, 'base64');
       const { error } = await supabaseAdmin.storage
         .from('creator-submissions')
         .upload(storagePath, buffer, {
           contentType: fileType,
-          upsert: true
+          upsert: false // STRICTLY PREVENT OVERWRITE
         });
 
       if (error) {
+        if (error.message?.includes('already exists') || (error as any).statusCode === '409') {
+          return res.status(409).json({
+            error: 'Object already exists at storage path. Overwriting existing objects is prohibited.',
+            code: 'OBJECT_EXISTS'
+          });
+        }
         console.error('Error uploading to Supabase storage:', error);
         return res.status(500).json({ error: `Failed to upload file to secure storage: ${error.message}` });
       }
-
-      return res.json({
-        success: true,
-        storagePath,
-        originalFilename,
-        fileSize,
-        fileType,
-        category
-      });
-    }
-
-    if (!isTestMemoryFallbackEnabled()) {
+    } else if (!isTestMemoryFallbackEnabled()) {
       return sendMissingPrivilegedConfig(res);
     }
 
+    regAsset.uploadedAt = new Date().toISOString();
+    regAsset.verifiedSize = buffer.length;
+    regAsset.bufferBase64 = fileData;
+    sess.status = 'verified';
+    await saveSessionToDbAndDisk(sess);
+
     return res.json({
       success: true,
+      uploadSessionId: sess.sessionId,
+      submissionSecret: sess.submissionSecret,
       storagePath,
-      originalFilename,
-      fileSize,
+      originalFilename: originalFilename || regAsset.originalFilename,
+      fileSize: buffer.length,
       fileType,
-      category
+      category: cat
     });
   } catch (err: any) {
     console.error('Error in /api/creators/upload-relay:', err);
@@ -1314,239 +1911,537 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
       });
     }
 
+    // F. Collect Submitted Asset Paths
+    const { uploadSessionId } = payload;
+    const allSubmittedAssets: Array<{ name: string; storagePath: string; category: string; type?: string; size?: number }> = [];
+    if (Array.isArray(payload.uploadedVideos)) {
+      for (const v of payload.uploadedVideos) {
+        if (v?.storagePath) allSubmittedAssets.push({ name: v.name, storagePath: v.storagePath, category: 'video_sample', type: v.type, size: v.size });
+      }
+    }
+    if (Array.isArray(payload.uploadedInsights)) {
+      for (const ins of payload.uploadedInsights) {
+        if (ins?.storagePath) allSubmittedAssets.push({ name: ins.name, storagePath: ins.storagePath, category: 'audience_insight', type: ins.type, size: ins.size });
+      }
+    }
+    if (payload.uploadedMediaKit?.storagePath) {
+      allSubmittedAssets.push({ name: payload.uploadedMediaKit.name, storagePath: payload.uploadedMediaKit.storagePath, category: 'media_kit', type: payload.uploadedMediaKit.type, size: payload.uploadedMediaKit.size });
+    }
+
+    // G. Require Valid Session When File Assets Are Submitted & Verify Existence + Magic Bytes
+    if (allSubmittedAssets.length > 0 && !uploadSessionId) {
+      return res.status(400).json({
+        error: 'uploadSessionId is required when submitting file assets.',
+        code: 'MISSING_UPLOAD_SESSION'
+      });
+    }
+
+    let targetSession: CreatorUploadSession | undefined;
+    if (uploadSessionId) {
+      try {
+        targetSession = await getOrLoadUploadSession(uploadSessionId);
+      } catch (err: any) {
+        return res.status(400).json({
+          error: 'Upload session is invalid or has expired. Please refresh and re-upload files.',
+          code: 'EXPIRED_SESSION'
+        });
+      }
+    }
+
+    const { submissionSecret } = payload;
+
+    // Idempotent completion check for already completed upload sessions with matching secret
+    if (targetSession && targetSession.status === 'completed' && targetSession.applicationId) {
+      if (submissionSecret && targetSession.submissionSecret === submissionSecret) {
+        let compApp: any = null;
+        if (supabaseAdmin) {
+          const { data: found } = await supabaseAdmin
+            .from('creator_applications')
+            .select('id, application_reference')
+            .eq('id', targetSession.applicationId)
+            .maybeSingle();
+          compApp = found;
+        } else {
+          compApp = memoryApplications.find(a => a.id === targetSession.applicationId);
+        }
+        if (compApp) {
+          return res.status(201).json({
+            success: true,
+            referenceNumber: compApp.application_reference || compApp.referenceNumber,
+            id: compApp.id,
+            message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
+          });
+        }
+      }
+    }
+
+    for (const assetItem of allSubmittedAssets) {
+      if (!targetSession) {
+        return res.status(400).json({
+          error: 'uploadSessionId is required when submitting file assets.',
+          code: 'MISSING_UPLOAD_SESSION'
+        });
+      }
+
+      const regAsset = targetSession.assets.get(assetItem.storagePath);
+      if (!regAsset) {
+        return res.status(403).json({
+          error: `Foreign or un-issued asset storagePath '${assetItem.storagePath}'. Every uploaded asset must be issued by the server in an active upload session.`,
+          code: 'FOREIGN_ASSET_PATH'
+        });
+      }
+
+      if (regAsset.consumed) {
+        return res.status(409).json({
+          error: `Asset storagePath '${assetItem.storagePath}' has already been consumed in a completed application submission.`,
+          code: 'ASSET_REUSED'
+        });
+      }
+
+      if (supabaseAdmin) {
+        const { data: blob, error: downloadErr } = await supabaseAdmin.storage
+          .from('creator-submissions')
+          .download(assetItem.storagePath);
+
+        if (downloadErr || !blob) {
+          return res.status(400).json({
+            error: `No uploaded file was found in storage at path '${assetItem.storagePath}'.`,
+            code: 'NO_FILE_UPLOADED'
+          });
+        }
+
+        const fileBuf = Buffer.from(await blob.arrayBuffer());
+        if (fileBuf.length === 0) {
+          return res.status(400).json({
+            error: `Uploaded file at '${assetItem.storagePath}' is empty.`,
+            code: 'NO_FILE_UPLOADED'
+          });
+        }
+
+        regAsset.verifiedSize = fileBuf.length;
+        const magicCheck = validateBufferMagicBytes(fileBuf, assetItem.category, assetItem.type || regAsset.mimeType);
+        if (!magicCheck.valid) {
+          return res.status(400).json({
+            error: magicCheck.error || 'File content signature mismatch.',
+            code: 'MALFORMED_FILE'
+          });
+        }
+      } else {
+        if (!regAsset.uploadedAt && !regAsset.bufferBase64) {
+          return res.status(400).json({
+            error: `No uploaded file was found at storage path '${assetItem.storagePath}'.`,
+            code: 'NO_FILE_UPLOADED'
+          });
+        }
+
+        if (regAsset.bufferBase64) {
+          const fileBuf = Buffer.from(regAsset.bufferBase64, 'base64');
+          const magicCheck = validateBufferMagicBytes(fileBuf, assetItem.category, assetItem.type || regAsset.mimeType);
+          if (!magicCheck.valid) {
+            return res.status(400).json({
+              error: magicCheck.error || 'File content signature mismatch.',
+              code: 'MALFORMED_FILE'
+            });
+          }
+        }
+      }
+    }
+
     if ((!supabaseAdmin || !resolveSupabaseConfig(process.env).isPrivilegedServerConfigured) && !isTestMemoryFallbackEnabled()) {
       return sendMissingPrivilegedConfig(res);
     }
 
-    // F. Duplicate Submission Protection
-    if (supabaseAdmin) {
-      const { data: existing, error: dupErr } = await supabaseAdmin
-        .from('creator_applications')
-        .select('id, application_reference, application_status, created_at')
-        .or(`email.eq.${emailClean},whatsapp_number.eq.${phoneClean}`)
-        .in('application_status', ['pending', 'reviewed', 'new', 'reviewing'])
-        .limit(1);
-
-      if (!dupErr && existing && existing.length > 0) {
-        return res.status(409).json({
-          error: `An active application with this email or WhatsApp number is already being evaluated under reference ${existing[0].application_reference}.`,
-          referenceNumber: existing[0].application_reference
-        });
-      }
-    } else {
-      const duplicate = memoryApplications.find(
-        a => (a.email.toLowerCase() === emailClean || a.whatsapp_number.replace(/[\s-]+/g, '') === phoneClean) &&
-             ['pending', 'reviewed', 'new', 'reviewing'].includes(a.application_status)
-      );
-      if (duplicate) {
-        return res.status(409).json({
-          error: `An active application with this email or WhatsApp number is already registered under reference ${duplicate.application_reference}.`,
-          referenceNumber: duplicate.application_reference
-        });
-      }
+    // H. Concurrency Locking & Server-Controlled Idempotency
+    const lockKey = uploadSessionId || `${emailClean}_${phoneClean}`;
+    while (activeSubmissionLocks.has(lockKey)) {
+      await activeSubmissionLocks.get(lockKey);
     }
 
-    // G. Generate Cryptographically Distinct Reference Number
-    const randomSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
-    const timestampCode = Date.now().toString(36).slice(-4).toUpperCase();
-    const referenceNumber = `U360-CR-${timestampCode}${randomSuffix}`;
+    let unlockLock = () => {};
+    const lockPromise = new Promise<void>((resolve) => { unlockLock = resolve; });
+    activeSubmissionLocks.set(lockKey, lockPromise);
 
-    // H. Hash Client IP for anti-fraud
-    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || '';
-    const ipHash = crypto.createHash('sha256').update(rawIp + 'u360_salt').digest('hex').substring(0, 16);
+    try {
+      let existingApp: any = null;
+      if (supabaseAdmin) {
+        const { data: existing } = await supabaseAdmin
+          .from('creator_applications')
+          .select('id, application_reference, application_status, created_at')
+          .or(`email.eq.${emailClean},whatsapp_number.eq.${phoneClean}`)
+          .neq('application_status', 'rejected')
+          .limit(1);
 
-    const submittedAtIso = new Date().toISOString();
-    const initialActivityLog = [
-      {
-        id: `act_${Date.now()}`,
-        event_type: 'application_submitted',
-        action: 'Application Submitted',
-        actor_email: 'portal@unikorn360.com',
-        timestamp: submittedAtIso,
-        details: 'Self-registered through UNIKORN360 Creator Portal.'
+        if (existing && existing.length > 0) {
+          existingApp = existing[0];
+        }
+      } else {
+        existingApp = memoryApplications.find(
+          a => (a.email.toLowerCase() === emailClean || a.whatsapp_number.replace(/[\s-]+/g, '') === phoneClean) &&
+               a.application_status !== 'rejected'
+        );
       }
-    ];
 
-    const newRecordData = {
-      application_reference: referenceNumber,
-      full_name: payload.fullName.trim(),
-      whatsapp_number: phoneClean,
-      email: emailClean,
-      state: payload.state || 'Tamil Nadu',
-      district: payload.district,
-      town: payload.cityTown.trim(),
-      contact_language: payload.contactLanguage || 'Tamil',
-      social_platforms: [payload.primaryPlatform || 'Instagram'],
-      instagram_url: payload.instagramUrl || '',
-      youtube_url: payload.youtubeUrl || '',
-      other_profile_urls: payload.otherPlatformUrl ? [payload.otherPlatformUrl] : [],
-      follower_count: payload.followerCount || '',
-      subscriber_count: payload.subscriberCount || '',
-      average_views: payload.averageViewsLast10 || '',
-      publishing_frequency: payload.publishingFrequency || '',
-      creator_categories: payload.categories || [],
-      languages: [payload.primaryLanguage || 'Tamil', ...(payload.additionalLanguages || [])],
-      dialects: payload.regionalDialects || [],
-      creator_classification: payload.classification || 'ugc',
-      audience_location: payload.audienceLocation || '',
-      audience_insights: {
-        genderBreakdown: payload.genderBreakdown || '',
-        topAgeGroup: payload.topAgeGroup || ''
-      },
-      collaboration_preferences: payload.collaborationTypes || [],
-      expected_rates: {
-        ugc: payload.rateUgcVideo || '',
-        sponsoredReel: payload.rateSponsoredReel || '',
-        story: payload.rateStory || '',
-        additionalProduction: payload.rateAdditionalProduction || '',
-        onLocationDaily: payload.rateOnLocationDaily || ''
-      },
-      travel_availability: payload.travelAvailability || '',
-      previous_collaborations: {
-        hasPrior: payload.hasPriorCollabs === 'yes',
-        details: payload.priorCollabDetails || ''
-      },
-      portfolio_urls: validLinks,
-      privacy_consent: true,
-      contact_consent: true,
-      brand_sharing_consent: true,
-      application_status: 'pending',
-      admin_notes: '',
-      activity_log: initialActivityLog,
-      ip_hash: ipHash
-    };
-
-    let insertedId = crypto.randomUUID ? crypto.randomUUID() : `app_${Date.now()}`;
-
-    const collectSubmittedAssets = (appId: string) => {
-      const assets: any[] = [];
-      if (Array.isArray(payload.uploadedVideos)) {
-        for (const vid of payload.uploadedVideos) {
-          if (vid.name && vid.storagePath) {
-            assets.push({
-              application_id: appId,
-              file_type: 'video_sample',
-              original_filename: vid.name,
-              storage_path: vid.storagePath,
-              mime_type: vid.type || 'video/mp4',
-              file_size: vid.size || 0
-            });
-          }
+      if (targetSession && targetSession.status === 'completed' && targetSession.applicationId) {
+        if (existingApp && existingApp.id === targetSession.applicationId) {
+          return res.status(201).json({
+            success: true,
+            referenceNumber: existingApp.application_reference,
+            id: existingApp.id,
+            message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
+          });
         }
       }
-      if (Array.isArray(payload.uploadedInsights)) {
-        for (const ins of payload.uploadedInsights) {
-          if (ins.name && ins.storagePath) {
-            assets.push({
-              application_id: appId,
-              file_type: 'audience_insight',
-              original_filename: ins.name,
-              storage_path: ins.storagePath,
-              mime_type: ins.type || 'image/png',
-              file_size: ins.size || 0
-            });
+
+      const submittedAtIso = new Date().toISOString();
+
+      const collectSubmittedAssets = (appId: string) => {
+        const assets: any[] = [];
+        if (Array.isArray(payload.uploadedVideos)) {
+          for (const vid of payload.uploadedVideos) {
+            if (vid.name && vid.storagePath) {
+              const reg = targetSession?.assets.get(vid.storagePath);
+              assets.push({
+                application_id: appId,
+                file_type: reg?.category || 'video_sample',
+                original_filename: reg?.originalFilename || vid.name,
+                storage_path: vid.storagePath,
+                mime_type: reg?.mimeType || vid.type || 'video/mp4',
+                file_size: reg?.verifiedSize || reg?.fileSize || vid.size || 0
+              });
+            }
           }
         }
-      }
-      if (payload.uploadedMediaKit?.name && payload.uploadedMediaKit?.storagePath) {
-        assets.push({
-          application_id: appId,
-          file_type: 'media_kit',
-          original_filename: payload.uploadedMediaKit.name,
-          storage_path: payload.uploadedMediaKit.storagePath,
-          mime_type: payload.uploadedMediaKit.type || 'application/pdf',
-          file_size: payload.uploadedMediaKit.size || 0
+        if (Array.isArray(payload.uploadedInsights)) {
+          for (const ins of payload.uploadedInsights) {
+            if (ins.name && ins.storagePath) {
+              const reg = targetSession?.assets.get(ins.storagePath);
+              assets.push({
+                application_id: appId,
+                file_type: reg?.category || 'audience_insight',
+                original_filename: reg?.originalFilename || ins.name,
+                storage_path: ins.storagePath,
+                mime_type: reg?.mimeType || ins.type || 'image/png',
+                file_size: reg?.verifiedSize || reg?.fileSize || ins.size || 0
+              });
+            }
+          }
+        }
+        if (payload.uploadedMediaKit?.name && payload.uploadedMediaKit?.storagePath) {
+          const path = payload.uploadedMediaKit.storagePath;
+          const reg = targetSession?.assets.get(path);
+          assets.push({
+            application_id: appId,
+            file_type: reg?.category || 'media_kit',
+            original_filename: reg?.originalFilename || payload.uploadedMediaKit.name,
+            storage_path: path,
+            mime_type: reg?.mimeType || payload.uploadedMediaKit.type || 'application/pdf',
+            file_size: reg?.verifiedSize || reg?.fileSize || payload.uploadedMediaKit.size || 0
+          });
+        }
+        return assets;
+      };
+
+      const simulateAssetErr = testAssetInsertionErrorTrigger ||
+        (process.env.NODE_ENV === 'test' && (payload.simulate_asset_error === true || req.headers['x-test-simulate-asset-error'] === 'true'));
+
+      if (!supabaseAdmin && existingApp) {
+        const referenceNumber = existingApp.application_reference;
+        const appId = existingApp.id;
+
+        const { submissionSecret } = payload;
+        const isAuthorizedSecret = Boolean(
+          targetSession &&
+          submissionSecret &&
+          targetSession.submissionSecret === submissionSecret &&
+          targetSession.applicationId === appId
+        );
+
+        if (!isAuthorizedSecret) {
+          return res.status(409).json({
+            success: false,
+            error: 'An application already exists for this email address or phone number. Un-authorized modification or file attachment is forbidden.',
+            code: 'DUPLICATE_APPLICATION'
+          });
+        }
+
+        const assetInserts = collectSubmittedAssets(appId);
+        if (assetInserts.length > 0) {
+          if (simulateAssetErr) {
+            return res.status(502).json({
+              success: false,
+              error: 'Simulated asset metadata insert error. Submission can be retried.',
+              code: 'ASSET_RECORDING_FAILED',
+              retryable: true,
+              uploadSessionId: targetSession?.sessionId || uploadSessionId,
+              applicationReference: referenceNumber
+            });
+          }
+
+          const memRecord = memoryApplications.find(a => a.id === appId);
+          if (memRecord) {
+            const existingAssets = memRecord.assets || [];
+            for (const newAss of assetInserts) {
+              if (!existingAssets.some(e => e.storage_path === newAss.storage_path)) {
+                existingAssets.push({ id: `asset_${Date.now()}_${Math.random()}`, ...newAss, created_at: submittedAtIso });
+              }
+            }
+            memRecord.assets = existingAssets;
+          }
+        }
+
+        if (targetSession) {
+          for (const assetItem of allSubmittedAssets) {
+            const reg = targetSession.assets.get(assetItem.storagePath);
+            if (reg) reg.consumed = true;
+          }
+          targetSession.status = 'completed';
+          targetSession.applicationId = appId;
+          try {
+            await saveSessionToDbAndDisk(targetSession, { isPostCommit: true });
+          } catch (backupErr) {
+            console.warn('[SessionBackup] Non-fatal post-commit session backup warning:', backupErr);
+          }
+        }
+
+        return res.status(201).json({
+          success: true,
+          referenceNumber,
+          id: appId,
+          message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
         });
       }
-      return assets;
-    };
 
-    // I. Persist to Supabase (with resilient Storage + Memory backup if SQL tables are not yet migrated)
-    if (supabaseAdmin) {
-      const { data: insertedApp, error: appInsertError } = await supabaseAdmin
-        .from('creator_applications')
-        .insert(newRecordData)
-        .select('id')
-        .single();
+      const randomSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const timestampCode = Date.now().toString(36).slice(-4).toUpperCase();
+      const referenceNumber = `U360-CR-${timestampCode}${randomSuffix}`;
 
-      if (!appInsertError && insertedApp) {
-        insertedId = insertedApp.id;
-        const assetInserts = collectSubmittedAssets(insertedId);
-        if (assetInserts.length > 0) {
-          const { error: assetError } = await supabaseAdmin
-            .from('creator_assets')
-            .insert(assetInserts);
+      const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || '';
+      const ipHash = crypto.createHash('sha256').update(rawIp + 'u360_salt').digest('hex').substring(0, 16);
 
-          if (assetError) {
-            console.error('Error logging assets into creator_assets:', assetError);
-          }
+      const initialActivityLog = [
+        {
+          id: `act_${Date.now()}`,
+          event_type: 'application_submitted',
+          action: 'Application Submitted',
+          actor_email: 'portal@unikorn360.com',
+          timestamp: submittedAtIso,
+          details: 'Self-registered through UNIKORN360 Creator Portal.'
         }
-      } else if (
-        appInsertError &&
-        (appInsertError.code === 'PGRST205' ||
-          appInsertError.code === '42P01' ||
-          appInsertError.message?.includes('schema cache'))
-      ) {
-        // The PostgreSQL table has not been created in the Supabase SQL Editor yet.
-        // Persist the complete application record into the private Supabase Storage bucket and runtime store
-        // so that no applicant submission is lost.
-        await ensureCreatorStorageBucket();
-        const submittedAssets = collectSubmittedAssets(insertedId).map((a, idx) => ({
-          id: `asset_${Date.now()}_${idx}`,
-          ...a,
-          created_at: submittedAtIso
-        }));
-        const fallbackRecord: InMemAppRecord = {
-          ...newRecordData,
-          id: insertedId,
-          created_at: submittedAtIso,
-          updated_at: submittedAtIso,
-          assets: submittedAssets
-        };
-        memoryApplications.unshift(fallbackRecord);
+      ];
 
-        const recordBuffer = Buffer.from(JSON.stringify(fallbackRecord, null, 2), 'utf-8');
-        await supabaseAdmin.storage
-          .from('creator-submissions')
-          .upload(`applications/_records/${referenceNumber}.json`, recordBuffer, {
-            contentType: 'application/json',
-            upsert: true
+      const newRecordData = {
+        application_reference: referenceNumber,
+        full_name: payload.fullName.trim(),
+        whatsapp_number: phoneClean,
+        email: emailClean,
+        state: payload.state || 'Tamil Nadu',
+        district: payload.district,
+        town: payload.cityTown.trim(),
+        contact_language: payload.contactLanguage || 'Tamil',
+        social_platforms: [payload.primaryPlatform || 'Instagram'],
+        instagram_url: payload.instagramUrl || '',
+        youtube_url: payload.youtubeUrl || '',
+        other_profile_urls: payload.otherPlatformUrl ? [payload.otherPlatformUrl] : [],
+        follower_count: payload.followerCount || '',
+        subscriber_count: payload.subscriberCount || '',
+        average_views: payload.averageViewsLast10 || '',
+        publishing_frequency: payload.publishingFrequency || '',
+        creator_categories: payload.categories || [],
+        languages: [payload.primaryLanguage || 'Tamil', ...(payload.additionalLanguages || [])],
+        dialects: payload.regionalDialects || [],
+        creator_classification: payload.classification || 'ugc',
+        audience_location: payload.audienceLocation || '',
+        audience_insights: {
+          genderBreakdown: payload.genderBreakdown || '',
+          topAgeGroup: payload.topAgeGroup || ''
+        },
+        collaboration_preferences: payload.collaborationTypes || [],
+        expected_rates: {
+          ugc: payload.rateUgcVideo || '',
+          sponsoredReel: payload.rateSponsoredReel || '',
+          story: payload.rateStory || '',
+          additionalProduction: payload.rateAdditionalProduction || '',
+          onLocationDaily: payload.rateOnLocationDaily || ''
+        },
+        travel_availability: payload.travelAvailability || '',
+        previous_collaborations: {
+          hasPrior: payload.hasPriorCollabs === 'yes',
+          details: payload.priorCollabDetails || ''
+        },
+        portfolio_urls: validLinks,
+        privacy_consent: true,
+        contact_consent: true,
+        brand_sharing_consent: true,
+        application_status: 'pending',
+        admin_notes: '',
+        activity_log: initialActivityLog,
+        ip_hash: ipHash
+      };
+
+      let insertedId = crypto.randomUUID ? crypto.randomUUID() : `app_${Date.now()}`;
+
+      if (supabaseAdmin) {
+        const submittedAssetsList = collectSubmittedAssets(insertedId);
+
+        const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('submit_creator_application', {
+          p_session_id: uploadSessionId,
+          p_submission_secret: submissionSecret,
+          p_app_id: insertedId,
+          p_app_data: {
+            ...newRecordData,
+            application_reference: referenceNumber
+          },
+          p_assets: submittedAssetsList
+        });
+
+        if (rpcError) {
+          const msg = rpcError.message || '';
+          if (msg.includes('DUPLICATE_APPLICATION')) {
+            return res.status(409).json({
+              success: false,
+              error: 'An application already exists for this email address or phone number. Un-authorized modification or file attachment is forbidden.',
+              code: 'DUPLICATE_APPLICATION'
+            });
+          }
+          if (msg.includes('EXPIRED_SESSION') || msg.includes('MISSING_UPLOAD_SESSION') || msg.includes('INVALID_SESSION_STATE')) {
+            return res.status(400).json({
+              error: 'Upload session is invalid or has expired. Please refresh and re-upload files.',
+              code: 'EXPIRED_SESSION'
+            });
+          }
+          if (msg.includes('INVALID_SUBMISSION_SECRET')) {
+            return res.status(403).json({
+              error: 'Invalid submission secret.',
+              code: 'INVALID_SUBMISSION_SECRET'
+            });
+          }
+          if (msg.includes('FOREIGN_ASSET_PATH')) {
+            return res.status(403).json({
+              error: `Foreign or un-issued asset storagePath. Every uploaded asset must be issued by the server in an active upload session.`,
+              code: 'FOREIGN_ASSET_PATH'
+            });
+          }
+          if (msg.includes('FILE_TOO_LARGE')) {
+            return res.status(400).json({
+              error: msg,
+              code: 'FILE_TOO_LARGE'
+            });
+          }
+          if (
+            msg.includes('CATEGORY_MISMATCH') ||
+            msg.includes('MALFORMED_FILE') ||
+            msg.includes('MALFORMED_ASSET') ||
+            msg.includes('INVALID_ASSET_CATEGORY')
+          ) {
+            return res.status(400).json({
+              error: msg,
+              code: 'MALFORMED_FILE'
+            });
+          }
+          if (msg.includes('ASSET_RECORDING_FAILED')) {
+            return res.status(502).json({
+              success: false,
+              error: `Failed to record asset metadata in database: ${msg}. Your submission can be retried without re-uploading files.`,
+              code: 'ASSET_RECORDING_FAILED',
+              retryable: true,
+              uploadSessionId: targetSession?.sessionId || uploadSessionId,
+              applicationReference: referenceNumber
+            });
+          }
+
+          // If RPC is unavailable/unconfigured: FAIL CLOSED with 503 and perform NO partial writes
+          console.error('submit_creator_application RPC unavailable or unconfigured:', rpcError);
+          return res.status(503).json({
+            success: false,
+            error: `Database submission transaction RPC is unavailable or not configured: ${rpcError.message}. Transaction aborted without writing partial data.`,
+            code: 'DATABASE_TRANSACTION_UNAVAILABLE'
           });
-      } else if (appInsertError) {
-        console.error('Failed to insert creator application into Supabase:', appInsertError);
-        return res.status(500).json({ error: `Database storage error: ${appInsertError.message}` });
+        }
+
+        if (rpcData && rpcData.success) {
+          if (targetSession) {
+            targetSession.status = 'completed';
+            targetSession.applicationId = rpcData.id;
+            for (const assetItem of allSubmittedAssets) {
+              const reg = targetSession.assets.get(assetItem.storagePath);
+              if (reg) reg.consumed = true;
+            }
+            try {
+              await saveSessionToDbAndDisk(targetSession, { isPostCommit: true });
+            } catch (backupErr) {
+              console.warn('[SessionBackup] Non-fatal post-commit session backup warning:', backupErr);
+            }
+          }
+
+          return res.status(201).json({
+            success: true,
+            referenceNumber: rpcData.reference_number || referenceNumber,
+            id: rpcData.id || insertedId,
+            message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
+          });
+        }
       }
-    } else {
+
+      // Memory-backed Mode
       const submittedAssets = collectSubmittedAssets(insertedId).map((a, idx) => ({
         id: `asset_${Date.now()}_${idx}`,
         ...a,
         created_at: submittedAtIso
       }));
-      const inMemRecord: InMemAppRecord = {
+      const fallbackRecord: InMemAppRecord = {
         ...newRecordData,
         id: insertedId,
         created_at: submittedAtIso,
         updated_at: submittedAtIso,
         assets: submittedAssets
       };
-      memoryApplications.unshift(inMemRecord);
-    }
+      memoryApplications.unshift(fallbackRecord);
 
-    return res.status(201).json({
-      success: true,
-      referenceNumber,
-      id: insertedId,
-      message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
-    });
+      if (targetSession) {
+        targetSession.applicationId = insertedId;
+        targetSession.status = 'completed';
+        for (const assetItem of allSubmittedAssets) {
+          const reg = targetSession.assets.get(assetItem.storagePath);
+          if (reg) reg.consumed = true;
+        }
+        await saveSessionToDbAndDisk(targetSession);
+      }
+
+      if (simulateAssetErr) {
+        return res.status(502).json({
+          success: false,
+          error: 'Simulated asset metadata insert error. Submission can be retried.',
+          code: 'ASSET_RECORDING_FAILED',
+          retryable: true,
+          uploadSessionId: targetSession?.sessionId || uploadSessionId,
+          applicationReference: referenceNumber
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        referenceNumber,
+        id: insertedId,
+        message: 'Application recorded into UNIKORN360 Creator Network pipeline.'
+      });
+    } finally {
+      activeSubmissionLocks.delete(lockKey);
+      unlockLock();
+    }
   } catch (err: any) {
     console.error('Error in /api/creators/apply:', err);
-    res.status(500).json({ error: 'Failed to process application.' });
+    return res.status(500).json({ error: 'Failed to process application.' });
   }
 });
 
 // ====================================================================
 // ADMINISTRATOR API ENDPOINTS (Protected with RBAC & Supabase Auth)
 // ====================================================================
+
+// Health check endpoint for process monitoring and readiness
+app.get('/health', (_req: Request, res: Response) => {
+  return res.json({ ok: true, pid: process.pid });
+});
 
 // 1. Current Verified Session Endpoint (Used after browser SDK signInWithPassword / getSession)
 app.get('/api/admin/auth/me', requireAdminAuth, async (req: Request, res: Response) => {

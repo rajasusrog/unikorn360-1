@@ -1,12 +1,21 @@
+process.env.NODE_ENV = 'test';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
+import { createClient } from '@supabase/supabase-js';
+import type { PGlite } from '@electric-sql/pglite';
 import {
   app,
   memoryApplications,
   memoryAdminUsers,
   memoryTokens,
-  resolveSupabaseConfig
+  activeUploadSessions,
+  resolveSupabaseConfig,
+  saveSessionToDbAndDisk,
+  setTestBackupFailureTrigger,
+  getOrLoadUploadSession,
+  setSupabaseAdmin
 } from '../server.js';
 import {
   ResilientServicesService,
@@ -20,8 +29,12 @@ import {
 import {
   runDatabaseVerificationSuite,
   runMigrationReconciliationRegressionSuite,
+  runCreatorSubmissionRpcDatabaseVerificationSuite,
   buildAllTenActivityLogFixtures,
   buildNestedJsonPrivacyFixtures,
+  bootstrapSupabaseCompatiblePostgres,
+  DETERMINISTIC_MIGRATION_ORDER,
+  runAsRole,
   PRIVACY_FIXTURE_CONSTANTS,
   DbTestScenarioResult
 } from './db-evaluator-privacy.test.js';
@@ -1282,15 +1295,1547 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Scenarios 35–39: Dedicated Migration Reconciliation Regression Suite (PGlite PG17.4)
-    //  - Regression 1: Intentionally archived custom division remains archived
-    //  - Regression 2: Intentionally archived custom service remains archived
-    //  - Regression 3: Draft remains draft
-    //  - Regression 4: Existing approved publication remains published
-    //  - Regression 5: Missing seed services are inserted as drafts
+    // Scenario 40: Creator Upload Hardening: Overwrite attempt rejected (HTTP 409 OBJECT_EXISTS)
     // -------------------------------------------------------------
-    const migrationRegressionResults = await runMigrationReconciliationRegressionSuite(35);
+    {
+      const sessRes = await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' });
+      const sessData = await sessRes.json();
+      const sessId = sessData.uploadSessionId;
+      const secret = sessData.submissionSecret;
+
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+      const base64Mp4 = validMp4Buf.toString('base64');
+
+      const signRes = await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessId,
+          submissionSecret: secret,
+          filename: 'sample_video.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      });
+      const signData = await signRes.json();
+
+      const upload1 = await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessId,
+          submissionSecret: secret,
+          storagePath: signData.storagePath,
+          fileData: base64Mp4,
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const upload2 = await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessId,
+          submissionSecret: secret,
+          storagePath: signData.storagePath,
+          fileData: base64Mp4,
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+      const body2 = await upload2.json().catch(() => ({}));
+
+      const passed = upload1.status === 200 && upload2.status === 409 && body2.code === 'OBJECT_EXISTS';
+      results.push({
+        scenarioNumber: 40,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Unauthorized file overwrite attempt rejected (upsert: false / OBJECT_EXISTS)',
+        passed,
+        expected: 'HTTP 409 OBJECT_EXISTS on second upload attempt to same storagePath',
+        actual: `upload1=${upload1.status}, upload2=${upload2.status} ${body2.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 41: Creator Upload Hardening: Foreign asset path rejected on apply
+    // -------------------------------------------------------------
+    {
+      const sessDataA = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const sessA = sessDataA.uploadSessionId;
+      const secretA = sessDataA.submissionSecret;
+
+      const sessDataB = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const sessB = sessDataB.uploadSessionId;
+      const secretB = sessDataB.submissionSecret;
+
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const signA = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessA,
+          submissionSecret: secretA,
+          filename: 'videoA.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessA,
+          submissionSecret: secretA,
+          storagePath: signA.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const applyRes = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessB,
+          submissionSecret: secretB,
+          fullName: 'Foreign Path Tester',
+          whatsapp: '+919988776655',
+          email: 'foreign.path@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=valid1'],
+          uploadedVideos: [{ name: 'videoA.mp4', storagePath: signA.storagePath }]
+        })
+      });
+      const applyBody = await applyRes.json().catch(() => ({}));
+
+      const passed = applyRes.status === 403 && applyBody.code === 'FOREIGN_ASSET_PATH';
+      results.push({
+        scenarioNumber: 41,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Foreign asset path from unassigned upload session rejected on application submit',
+        passed,
+        expected: 'HTTP 403 FOREIGN_ASSET_PATH',
+        actual: `HTTP ${applyRes.status} ${applyBody.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 42: Creator Upload Hardening: Malformed file signature rejected
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const sess = sessData.uploadSessionId;
+      const secret = sessData.submissionSecret;
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess,
+          submissionSecret: secret,
+          filename: 'fake_video.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      const fakeBuffer = Buffer.from('THIS IS NOT A VALID MP4 FILE CONTAINER CONTENT AT ALL');
+      const relayRes = await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess,
+          submissionSecret: secret,
+          storagePath: sign.storagePath,
+          fileData: fakeBuffer.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+      const relayBody = await relayRes.json().catch(() => ({}));
+
+      const passed = relayRes.status === 400 && relayBody.code === 'MALFORMED_FILE';
+      results.push({
+        scenarioNumber: 42,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Malformed file content rejected due to magic byte signature mismatch',
+        passed,
+        expected: 'HTTP 400 MALFORMED_FILE',
+        actual: `HTTP ${relayRes.status} ${relayBody.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 43: Creator Upload Hardening: Expired upload session rejected
+    // -------------------------------------------------------------
+    {
+      const expiredSessId = 'expired_session_test_99';
+      activeUploadSessions.set(expiredSessId, {
+        sessionId: expiredSessId,
+        submissionSecret: 'secret_expired_test_99',
+        status: 'created',
+        createdAt: Date.now() - 3600000,
+        expiresAt: Date.now() - 1000,
+        assets: new Map()
+      });
+
+      const signRes = await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: expiredSessId,
+          filename: 'sample.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      });
+      const signBody = await signRes.json().catch(() => ({}));
+
+      const passed = signRes.status === 400 && signBody.code === 'EXPIRED_SESSION';
+      results.push({
+        scenarioNumber: 43,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Expired upload session rejected on upload signature request',
+        passed,
+        expected: 'HTTP 400 EXPIRED_SESSION',
+        actual: `HTTP ${signRes.status} ${signBody.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 44: Creator Upload Hardening: Asset metadata insert error yields recoverable non-success response
+    // -------------------------------------------------------------
+    {
+      const sess = (await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json()).uploadSessionId;
+
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess,
+          filename: 'vid_retry.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess,
+          storagePath: sign.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const applyRes = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess,
+          fullName: 'Asset Error Retry Tester',
+          whatsapp: '+919911223344',
+          email: 'asset.retry@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=sample1'],
+          uploadedVideos: [{ name: 'vid_retry.mp4', storagePath: sign.storagePath }],
+          simulate_asset_error: true
+        })
+      });
+      const applyBody = await applyRes.json().catch(() => ({}));
+
+      const passed = applyRes.status === 502 && applyBody.code === 'ASSET_RECORDING_FAILED' && applyBody.retryable === true;
+      results.push({
+        scenarioNumber: 44,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Asset metadata insert error returns recoverable non-success response (retryable: true)',
+        passed,
+        expected: 'HTTP 502 ASSET_RECORDING_FAILED with retryable=true',
+        actual: `HTTP ${applyRes.status} code=${applyBody.code} retryable=${applyBody.retryable}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 50: Duplicate/Tampering protection: Matching email/phone without valid secret rejected (HTTP 409 DUPLICATE_APPLICATION)
+    // -------------------------------------------------------------
+    {
+      const applyRes = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: 'Karthik Senthilnathan Imposter',
+          whatsapp: '+91 94432 18900', // matches existing mem-app-01
+          email: 'karthik.maduraifoodie@gmail.com', // matches existing mem-app-01
+          state: 'Tamil Nadu',
+          district: 'Madurai',
+          cityTown: 'Madurai City',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=tamper1', 'https://youtube.com/watch?v=tamper2']
+        })
+      });
+      const body = await applyRes.json().catch(() => ({}));
+      const passed = applyRes.status === 409 && body.code === 'DUPLICATE_APPLICATION';
+      results.push({
+        scenarioNumber: 50,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Matching another applicant email/phone without secret returns HTTP 409 DUPLICATE_APPLICATION',
+        passed,
+        expected: 'HTTP 409 DUPLICATE_APPLICATION',
+        actual: `HTTP ${applyRes.status} ${body.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 51: Asset failure followed by authorized retry with valid submissionSecret completes same record
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'retry_sample.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          storagePath: sign.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      // First attempt fails with simulated asset error
+      const attempt1 = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-test-simulate-asset-error': 'true' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          fullName: 'Retry Applicant',
+          whatsapp: '+919876599999',
+          email: 'retry.applicant@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=retry1'],
+          uploadedVideos: [{ name: 'retry_sample.mp4', storagePath: sign.storagePath }]
+        })
+      });
+      const body1 = await attempt1.json();
+
+      // Second attempt retries with same session & submissionSecret
+      const attempt2 = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          fullName: 'Retry Applicant',
+          whatsapp: '+919876599999',
+          email: 'retry.applicant@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=retry1'],
+          uploadedVideos: [{ name: 'retry_sample.mp4', storagePath: sign.storagePath }]
+        })
+      });
+      const body2 = await attempt2.json();
+
+      const passed = attempt1.status === 502 && body1.retryable === true &&
+        attempt2.status === 201 && body2.referenceNumber === body1.applicationReference;
+
+      results.push({
+        scenarioNumber: 51,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Asset failure followed by authorized retry with valid submissionSecret completes same application record',
+        passed,
+        expected: 'Attempt 1: 502 retryable, Attempt 2: 201 with same reference number',
+        actual: `Attempt1=${attempt1.status}, Attempt2=${attempt2.status} ref1=${body1.applicationReference} ref2=${body2.referenceNumber}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 52: PostgreSQL upsert with onConflict: 'storage_path' succeeds
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'upsert_test.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          storagePath: sign.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const apply1 = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          fullName: 'Upsert Tester',
+          whatsapp: '+919111122222',
+          email: 'upsert.tester@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=upsert1'],
+          uploadedVideos: [{ name: 'upsert_test.mp4', storagePath: sign.storagePath }]
+        })
+      });
+
+      const passed = apply1.status === 201;
+      results.push({
+        scenarioNumber: 52,
+        category: 'Creator Upload Hardening' as any,
+        name: 'PostgreSQL upsert with onConflict: storage_path succeeds',
+        passed,
+        expected: 'HTTP 201 Created',
+        actual: `HTTP ${apply1.status}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 53: Server restart (activeUploadSessions.clear()) reloads session from disk/db and preserves state
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const sessId = sessData.uploadSessionId;
+
+      // Clear in-memory Map to simulate server process restart
+      activeUploadSessions.clear();
+
+      const signRes = await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'restart_test.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      });
+      const signBody = await signRes.json();
+
+      const passed = signRes.status === 200 && signBody.uploadSessionId === sessId;
+      results.push({
+        scenarioNumber: 53,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Server restart (in-memory clear) reloads upload session from disk/db and preserves state',
+        passed,
+        expected: 'HTTP 200 with restored sessionId',
+        actual: `HTTP ${signRes.status} sessId=${signBody.uploadSessionId}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 54: Two independent server requests with same session/secret do not create duplicate records
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'concurrent.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          storagePath: sign.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const payload = {
+        uploadSessionId: sessData.uploadSessionId,
+        submissionSecret: sessData.submissionSecret,
+        fullName: 'Concurrent Tester',
+        whatsapp: '+919222233333',
+        email: 'concurrent.tester@example.com',
+        state: 'Tamil Nadu',
+        district: 'Chennai',
+        cityTown: 'Chennai',
+        classification: 'ugc',
+        categories: ['Food & Culinary'],
+        consentAccuracy: true,
+        consentProcessing: true,
+        consentContact: true,
+        consentBrandSharing: true,
+        sampleLinks: ['https://youtube.com/watch?v=concurrent1'],
+        uploadedVideos: [{ name: 'concurrent.mp4', storagePath: sign.storagePath }]
+      };
+
+      const [res1, res2] = await Promise.all([
+        fetch(`${baseUrl}/api/creators/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }),
+        fetch(`${baseUrl}/api/creators/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+      ]);
+
+      const body1 = await res1.json();
+      const body2 = await res2.json();
+
+      const sameRef = body1.referenceNumber === body2.referenceNumber;
+      const passed = res1.status === 201 && res2.status === 201 && sameRef;
+
+      results.push({
+        scenarioNumber: 54,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Two concurrent requests with same uploadSessionId return same reference number without duplicate records',
+        passed,
+        expected: 'HTTP 201 on both, same referenceNumber',
+        actual: `res1=${res1.status}, res2=${res2.status}, ref1=${body1.referenceNumber}, ref2=${body2.referenceNumber}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 55: Oversized and category-mismatched uploads rejected with HTTP 400
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+
+      const signRes = await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'huge_video.mp4',
+          fileType: 'video/mp4',
+          fileSize: 50 * 1024 * 1024, // 50MB exceeds 30MB limit
+          category: 'video_sample'
+        })
+      });
+      const body = await signRes.json();
+
+      const passed = signRes.status === 400 && body.code === 'FILE_TOO_LARGE';
+      results.push({
+        scenarioNumber: 55,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Oversized file upload rejected (HTTP 400 FILE_TOO_LARGE)',
+        passed,
+        expected: 'HTTP 400 FILE_TOO_LARGE',
+        actual: `HTTP ${signRes.status} ${body.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 56: Normal submission without test simulation header succeeds with HTTP 201
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          filename: 'normal.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          storagePath: sign.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const applyRes = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sessData.uploadSessionId,
+          submissionSecret: sessData.submissionSecret,
+          fullName: 'Normal Applicant',
+          whatsapp: '+919333344444',
+          email: 'normal.applicant@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=normal1'],
+          uploadedVideos: [{ name: 'normal.mp4', storagePath: sign.storagePath }]
+        })
+      });
+
+      const passed = applyRes.status === 201;
+      results.push({
+        scenarioNumber: 56,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Normal submission without test simulation header succeeds with HTTP 201',
+        passed,
+        expected: 'HTTP 201 Created',
+        actual: `HTTP ${applyRes.status}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 57: Secret retrieval protection: existing session secret never returned without secret possession
+    // -------------------------------------------------------------
+    {
+      const sessData = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const existingId = sessData.uploadSessionId;
+
+      // Access without secret
+      const noSecretRes = await fetch(`${baseUrl}/api/creators/upload-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadSessionId: existingId })
+      });
+      const noSecretBody = await noSecretRes.json();
+
+      // Access with secret
+      const withSecretRes = await fetch(`${baseUrl}/api/creators/upload-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadSessionId: existingId, submissionSecret: sessData.submissionSecret })
+      });
+      const withSecretBody = await withSecretRes.json();
+
+      const passed = noSecretRes.status === 400 &&
+        noSecretBody.code === 'MISSING_SUBMISSION_SECRET' &&
+        withSecretRes.status === 200 &&
+        withSecretBody.submissionSecret === undefined;
+
+      results.push({
+        scenarioNumber: 57,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Existing session secret never disclosed based on ID; secret possession required for access',
+        passed,
+        expected: 'HTTP 400 MISSING_SUBMISSION_SECRET on lookup without secret; 200 without secret disclosure on valid secret',
+        actual: `noSecretStatus=${noSecretRes.status} code=${noSecretBody.code}, withSecretStatus=${withSecretRes.status} secretDisclosed=${withSecretBody.submissionSecret !== undefined}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 58: Unrelated-session bypass regression: Newly created session cannot attach to existing applicant
+    // -------------------------------------------------------------
+    {
+      // 1. Legitimate Applicant creates session S1 and submits
+      const sess1 = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+      const validMp4Buf = Buffer.alloc(32);
+      validMp4Buf.write('ftyp', 4);
+
+      const sign1 = await (await fetch(`${baseUrl}/api/creators/upload-sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess1.uploadSessionId,
+          submissionSecret: sess1.submissionSecret,
+          filename: 'original.mp4',
+          fileType: 'video/mp4',
+          fileSize: 1024,
+          category: 'video_sample'
+        })
+      })).json();
+
+      await fetch(`${baseUrl}/api/creators/upload-relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess1.uploadSessionId,
+          submissionSecret: sess1.submissionSecret,
+          storagePath: sign1.storagePath,
+          fileData: validMp4Buf.toString('base64'),
+          fileType: 'video/mp4',
+          category: 'video_sample'
+        })
+      });
+
+      const apply1 = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess1.uploadSessionId,
+          submissionSecret: sess1.submissionSecret,
+          fullName: 'Original Creator',
+          whatsapp: '+919777788888',
+          email: 'original.creator@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=orig1'],
+          uploadedVideos: [{ name: 'original.mp4', storagePath: sign1.storagePath }]
+        })
+      });
+      const body1 = await apply1.json();
+
+      // 2. Attacker creates brand new unrelated session S2 with valid secret
+      const sess2 = await (await fetch(`${baseUrl}/api/creators/upload-session`, { method: 'POST' })).json();
+
+      // Attacker attempts to submit against original applicant's email using S2 + S2 secret
+      const bypassAttempt = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadSessionId: sess2.uploadSessionId,
+          submissionSecret: sess2.submissionSecret,
+          fullName: 'Attacker Tamper',
+          whatsapp: '+919777788888', // matches original applicant
+          email: 'original.creator@example.com', // matches original applicant
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          sampleLinks: ['https://youtube.com/watch?v=tamper1', 'https://youtube.com/watch?v=tamper2']
+        })
+      });
+      const bypassBody = await bypassAttempt.json();
+
+      const passed = apply1.status === 201 && bypassAttempt.status === 409 && bypassBody.code === 'DUPLICATE_APPLICATION';
+      results.push({
+        scenarioNumber: 58,
+        category: 'Creator Upload Hardening' as any,
+        name: 'Unrelated session with valid secret cannot modify existing applicant (HTTP 409 DUPLICATE_APPLICATION)',
+        passed,
+        expected: 'HTTP 201 on original creation; HTTP 409 DUPLICATE_APPLICATION on unrelated session attempt',
+        actual: `apply1Status=${apply1.status}, bypassStatus=${bypassAttempt.status} code=${bypassBody.code || ''}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 59: Multi-instance / two-process concurrency check across genuinely separate OS processes
+    // -------------------------------------------------------------
+    {
+      // 1. Initialize fresh disposable Postgres database and apply all clean-install migrations
+      const db = await bootstrapSupabaseCompatiblePostgres();
+      for (const mig of DETERMINISTIC_MIGRATION_ORDER) {
+        const sql = fs.readFileSync(path.resolve(process.cwd(), 'supabase/migrations', mig), 'utf8');
+        await db.exec(sql);
+      }
+
+      // Storage files repository for disposable bridge
+      const storageFiles = new Map<string, { buffer: Buffer; contentType: string }>();
+
+      // Serialized DB query runner to prevent concurrent statement execution on single-connection PGlite
+      let dbLock = Promise.resolve();
+      const runSerialDb = <T>(fn: () => Promise<T>): Promise<T> => {
+        const next = dbLock.then(fn, fn);
+        dbLock = next.then(() => {}, () => {});
+        return next;
+      };
+
+      // 2. Comprehensive Ephemeral HTTP database & storage bridge for Supabase client
+      const dbBridge = http.createServer(async (req, res) => {
+        const urlObj = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+        const pathname = urlObj.pathname;
+        const method = req.method || 'GET';
+
+        // A. submit_creator_application RPC
+        if (method === 'POST' && pathname === '/rest/v1/rpc/submit_creator_application') {
+          let bodyStr = '';
+          req.on('data', (chunk) => { bodyStr += chunk; });
+          req.on('end', async () => {
+            try {
+              const body = JSON.parse(bodyStr);
+              const rpcResult = await runSerialDb(() =>
+                runAsRole(
+                  db,
+                  'service_role',
+                  null,
+                  `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+                  [
+                    body.p_session_id,
+                    body.p_submission_secret,
+                    body.p_app_id,
+                    JSON.stringify(body.p_app_data),
+                    JSON.stringify(body.p_assets)
+                  ]
+                )
+              );
+              const rpcData = (rpcResult.rows[0] as any).res;
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(rpcData));
+            } catch (err: any) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ code: err.code || 'RPC_ERROR', message: err.message }));
+            }
+          });
+          return;
+        }
+
+        // B. creator_upload_sessions REST endpoint
+        if (pathname === '/rest/v1/creator_upload_sessions') {
+          if (method === 'GET') {
+            const urlSearch = decodeURIComponent(urlObj.search || '');
+            const idMatch = urlSearch.match(/id=eq\.([a-zA-Z0-9_-]+)/);
+            const sessId = idMatch ? idMatch[1] : null;
+            try {
+              const rowsRes = await runSerialDb(() =>
+                db.query<any>(
+                  `SELECT id, submission_secret, status, application_id, assets, created_at, expires_at
+                   FROM creator_upload_sessions
+                   WHERE ($1::text IS NULL OR id = $1)
+                   LIMIT 1`,
+                  [sessId]
+                )
+              );
+              const row = rowsRes.rows[0];
+              const accept = req.headers.accept || '';
+              if (accept.includes('vnd.pgrst.object+json')) {
+                if (row) {
+                  res.writeHead(200, { 'Content-Type': 'application/vnd.pgrst.object+json' });
+                  res.end(JSON.stringify(row));
+                } else {
+                  res.writeHead(406, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ code: 'PGRST116', message: 'The result contains 0 rows' }));
+                }
+              } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(row ? [row] : []));
+              }
+            } catch (err: any) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+          }
+
+          if (method === 'POST') {
+            let bodyStr = '';
+            req.on('data', (chunk) => { bodyStr += chunk; });
+            req.on('end', async () => {
+              try {
+                const body = JSON.parse(bodyStr);
+                const items = Array.isArray(body) ? body : [body];
+                for (const item of items) {
+                  await runSerialDb(() =>
+                    db.query(
+                      `INSERT INTO creator_upload_sessions (id, submission_secret, status, application_id, assets, created_at, expires_at)
+                       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+                       ON CONFLICT (id) DO UPDATE SET
+                         submission_secret = EXCLUDED.submission_secret,
+                         status = EXCLUDED.status,
+                         application_id = EXCLUDED.application_id,
+                         assets = EXCLUDED.assets,
+                         expires_at = EXCLUDED.expires_at`,
+                      [
+                        item.id,
+                        item.submission_secret,
+                        item.status,
+                        item.application_id || null,
+                        JSON.stringify(item.assets || []),
+                        item.created_at || new Date().toISOString(),
+                        item.expires_at || new Date(Date.now() + 3600000).toISOString()
+                      ]
+                    )
+                  );
+                }
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(body));
+              } catch (err: any) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // C. creator_applications REST endpoint
+        if (pathname === '/rest/v1/creator_applications') {
+          if (method === 'GET') {
+            const urlSearch = decodeURIComponent(urlObj.search || '');
+            const emailMatch = urlSearch.match(/email\.eq\.([^\s,)]+)/);
+            const phoneMatch = urlSearch.match(/whatsapp_number\.eq\.([^\s,)]+)/);
+            const idMatch = urlSearch.match(/id(?:=eq\.|\.eq\.)([^\s&,)]+)/);
+            try {
+              let rowsRes: any;
+              if (idMatch) {
+                rowsRes = await runSerialDb(() =>
+                  db.query<any>(
+                    `SELECT id, application_reference, application_status, created_at
+                     FROM creator_applications
+                     WHERE id::text = $1
+                     LIMIT 1`,
+                    [idMatch[1]]
+                  )
+                );
+              } else if (emailMatch || phoneMatch) {
+                rowsRes = await runSerialDb(() =>
+                  db.query<any>(
+                    `SELECT id, application_reference, application_status, created_at
+                     FROM creator_applications
+                     WHERE (email = $1 OR whatsapp_number = $2)
+                       AND application_status != 'rejected'
+                     LIMIT 1`,
+                    [emailMatch ? emailMatch[1] : '', phoneMatch ? phoneMatch[1] : '']
+                  )
+                );
+              } else {
+                rowsRes = await runSerialDb(() =>
+                  db.query<any>(`SELECT id, application_reference, application_status, created_at FROM creator_applications LIMIT 1`)
+                );
+              }
+              const row = rowsRes.rows[0];
+              const accept = req.headers.accept || '';
+              if (accept.includes('vnd.pgrst.object+json')) {
+                if (row) {
+                  res.writeHead(200, { 'Content-Type': 'application/vnd.pgrst.object+json' });
+                  res.end(JSON.stringify(row));
+                } else {
+                  res.writeHead(406, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ code: 'PGRST116', message: 'The result contains 0 rows' }));
+                }
+              } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(row ? [row] : []));
+              }
+            } catch (err: any) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+            return;
+          }
+        }
+
+        // D. Storage API
+        if (pathname.startsWith('/storage/v1/bucket')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: 'creator-submissions', name: 'creator-submissions', public: false }));
+          return;
+        }
+
+        if (pathname.startsWith('/storage/v1/object/upload/sign/')) {
+          let subPath = pathname.replace('/storage/v1/object/upload/sign/', '');
+          if (subPath.startsWith('creator-submissions/')) {
+            subPath = subPath.slice('creator-submissions/'.length);
+          }
+          const decoded = decodeURIComponent(subPath);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            url: `/storage/v1/object/creator-submissions/${decoded}`,
+            signedUrl: `/storage/v1/object/creator-submissions/${decoded}`,
+            token: 'test_signed_token'
+          }));
+          return;
+        }
+
+        if (pathname.startsWith('/storage/v1/object/') && method === 'GET') {
+          let subPath = pathname.replace('/storage/v1/object/', '');
+          if (subPath.startsWith('authenticated/')) {
+            subPath = subPath.slice('authenticated/'.length);
+          }
+          if (subPath.startsWith('creator-submissions/')) {
+            subPath = subPath.slice('creator-submissions/'.length);
+          }
+          const decoded = decodeURIComponent(subPath);
+          const file = storageFiles.get(decoded);
+          if (file) {
+            res.writeHead(200, { 'Content-Type': file.contentType });
+            res.end(file.buffer);
+          } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ statusCode: '404', error: 'Not Found', message: `Object not found at ${decoded}` }));
+          }
+          return;
+        }
+
+        if (pathname.startsWith('/storage/v1/object/') && method === 'POST') {
+          let subPath = pathname.replace('/storage/v1/object/', '');
+          if (subPath.startsWith('authenticated/')) {
+            subPath = subPath.slice('authenticated/'.length);
+          }
+          if (subPath.startsWith('creator-submissions/')) {
+            subPath = subPath.slice('creator-submissions/'.length);
+          }
+          const decoded = decodeURIComponent(subPath);
+          const chunks: Buffer[] = [];
+          req.on('data', (c) => chunks.push(c));
+          req.on('end', () => {
+            const buf = Buffer.concat(chunks);
+            storageFiles.set(decoded, {
+              buffer: buf,
+              contentType: (req.headers['content-type'] as string) || 'application/octet-stream'
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ Key: decoded }));
+          });
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Not found: ${method} ${pathname}` }));
+      });
+
+      await new Promise<void>((resolve) => dbBridge.listen(0, '127.0.0.1', resolve));
+      const bridgePort = (dbBridge.address() as any).port;
+      const bridgeUrl = `http://127.0.0.1:${bridgePort}`;
+
+      // Helper to find available ports
+      const getFreePort = async (): Promise<number> => {
+        return new Promise((resolve) => {
+          const s = http.createServer();
+          s.listen(0, '127.0.0.1', () => {
+            const p = (s.address() as any).port;
+            s.close(() => resolve(p));
+          });
+        });
+      };
+
+      const port1 = await getFreePort();
+      const port2 = await getFreePort();
+
+      // Spawn two genuinely separate child processes
+      const proc1 = spawn('npx', ['tsx', 'tests/server-child-process.ts', String(port1), bridgeUrl], {
+        env: { ...process.env, NODE_ENV: 'test' },
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      const proc2 = spawn('npx', ['tsx', 'tests/server-child-process.ts', String(port2), bridgeUrl], {
+        env: { ...process.env, NODE_ENV: 'test' },
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      const waitForHealth = async (port: number): Promise<void> => {
+        const start = Date.now();
+        while (Date.now() - start < 10000) {
+          try {
+            const hRes = await fetch(`http://127.0.0.1:${port}/health`);
+            if (hRes.ok) return;
+          } catch {
+            // retry
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error(`Child process failed to become ready on port ${port}`);
+      };
+
+      try {
+        await Promise.all([waitForHealth(port1), waitForHealth(port2)]);
+
+        const distinctPids =
+          proc1.pid !== undefined &&
+          proc2.pid !== undefined &&
+          proc1.pid !== proc2.pid &&
+          proc1.pid !== process.pid &&
+          proc2.pid !== process.pid;
+
+        // Valid MP4 buffer with 'ftyp' signature for storage
+        const validMp4Buf = Buffer.alloc(64);
+        validMp4Buf.write('ftyp', 4);
+
+        // Seed verified upload session in database and storage
+        const twoProcSessionId = 'sess_two_proc_test_888';
+        const twoProcSecret = 'sec_two_proc_test_888';
+        const twoProcAssetPath = 'creators/samples/two_process_video.mp4';
+        storageFiles.set(twoProcAssetPath, { buffer: validMp4Buf, contentType: 'video/mp4' });
+
+        const twoProcAssets = [
+          [
+            twoProcAssetPath,
+            {
+              storagePath: twoProcAssetPath,
+              category: 'video_sample',
+              originalFilename: 'two_process_video.mp4',
+              mimeType: 'video/mp4',
+              fileSize: 10485760
+            }
+          ]
+        ];
+
+        await db.query(
+          `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+           VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+          [twoProcSessionId, twoProcSecret, JSON.stringify(twoProcAssets)]
+        );
+
+        const payload = {
+          uploadSessionId: twoProcSessionId,
+          submissionSecret: twoProcSecret,
+          fullName: 'Two Separate Process Applicant',
+          whatsapp: '+919444455555',
+          email: 'twoproc@example.com',
+          state: 'Tamil Nadu',
+          district: 'Chennai',
+          cityTown: 'Chennai',
+          classification: 'ugc',
+          categories: ['Food & Culinary'],
+          sampleLinks: ['https://youtube.com/watch?v=twoproc1'],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true,
+          uploadedVideos: [{ name: 'two_process_video.mp4', storagePath: twoProcAssetPath }]
+        };
+
+        const [proc1Res, proc2Res] = await Promise.all([
+          fetch(`http://127.0.0.1:${port1}/api/creators/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }),
+          fetch(`http://127.0.0.1:${port2}/api/creators/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+        ]);
+
+        const body1 = await proc1Res.json();
+        const body2 = await proc2Res.json();
+
+        // Check database: exactly 1 application created
+        const appCount = await db.query<{ cnt: string }>(
+          `SELECT count(*)::text as cnt FROM creator_applications WHERE email = $1`,
+          ['twoproc@example.com']
+        );
+        const sessCheck = await db.query<{ status: string; application_id: string }>(
+          `SELECT status, application_id FROM creator_upload_sessions WHERE id = $1`,
+          [twoProcSessionId]
+        );
+
+        const sameRef = body1.referenceNumber === body2.referenceNumber;
+        const countIsOne = appCount.rows[0]?.cnt === '1';
+        const sessionCompleted = sessCheck.rows[0]?.status === 'completed' && Boolean(sessCheck.rows[0]?.application_id);
+
+        const passed59 =
+          distinctPids &&
+          proc1Res.status === 201 &&
+          proc2Res.status === 201 &&
+          sameRef &&
+          countIsOne &&
+          sessionCompleted;
+
+        results.push({
+          scenarioNumber: 59,
+          category: 'Creator Upload Hardening' as any,
+          name: 'Two genuinely separate server child processes (different PIDs) sharing database return identical reference number without duplicate records',
+          passed: passed59,
+          expected: 'distinctPids=true, proc1=201, proc2=201, sameRef=true, dbAppCount=1, sessionCompleted=true',
+          actual: `distinctPids=${distinctPids} (p1=${proc1.pid}, p2=${proc2.pid}), p1Res=${proc1Res.status}, p2Res=${proc2Res.status}, ref1=${body1.referenceNumber}, ref2=${body2.referenceNumber}, dbCount=${appCount.rows[0]?.cnt}`
+        });
+
+        // -------------------------------------------------------------
+        // Scenario 68: Server B caches session; Server A completes it; Server B retries and returns original application
+        // -------------------------------------------------------------
+        {
+          const sessId68 = 'sess_cache_test_68';
+          const secret68 = 'sec_cache_test_68';
+          const assetPath68 = 'creators/samples/b_caches_video.mp4';
+          storageFiles.set(assetPath68, { buffer: validMp4Buf, contentType: 'video/mp4' });
+
+          const assets68 = [
+            [
+              assetPath68,
+              {
+                storagePath: assetPath68,
+                category: 'video_sample',
+                originalFilename: 'b_caches_video.mp4',
+                mimeType: 'video/mp4',
+                fileSize: 10485760
+              }
+            ]
+          ];
+
+          await db.query(
+            `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+             VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+            [sessId68, secret68, JSON.stringify(assets68)]
+          );
+
+          // 1. Server B loads and caches the session while it is in 'verified' status
+          const bPreload = await fetch(`http://127.0.0.1:${port2}/api/creators/upload-session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uploadSessionId: sessId68, submissionSecret: secret68 })
+          });
+          const bPreloadBody = await bPreload.json();
+
+          // 2. Server A receives apply request and completes the submission in database
+          const payload68 = {
+            uploadSessionId: sessId68,
+            submissionSecret: secret68,
+            fullName: 'Cache Test Applicant',
+            whatsapp: '+919555566666',
+            email: 'cachetest@example.com',
+            state: 'Tamil Nadu',
+            district: 'Chennai',
+            cityTown: 'Chennai',
+            classification: 'ugc',
+            categories: ['Food & Culinary'],
+            sampleLinks: ['https://youtube.com/watch?v=sample1'],
+            consentAccuracy: true,
+            consentProcessing: true,
+            consentContact: true,
+            consentBrandSharing: true,
+            uploadedVideos: [{ name: 'b_caches_video.mp4', storagePath: assetPath68 }]
+          };
+
+          const applyResA = await fetch(`http://127.0.0.1:${port1}/api/creators/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload68)
+          });
+          const applyBodyA = await applyResA.json();
+
+          // 3. Server B (which cached the session when it was still 'verified') now receives retry submission
+          const applyResB = await fetch(`http://127.0.0.1:${port2}/api/creators/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload68)
+          });
+          const applyBodyB = await applyResB.json();
+
+          // Database verification: exactly 1 application created
+          const countCheck = await db.query<{ cnt: string }>(
+            `SELECT count(*)::text as cnt FROM creator_applications WHERE email = $1`,
+            ['cachetest@example.com']
+          );
+
+          const passed68 =
+            bPreload.status === 200 &&
+            applyResA.status === 201 &&
+            applyResB.status === 201 &&
+            applyBodyA.referenceNumber === applyBodyB.referenceNumber &&
+            applyBodyA.id === applyBodyB.id &&
+            countCheck.rows[0]?.cnt === '1';
+
+          results.push({
+            scenarioNumber: 68,
+            category: 'Creator Upload Hardening' as any,
+            name: 'Server B caches session in verified state; Server A completes it; Server B retry returns original application without duplicate',
+            passed: passed68,
+            expected: 'Server A=201, Server B=201, same ref & id, dbCount=1',
+            actual: `applyA=${applyResA.status} ref=${applyBodyA.referenceNumber}, applyB=${applyResB.status} ref=${applyBodyB.referenceNumber}, dbCount=${countCheck.rows[0]?.cnt}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 69: Signing and relay on completed session rejected; status never reverts to registered
+          // -------------------------------------------------------------
+          const signOnCompletedRes = await fetch(`http://127.0.0.1:${port1}/api/creators/upload-sign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uploadSessionId: sessId68,
+              submissionSecret: secret68,
+              filename: 'forbidden_after_completion.mp4',
+              fileType: 'video/mp4',
+              fileSize: 1024,
+              category: 'video_sample'
+            })
+          });
+          const signOnCompletedBody = await signOnCompletedRes.json();
+
+          const relayOnCompletedRes = await fetch(`http://127.0.0.1:${port1}/api/creators/upload-relay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uploadSessionId: sessId68,
+              submissionSecret: secret68,
+              storagePath: assetPath68,
+              fileData: validMp4Buf.toString('base64'),
+              fileType: 'video/mp4',
+              category: 'video_sample'
+            })
+          });
+          const relayOnCompletedBody = await relayOnCompletedRes.json();
+
+          const dbStatusCheck = await db.query<{ status: string }>(
+            `SELECT status FROM creator_upload_sessions WHERE id = $1`,
+            [sessId68]
+          );
+
+          const passed69 =
+            signOnCompletedRes.status === 400 &&
+            signOnCompletedBody.code === 'COMPLETED_SESSION' &&
+            relayOnCompletedRes.status === 400 &&
+            relayOnCompletedBody.code === 'COMPLETED_SESSION' &&
+            dbStatusCheck.rows[0]?.status === 'completed';
+
+          results.push({
+            scenarioNumber: 69,
+            category: 'Creator Upload Hardening' as any,
+            name: 'Upload signing and relay on completed session rejected with HTTP 400 COMPLETED_SESSION; status remains completed',
+            passed: passed69,
+            expected: 'signStatus=400 COMPLETED_SESSION, relayStatus=400 COMPLETED_SESSION, dbStatus=completed',
+            actual: `signStatus=${signOnCompletedRes.status} code=${signOnCompletedBody.code}, relayStatus=${relayOnCompletedRes.status} code=${relayOnCompletedBody.code}, dbStatus=${dbStatusCheck.rows[0]?.status}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 70: Stale persistence snapshot cannot clear application binding or downgrade completed status
+          // -------------------------------------------------------------
+          const staleSessionObj = {
+            sessionId: sessId68,
+            submissionSecret: secret68,
+            status: 'registered' as const,
+            applicationId: undefined,
+            createdAt: Date.now() - 100000,
+            expiresAt: Date.now() + 1800000,
+            assets: new Map()
+          };
+
+          const bridgeAdminClient = createClient(bridgeUrl, 'sb_secret_test_key_123', {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          setSupabaseAdmin(bridgeAdminClient);
+
+          await saveSessionToDbAndDisk(staleSessionObj);
+
+          const dbBindingCheck = await db.query<{ status: string; application_id: string }>(
+            `SELECT status, application_id FROM creator_upload_sessions WHERE id = $1`,
+            [sessId68]
+          );
+
+          const passed70 =
+            dbBindingCheck.rows[0]?.status === 'completed' &&
+            dbBindingCheck.rows[0]?.application_id === applyBodyA.id;
+
+          results.push({
+            scenarioNumber: 70,
+            category: 'Creator Upload Hardening' as any,
+            name: 'Stale persistence snapshot with null applicationId cannot clear existing application_id binding or downgrade completed status',
+            passed: passed70,
+            expected: 'status=completed, application_id preserved',
+            actual: `status=${dbBindingCheck.rows[0]?.status}, application_id=${dbBindingCheck.rows[0]?.application_id}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 71: Post-commit backup failure does not turn committed transaction into a failure
+          // -------------------------------------------------------------
+          const sessId71 = 'sess_backup_fail_71';
+          const secret71 = 'sec_backup_fail_71';
+          const assetPath71 = 'creators/samples/backup_fail_video.mp4';
+          storageFiles.set(assetPath71, { buffer: validMp4Buf, contentType: 'video/mp4' });
+
+          const assets71 = [
+            [
+              assetPath71,
+              {
+                storagePath: assetPath71,
+                category: 'video_sample',
+                originalFilename: 'backup_fail_video.mp4',
+                mimeType: 'video/mp4',
+                fileSize: 10485760
+              }
+            ]
+          ];
+
+          await db.query(
+            `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+             VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+            [sessId71, secret71, JSON.stringify(assets71)]
+          );
+
+          // Arm test backup failure trigger so post-commit disk/storage backup throws
+          setTestBackupFailureTrigger(true);
+
+          const payload71 = {
+            uploadSessionId: sessId71,
+            submissionSecret: secret71,
+            fullName: 'Backup Resilience Applicant',
+            whatsapp: '+919666677777',
+            email: 'backupresilience@example.com',
+            state: 'Tamil Nadu',
+            district: 'Chennai',
+            cityTown: 'Chennai',
+            classification: 'ugc',
+            categories: ['Food & Culinary'],
+            sampleLinks: ['https://youtube.com/watch?v=sample71'],
+            consentAccuracy: true,
+            consentProcessing: true,
+            consentContact: true,
+            consentBrandSharing: true,
+            uploadedVideos: [{ name: 'backup_fail_video.mp4', storagePath: assetPath71 }]
+          };
+
+          const applyRes71 = await fetch(`${baseUrl}/api/creators/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload71)
+          });
+          const applyBody71 = await applyRes71.json();
+
+          // Reset trigger & supabaseAdmin
+          setTestBackupFailureTrigger(false);
+          setSupabaseAdmin(null);
+
+          const dbApp71Check = await db.query<{ id: string; application_reference: string }>(
+            `SELECT id, application_reference FROM creator_applications WHERE email = $1`,
+            ['backupresilience@example.com']
+          );
+
+          const passed71 =
+            applyRes71.status === 201 &&
+            applyBody71.success === true &&
+            dbApp71Check.rows.length === 1 &&
+            dbApp71Check.rows[0]?.id === applyBody71.id;
+
+          results.push({
+            scenarioNumber: 71,
+            category: 'Creator Upload Hardening' as any,
+            name: 'Post-commit backup failure does not fail transaction; committed application returned with HTTP 201',
+            passed: passed71,
+            expected: 'HTTP 201 Created with application id & reference, row persisted in DB',
+            actual: `HTTP ${applyRes71.status}, success=${applyBody71.success}, id=${applyBody71.id}, dbRows=${dbApp71Check.rows.length}`
+          });
+        }
+      } finally {
+        try { proc1.kill('SIGKILL'); } catch {}
+        try { proc2.kill('SIGKILL'); } catch {}
+        try { if (proc1.pid) process.kill(-proc1.pid, 'SIGKILL'); } catch {}
+        try { if (proc2.pid) process.kill(-proc2.pid, 'SIGKILL'); } catch {}
+        dbBridge.close();
+        await db.close();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Scenarios 45–49: Dedicated Migration Reconciliation Regression Suite (PGlite PG18.6)
+    // -------------------------------------------------------------
+    const migrationRegressionResults = await runMigrationReconciliationRegressionSuite(45);
     results.push(...migrationRegressionResults);
+
+    // -------------------------------------------------------------
+    // Scenarios 60–64: Transactional Application Submission RPC Database Suite (PGlite PG18.6)
+    // -------------------------------------------------------------
+    const submissionRpcDbResults = await runCreatorSubmissionRpcDatabaseVerificationSuite();
+    results.push(...submissionRpcDbResults);
 
   } finally {
     server.close();
@@ -1312,9 +2857,7 @@ async function runTests() {
   console.log(`FINAL RESULT: ${results.filter(r => r.passed).length} / ${results.length} PASSED`);
   console.log('----------------------------------------------------------------\n');
 
-  if (!allPassed) {
-    process.exit(1);
-  }
+  process.exit(allPassed ? 0 : 1);
 }
 
 runTests().catch((err) => {

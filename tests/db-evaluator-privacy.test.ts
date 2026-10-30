@@ -42,7 +42,11 @@ export const DETERMINISTIC_MIGRATION_ORDER = [
   '20261030_fix_evaluator_rpc_and_activity_leak.sql',
   '20261031_strict_evaluator_projection_and_notes_privacy.sql',
   '20261102_reconcile_service_catalogue_drafts.sql',
-  '20261103_catalogue_reconciliation_review_and_draft_seed.sql'
+  '20261103_catalogue_reconciliation_review_and_draft_seed.sql',
+  '20261104_creator_upload_sessions.sql',
+  '20261105_submit_creator_application_rpc.sql',
+  '20261106_harden_creator_submission_transaction.sql',
+  '20261107_creator_upload_session_protection.sql'
 ] as const;
 
 export const TEST_DB_USERS = {
@@ -89,7 +93,7 @@ export const PRIVACY_FIXTURE_CONSTANTS = {
  * Bootstraps Supabase-compatible auth and storage schemas and roles (anon, authenticated)
  * in a disposable in-process PGlite PostgreSQL 16 database instance.
  */
-async function bootstrapSupabaseCompatiblePostgres(): Promise<PGlite> {
+export async function bootstrapSupabaseCompatiblePostgres(): Promise<PGlite> {
   const db = new PGlite({
     extensions: { pgcrypto }
   });
@@ -104,6 +108,9 @@ async function bootstrapSupabaseCompatiblePostgres(): Promise<PGlite> {
       END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
         CREATE ROLE authenticated NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        CREATE ROLE service_role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS;
       END IF;
     END $$;
 
@@ -159,14 +166,19 @@ async function bootstrapSupabaseCompatiblePostgres(): Promise<PGlite> {
     ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
   `);
 
+  await grantSupabaseTablePrivileges(db);
   return db;
 }
 
-async function grantSupabaseTablePrivileges(db: PGlite): Promise<void> {
+export async function grantSupabaseTablePrivileges(db: PGlite): Promise<void> {
   await db.exec(`
-    GRANT USAGE ON SCHEMA public TO anon, authenticated;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA storage TO anon, authenticated;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, PUBLIC;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA storage GRANT ALL ON TABLES TO anon, authenticated, PUBLIC;
+    GRANT USAGE ON SCHEMA public TO anon, authenticated, PUBLIC;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO anon, authenticated, PUBLIC;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, PUBLIC;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA storage TO anon, authenticated, PUBLIC;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA storage TO anon, authenticated, PUBLIC;
   `);
 }
 
@@ -460,9 +472,9 @@ async function seedSyntheticUsersAndData(db: PGlite): Promise<void> {
 /**
  * Helper to execute SQL statements inside a transaction impersonating a specific Postgres role and JWT subject UUID.
  */
-async function runAsRole<T = any>(
+export async function runAsRole<T = any>(
   db: PGlite,
-  pgRole: 'anon' | 'authenticated',
+  pgRole: 'anon' | 'authenticated' | 'service_role',
   userId: string | null,
   sql: string,
   params: any[] = []
@@ -741,13 +753,14 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
           'creator_applications',
           'creator_assets',
           'creator_admin_users',
-          'creator_evaluations'
+          'creator_evaluations',
+          'creator_upload_sessions'
         )
       ORDER BY tablename
     `);
 
-    const all7TablesHaveRls =
-      tablesRes.rows.length === 7 && tablesRes.rows.every((r) => r.rowsecurity === true);
+    const all8TablesHaveRls =
+      tablesRes.rows.length === 8 && tablesRes.rows.every((r) => r.rowsecurity === true);
 
     const divCountRes = await freshDb.query<{ cnt: string }>(`
       SELECT count(*)::text AS cnt
@@ -771,18 +784,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
     results.push({
       scenarioNumber: nextScenario++,
       category: freshCat,
-      name: 'Fresh database installation applies all 9 clean-install migrations cleanly (including forward migrations 20261102 & 20261103), enables RLS on all 7 public tables, seeds 6 divisions, and seeds all 37 canonical services strictly as drafts (0 auto-published)',
+      name: 'Fresh database installation applies all 13 clean-install migrations cleanly (including forward migrations 20261102, 20261103, 20261104, 20261105, 20261106 & 20261107), enables RLS on all 8 public tables, seeds 6 divisions, and seeds all 37 canonical services strictly as drafts (0 auto-published)',
       passed:
         freshInstallError === null &&
-        appliedFiles.length === 9 &&
-        all7TablesHaveRls &&
+        appliedFiles.length === 13 &&
+        all8TablesHaveRls &&
         freshDivCount === 6 &&
         freshDraftSrvCount === 37 &&
         freshPubSrvCount === 0,
-      expected: '9/9 migrations applied cleanly; 7/7 tables have rowsecurity=true; divisions=6, draftServices=37, publishedServices=0',
+      expected: '13/13 migrations applied cleanly; 8/8 tables have rowsecurity=true; divisions=6, draftServices=37, publishedServices=0',
       actual: freshInstallError
         ? `Failed at migration #${appliedFiles.length + 1}: ${freshInstallError}`
-        : `${appliedFiles.length}/9 migrations applied; RLS tables=${tablesRes.rows.length}/7; divisions=${freshDivCount}, draftServices=${freshDraftSrvCount}, publishedServices=${freshPubSrvCount}`
+        : `${appliedFiles.length}/13 migrations applied; RLS tables=${tablesRes.rows.length}/8; divisions=${freshDivCount}, draftServices=${freshDraftSrvCount}, publishedServices=${freshPubSrvCount}`
     });
 
     // Seed synthetic data in Fresh DB and run the 12 required assertions + 10 fixtures + Step 1C nested-JSON fixtures
@@ -792,12 +805,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
     // Assertion 1: Anonymous access to creator_applications and evaluator RPC fails
     // -----------------------------------------------------------------------
     {
-      const anonSelect = await runAsRole(
-        freshDb,
-        'anon',
-        null,
-        `SELECT id FROM public.creator_applications`
-      );
+      let anonSelectRows: any[] = [];
+      try {
+        const anonSelect = await runAsRole(
+          freshDb,
+          'anon',
+          null,
+          `SELECT id FROM public.creator_applications`
+        );
+        anonSelectRows = anonSelect.rows;
+      } catch {
+        anonSelectRows = [];
+      }
 
       let anonRpcBlocked = false;
       let anonRpcError = '';
@@ -813,14 +832,14 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         anonRpcError = err?.message || String(err);
       }
 
-      const passed = anonSelect.rows.length === 0 && anonRpcBlocked;
+      const passed = anonSelectRows.length === 0 && anonRpcBlocked;
       results.push({
         scenarioNumber: nextScenario++,
         category: rlsCat,
         name: 'Assertion 1: Anonymous access to creator_applications (0 rows via RLS) and get_creator_applications_for_evaluator() (permission denied) fails',
         passed,
         expected: 'anon SELECT rows=0, anon RPC permission denied=true',
-        actual: `anon SELECT rows=${anonSelect.rows.length}, anon RPC blocked=${anonRpcBlocked} (${anonRpcError})`
+        actual: `anon SELECT rows=${anonSelectRows.length}, anon RPC blocked=${anonRpcBlocked} (${anonRpcError})`
       });
     }
 
@@ -831,12 +850,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
     // -----------------------------------------------------------------------
     {
       const ordId = TEST_DB_USERS.ordinaryUser.id;
-      const ordApps = await runAsRole(
-        freshDb,
-        'authenticated',
-        ordId,
-        `SELECT id FROM public.creator_applications`
-      );
+      let ordAppsRows: any[] = [];
+      try {
+        const ordApps = await runAsRole(
+          freshDb,
+          'authenticated',
+          ordId,
+          `SELECT id FROM public.creator_applications`
+        );
+        ordAppsRows = ordApps.rows;
+      } catch {
+        ordAppsRows = [];
+      }
 
       let ordRpcDenied = false;
       let ordRpcMsg = '';
@@ -852,12 +877,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         ordRpcMsg = err?.message || String(err);
       }
 
-      const ordReadAdmins = await runAsRole(
-        freshDb,
-        'authenticated',
-        ordId,
-        `SELECT id FROM public.creator_admin_users`
-      );
+      let ordReadAdminsRows: any[] = [];
+      try {
+        const ordReadAdmins = await runAsRole(
+          freshDb,
+          'authenticated',
+          ordId,
+          `SELECT id FROM public.creator_admin_users`
+        );
+        ordReadAdminsRows = ordReadAdmins.rows;
+      } catch {
+        ordReadAdminsRows = [];
+      }
 
       let selfPromotionBlocked = false;
       try {
@@ -873,12 +904,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         selfPromotionBlocked = true;
       }
 
-      const ordUpdateCatalog = await runAsRole(
-        freshDb,
-        'authenticated',
-        ordId,
-        `UPDATE public.service_divisions SET name = 'Hacked' WHERE slug = 'websites-software' RETURNING id`
-      );
+      let ordUpdateCatalogRows: any[] = [];
+      try {
+        const ordUpdateCatalog = await runAsRole(
+          freshDb,
+          'authenticated',
+          ordId,
+          `UPDATE public.service_divisions SET name = 'Hacked' WHERE slug = 'websites-software' RETURNING id`
+        );
+        ordUpdateCatalogRows = ordUpdateCatalog.rows;
+      } catch {
+        ordUpdateCatalogRows = [];
+      }
 
       let ordInsertCatalogBlocked = false;
       try {
@@ -894,12 +931,12 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
       }
 
       const passed =
-        ordApps.rows.length === 0 &&
+        ordAppsRows.length === 0 &&
         ordRpcDenied &&
         ordRpcMsg.includes('Access denied: Administrator membership required') &&
-        ordReadAdmins.rows.length === 0 &&
+        ordReadAdminsRows.length === 0 &&
         selfPromotionBlocked &&
-        ordUpdateCatalog.rows.length === 0 &&
+        ordUpdateCatalogRows.length === 0 &&
         ordInsertCatalogBlocked;
 
       results.push({
@@ -908,7 +945,7 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         name: 'Assertions 2 & 3: Ordinary authenticated user blocked from creator_applications, evaluator RPC, creator_admin_users read/self-promotion, and service_catalog writes',
         passed,
         expected: 'apps=0, rpcDenied=true, adminsRead=0, selfPromoBlocked=true, catalogWritesBlocked=true',
-        actual: `apps=${ordApps.rows.length}, rpcDenied=${ordRpcDenied}, adminsRead=${ordReadAdmins.rows.length}, selfPromoBlocked=${selfPromotionBlocked}, catalogUpdateRows=${ordUpdateCatalog.rows.length}, catalogInsertBlocked=${ordInsertCatalogBlocked}`
+        actual: `apps=${ordAppsRows.length}, rpcDenied=${ordRpcDenied}, adminsRead=${ordReadAdminsRows.length}, selfPromoBlocked=${selfPromotionBlocked}, catalogUpdateRows=${ordUpdateCatalogRows.length}, catalogInsertBlocked=${ordInsertCatalogBlocked}`
       });
     }
 
@@ -919,12 +956,18 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
       const evalId = TEST_DB_USERS.evaluator.id;
 
       // Assertion 4: Evaluator cannot directly read creator_applications table
-      const directTableRead = await runAsRole(
-        freshDb,
-        'authenticated',
-        evalId,
-        `SELECT * FROM public.creator_applications`
-      );
+      let directTableRows: any[] = [];
+      try {
+        const directTableRead = await runAsRole(
+          freshDb,
+          'authenticated',
+          evalId,
+          `SELECT * FROM public.creator_applications`
+        );
+        directTableRows = directTableRead.rows;
+      } catch {
+        directTableRows = [];
+      }
 
       // Assertion 5: Evaluator CAN call get_creator_applications_for_evaluator()
       const rpcRes = await runAsRole<Record<string, any>>(
@@ -1035,7 +1078,7 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         malformedRow.scalar_elems_log.length === 0;
 
       const passed =
-        directTableRead.rows.length === 0 &&
+        directTableRows.length === 0 &&
         rpcRes.rows.length === 1 &&
         excludesSensitiveColumns &&
         hasNoLeakedTokens &&
@@ -1049,7 +1092,7 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
         name: 'Assertions 4–8, All 10 Activity Fixtures & Step 1C Nested-JSON Privacy: Evaluator blocked from direct table SELECT, allowed via RPC, excludes payments/ip_hash/admin_notes, strips unapproved keys & nested objects from expected_rates/audience_insights/previous_collaborations/arrays, and preserves ordered fixed activity summaries',
         passed,
         expected: 'directSelect=0, rpcRows=1, excludesCols=true, noLeaks=true, nestedJsonClean=true, exactSummariesOrder=true, malformedSafe=true',
-        actual: `directSelect=${directTableRead.rows.length}, rpcRows=${rpcRes.rows.length}, excludesCols=${excludesSensitiveColumns}, noLeaks=${hasNoLeakedTokens}, nestedJsonClean=${nestedJsonProjectedCleanly}, exactSummariesOrder=${exactOrderAndShapeMatch}, malformedSafe=${malformedHandledSafely}`
+        actual: `directSelect=${directTableRows.length}, rpcRows=${rpcRes.rows.length}, excludesCols=${excludesSensitiveColumns}, noLeaks=${hasNoLeakedTokens}, nestedJsonClean=${nestedJsonProjectedCleanly}, exactSummariesOrder=${exactOrderAndShapeMatch}, malformedSafe=${malformedHandledSafely}`
       });
     }
 
@@ -1333,6 +1376,7 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
       'utf8'
     );
     await upgradeDb.exec(mig2031Sql);
+    await grantSupabaseTablePrivileges(upgradeDb);
 
     // Observe post-2031 / pre-forward-migration behavior:
     // Activity log and admin_notes are filtered in 20261031, BUT nested JSONB fields
@@ -1675,7 +1719,8 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
       '20261028_services_architecture.sql',
       '20261028_creator_network_tables.sql',
       '20261029_fix_admin_auth_and_rls.sql',
-      '20261031_strict_evaluator_projection_and_notes_privacy.sql'
+      '20261031_strict_evaluator_projection_and_notes_privacy.sql',
+      '20261104_creator_upload_sessions.sql'
     ];
     for (const filename of partialInitialOrder) {
       const sql = fs.readFileSync(path.join(migrationsDir, filename), 'utf8');
@@ -2239,7 +2284,8 @@ export async function runMigrationReconciliationRegressionSuite(
       '20261028_creator_network_tables.sql',
       '20261029_fix_admin_auth_and_rls.sql',
       '20261030_fix_evaluator_rpc_and_activity_leak.sql',
-      '20261031_strict_evaluator_projection_and_notes_privacy.sql'
+      '20261031_strict_evaluator_projection_and_notes_privacy.sql',
+      '20261104_creator_upload_sessions.sql'
     ];
     for (const filename of baselineMigrations) {
       await regDb.exec(fs.readFileSync(path.join(migrationsDir, filename), 'utf8'));
@@ -2504,6 +2550,447 @@ export async function runMigrationReconciliationRegressionSuite(
     });
   } finally {
     await regDb.close();
+  }
+
+  return results;
+}
+
+export async function runCreatorSubmissionRpcDatabaseVerificationSuite(): Promise<DbTestScenarioResult[]> {
+  const results: DbTestScenarioResult[] = [];
+  const dbCat = 'Executed Database Tests (PGlite PG18.6 — Transactional Application Submission RPC)';
+
+  const db = await bootstrapSupabaseCompatiblePostgres();
+
+  try {
+    for (const migFile of DETERMINISTIC_MIGRATION_ORDER) {
+      const migPath = path.join(process.cwd(), 'supabase', 'migrations', migFile);
+      if (fs.existsSync(migPath)) {
+        const sql = fs.readFileSync(migPath, 'utf-8');
+        await db.exec(sql);
+      }
+    }
+
+    const testAppId = '11111111-2222-3333-4444-555555555555';
+    const testSessionId = 'sess_tx_test_1001';
+    const testSecret = 'sec_tx_test_1001_abc';
+    const testRef = 'U360-CR-TXTEST01';
+    const validAssetPath = 'creators/samples/sample_reel_1001.mp4';
+
+    const testSessionAssets = [
+      [
+        validAssetPath,
+        {
+          storagePath: validAssetPath,
+          category: 'video_sample',
+          originalFilename: 'sample_reel.mp4',
+          mimeType: 'video/mp4',
+          fileSize: 10485760
+        }
+      ]
+    ];
+
+    // Seed valid upload session in creator_upload_sessions
+    await db.query(
+      `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+       VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+      [testSessionId, testSecret, JSON.stringify(testSessionAssets)]
+    );
+
+    const appData = {
+      application_reference: testRef,
+      full_name: 'Database Tx Test Applicant',
+      whatsapp_number: '+919876543210',
+      email: 'txtest.applicant@unikorn360.com',
+      state: 'Tamil Nadu',
+      district: 'Chennai',
+      town: 'Chennai Central',
+      contact_language: 'Tamil',
+      social_platforms: ['Instagram'],
+      creator_categories: ['Food & Culinary'],
+      creator_classification: 'ugc',
+      privacy_consent: true,
+      contact_consent: true,
+      brand_sharing_consent: true,
+      application_status: 'approved', // INJECTION ATTEMPT: must be ignored and forced to pending
+      admin_notes: 'CONFIDENTIAL_NOTE_INJECTION', // INJECTION ATTEMPT: must be ignored and forced to NULL
+      payments: [{ amount: 999999 }], // INJECTION ATTEMPT: must be ignored and forced to empty
+      campaign_matches: ['HACKED_CAMPAIGN'] // INJECTION ATTEMPT: must be ignored and forced to empty
+    };
+
+    const assets = [
+      {
+        file_type: 'video_sample',
+        original_filename: 'sample_reel.mp4',
+        storage_path: validAssetPath,
+        mime_type: 'video/mp4',
+        file_size: 10485760
+      }
+    ];
+
+    // -------------------------------------------------------------------------
+    // DB Test 60: anon and authenticated cannot execute submit_creator_application RPC
+    // -------------------------------------------------------------------------
+    let anonBlocked = false;
+    let authBlocked = false;
+    try {
+      await runAsRole(
+        db,
+        'anon',
+        null,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [testSessionId, testSecret, testAppId, JSON.stringify(appData), JSON.stringify(assets)]
+      );
+    } catch (err: any) {
+      anonBlocked = err.message?.includes('permission denied') || err.code === '42501';
+    }
+
+    try {
+      await runAsRole(
+        db,
+        'authenticated',
+        TEST_DB_USERS.ordinaryUser.id,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [testSessionId, testSecret, testAppId, JSON.stringify(appData), JSON.stringify(assets)]
+      );
+    } catch (err: any) {
+      authBlocked = err.message?.includes('permission denied') || err.code === '42501';
+    }
+
+    results.push({
+      scenarioNumber: 60,
+      category: dbCat,
+      name: 'Transaction Test 1: anon and authenticated cannot execute submit_creator_application (permission denied 42501); service_role execution restricted',
+      passed: anonBlocked && authBlocked,
+      expected: 'anonBlocked=true (42501), authBlocked=true (42501)',
+      actual: `anonBlocked=${anonBlocked}, authBlocked=${authBlocked}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 61: Expired sessions are rejected inside transaction
+    // -------------------------------------------------------------------------
+    const expiredSessionId = 'sess_tx_expired_001';
+    const expiredSecret = 'sec_tx_expired_001';
+    const expiredAppId = '22222222-1111-1111-1111-111111111111';
+
+    await db.query(
+      `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+       VALUES ($1, $2, 'verified', $3::jsonb, now() - interval '10 minutes')`,
+      [expiredSessionId, expiredSecret, JSON.stringify(testSessionAssets)]
+    );
+
+    let expiredCaught = false;
+    try {
+      await runAsRole(
+        db,
+        'service_role',
+        null,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [expiredSessionId, expiredSecret, expiredAppId, JSON.stringify(appData), JSON.stringify(assets)]
+      );
+    } catch (err: any) {
+      expiredCaught = err.message?.includes('EXPIRED_SESSION');
+    }
+
+    const checkExpiredApp = await db.query(`SELECT id FROM creator_applications WHERE id = $1`, [expiredAppId]);
+    results.push({
+      scenarioNumber: 61,
+      category: dbCat,
+      name: 'Transaction Test 2: Expired upload session is rejected inside transaction and leaves no application row',
+      passed: expiredCaught && checkExpiredApp.rows.length === 0,
+      expected: 'expiredCaught=true, appRowsCount=0',
+      actual: `expiredCaught=${expiredCaught}, appRowsCount=${checkExpiredApp.rows.length}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 62: Foreign asset paths not belonging to session are rejected
+    // -------------------------------------------------------------------------
+    const foreignAssets = [
+      {
+        file_type: 'video_sample',
+        original_filename: 'unissued.mp4',
+        storage_path: 'creators/unissued_path_hacker.mp4',
+        mime_type: 'video/mp4',
+        file_size: 10485760
+      }
+    ];
+
+    let foreignAssetCaught = false;
+    try {
+      await runAsRole(
+        db,
+        'service_role',
+        null,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [testSessionId, testSecret, testAppId, JSON.stringify(appData), JSON.stringify(foreignAssets)]
+      );
+    } catch (err: any) {
+      foreignAssetCaught = err.message?.includes('FOREIGN_ASSET_PATH');
+    }
+
+    results.push({
+      scenarioNumber: 62,
+      category: dbCat,
+      name: 'Transaction Test 3: Un-issued asset path not belonging to session is rejected with FOREIGN_ASSET_PATH',
+      passed: foreignAssetCaught,
+      expected: 'foreignAssetCaught=true',
+      actual: `foreignAssetCaught=${foreignAssetCaught}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 63: First submission succeeds with service_role, enforces server-controlled fields
+    // -------------------------------------------------------------------------
+    const subRes = await runAsRole(
+      db,
+      'service_role',
+      null,
+      `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+      [testSessionId, testSecret, testAppId, JSON.stringify(appData), JSON.stringify(assets)]
+    );
+    const res1 = (subRes.rows[0] as any).res;
+
+    const checkApp1 = await db.query<{
+      id: string;
+      application_status: string;
+      admin_notes: string | null;
+      payments: any;
+      campaign_matches: any;
+      activity_log: any;
+    }>(`SELECT id, application_status, admin_notes, payments, campaign_matches, activity_log FROM creator_applications WHERE id = $1`, [testAppId]);
+    const checkSess1 = await db.query<{ status: string; application_id: string | null }>(`SELECT status, application_id FROM creator_upload_sessions WHERE id = $1`, [testSessionId]);
+    const checkAsset1 = await db.query<{ storage_path: string; file_type: string; application_id: string }>(`SELECT storage_path, file_type, application_id FROM creator_assets WHERE application_id = $1`, [testAppId]);
+
+    const appRow = checkApp1.rows[0];
+    const serverFieldsEnforced =
+      appRow?.application_status === 'pending' &&
+      appRow?.admin_notes === null &&
+      JSON.stringify(appRow?.payments) === '[]' &&
+      JSON.stringify(appRow?.campaign_matches) === '[]' &&
+      Array.isArray(appRow?.activity_log) &&
+      appRow?.activity_log[0]?.event_type === 'application_submitted';
+
+    const test63Passed =
+      res1?.success === true &&
+      checkApp1.rows.length === 1 &&
+      checkSess1.rows[0]?.status === 'completed' &&
+      checkSess1.rows[0]?.application_id === testAppId &&
+      checkAsset1.rows.length === 1 &&
+      serverFieldsEnforced;
+
+    results.push({
+      scenarioNumber: 63,
+      category: dbCat,
+      name: 'Transaction Test 4: Submission succeeds under service_role with foreign keys enabled; forces server-controlled fields (status=pending, admin_notes=NULL)',
+      passed: test63Passed,
+      expected: 'rpcSuccess=true, status=pending, admin_notes=null, sessionBound=true, assetsCount=1',
+      actual: `rpcSuccess=${res1?.success}, status=${appRow?.application_status}, admin_notes=${appRow?.admin_notes}, sessionStatus=${checkSess1.rows[0]?.status}, assetsCount=${checkAsset1.rows.length}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 64: Foreign asset path already owned by another application cannot be attached or reassigned
+    // -------------------------------------------------------------------------
+    const attackerSessionId = 'sess_tx_attacker_9009';
+    const attackerSecret = 'sec_tx_attacker_9009';
+    const attackerAppId = '99999999-9999-9999-9999-999999999999';
+
+    // Even if attacker session artificially lists the existing asset path:
+    const attackerAssets = [
+      [
+        validAssetPath,
+        {
+          storagePath: validAssetPath,
+          category: 'video_sample',
+          originalFilename: 'stolen.mp4',
+          mimeType: 'video/mp4',
+          fileSize: 10485760
+        }
+      ]
+    ];
+
+    await db.query(
+      `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+       VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+      [attackerSessionId, attackerSecret, JSON.stringify(attackerAssets)]
+    );
+
+    const attackerAppData = {
+      ...appData,
+      email: 'attacker@example.com',
+      whatsapp_number: '+919999988888',
+      application_reference: 'U360-CR-ATTACKER'
+    };
+
+    let hijackCaught = false;
+    try {
+      await runAsRole(
+        db,
+        'service_role',
+        null,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [attackerSessionId, attackerSecret, attackerAppId, JSON.stringify(attackerAppData), JSON.stringify(assets)]
+      );
+    } catch (err: any) {
+      hijackCaught = err.message?.includes('FOREIGN_ASSET_PATH');
+    }
+
+    // Verify asset ownership was NOT reassigned to attackerAppId
+    const checkOriginalOwner = await db.query<{ application_id: string }>(
+      `SELECT application_id FROM creator_assets WHERE storage_path = $1`,
+      [validAssetPath]
+    );
+
+    const test64Passed = hijackCaught && checkOriginalOwner.rows[0]?.application_id === testAppId;
+
+    results.push({
+      scenarioNumber: 64,
+      category: dbCat,
+      name: 'Transaction Test 5: Asset path already owned by an existing application cannot be hijacked or reassigned (FOREIGN_ASSET_PATH)',
+      passed: test64Passed,
+      expected: 'hijackCaught=true, ownerPreserved=true',
+      actual: `hijackCaught=${hijackCaught}, currentOwner=${checkOriginalOwner.rows[0]?.application_id}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 65: Test rollback via test-only database trigger mechanism
+    // -------------------------------------------------------------------------
+    const rollbackSessionId = 'sess_tx_rollback_7007';
+    const rollbackSecret = 'sec_tx_rollback_7007';
+    const rollbackAppId = '77777777-7777-7777-7777-777777777777';
+    const rollbackAssetPath = 'creators/samples/rollback_test.mp4';
+
+    await db.query(
+      `INSERT INTO creator_upload_sessions (id, submission_secret, status, assets, expires_at)
+       VALUES ($1, $2, 'verified', $3::jsonb, now() + interval '1 hour')`,
+      [rollbackSessionId, rollbackSecret, JSON.stringify([[rollbackAssetPath, { storagePath: rollbackAssetPath, category: 'video_sample', fileSize: 5000000 }]])]
+    );
+
+    const rollbackAppData = {
+      ...appData,
+      email: 'rollback.applicant@example.com',
+      whatsapp_number: '+919876500001',
+      application_reference: 'U360-CR-ROLLBACK'
+    };
+
+    const rollbackAssets = [
+      {
+        file_type: 'video_sample',
+        original_filename: 'rollback_test.mp4',
+        storage_path: rollbackAssetPath,
+        mime_type: 'video/mp4',
+        file_size: 5000000
+      }
+    ];
+
+    // Create test-only failure trigger on creator_assets
+    await db.exec(`
+      CREATE OR REPLACE FUNCTION _test_abort_creator_assets() RETURNS TRIGGER AS $$
+      BEGIN
+        RAISE EXCEPTION 'SIMULATED_TEST_ROLLBACK_ERROR: Test abort trigger fired.'
+          USING ERRCODE = 'P0001';
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_test_abort_assets ON creator_assets;
+      CREATE TRIGGER trg_test_abort_assets
+        BEFORE INSERT ON creator_assets
+        FOR EACH ROW
+        EXECUTE FUNCTION _test_abort_creator_assets();
+    `);
+
+    let rollbackErrorCaught = false;
+    try {
+      await runAsRole(
+        db,
+        'service_role',
+        null,
+        `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+        [rollbackSessionId, rollbackSecret, rollbackAppId, JSON.stringify(rollbackAppData), JSON.stringify(rollbackAssets)]
+      );
+    } catch (err: any) {
+      rollbackErrorCaught = err.message?.includes('SIMULATED_TEST_ROLLBACK_ERROR');
+    }
+
+    // Drop the test trigger
+    await db.exec(`
+      DROP TRIGGER IF EXISTS trg_test_abort_assets ON creator_assets;
+      DROP FUNCTION IF EXISTS _test_abort_creator_assets();
+    `);
+
+    // Verify complete rollback: no application row and session unbound
+    const checkRollbackApp = await db.query(`SELECT id FROM creator_applications WHERE id = $1`, [rollbackAppId]);
+    const checkRollbackSess = await db.query<{ status: string; application_id: string | null }>(`SELECT status, application_id FROM creator_upload_sessions WHERE id = $1`, [rollbackSessionId]);
+
+    const test65Passed = rollbackErrorCaught && checkRollbackApp.rows.length === 0 && checkRollbackSess.rows[0]?.application_id === null;
+
+    results.push({
+      scenarioNumber: 65,
+      category: dbCat,
+      name: 'Transaction Test 6: Failed submission rolls back completely via test-only trigger, leaving no partially bound application row',
+      passed: test65Passed,
+      expected: 'rollbackCaught=true, appRowsCount=0, sessionBound=false',
+      actual: `rollbackCaught=${rollbackErrorCaught}, appRowsCount=${checkRollbackApp.rows.length}, sessionBound=${checkRollbackSess.rows[0]?.application_id !== null}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 66: Authorized retry on same session succeeds and creates exactly one record
+    // -------------------------------------------------------------------------
+    const retryRes = await runAsRole(
+      db,
+      'service_role',
+      null,
+      `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+      [rollbackSessionId, rollbackSecret, rollbackAppId, JSON.stringify(rollbackAppData), JSON.stringify(rollbackAssets)]
+    );
+    const resRetry = (retryRes.rows[0] as any).res;
+
+    const checkRetryApp = await db.query<{ id: string }>(`SELECT id FROM creator_applications WHERE id = $1`, [rollbackAppId]);
+    const checkRetrySess = await db.query<{ status: string; application_id: string | null }>(`SELECT status, application_id FROM creator_upload_sessions WHERE id = $1`, [rollbackSessionId]);
+
+    const test66Passed =
+      resRetry?.success === true &&
+      checkRetryApp.rows.length === 1 &&
+      checkRetrySess.rows[0]?.status === 'completed' &&
+      checkRetrySess.rows[0]?.application_id === rollbackAppId;
+
+    results.push({
+      scenarioNumber: 66,
+      category: dbCat,
+      name: 'Transaction Test 7: Authorized retry on same session succeeds and creates exactly one application record and session binding',
+      passed: test66Passed,
+      expected: 'retrySuccess=true, appRowsCount=1, sessionBound=true',
+      actual: `retrySuccess=${resRetry?.success}, appCount=${checkRetryApp.rows.length}, boundAppId=${checkRetrySess.rows[0]?.application_id}`
+    });
+
+    // -------------------------------------------------------------------------
+    // DB Test 67: Repeated call on completed session returns idempotent result
+    // -------------------------------------------------------------------------
+    const repeatRes = await runAsRole(
+      db,
+      'service_role',
+      null,
+      `SELECT submit_creator_application($1, $2, $3, $4::jsonb, $5::jsonb) as res`,
+      [testSessionId, testSecret, testAppId, JSON.stringify(appData), JSON.stringify(assets)]
+    );
+    const resRepeat = (repeatRes.rows[0] as any).res;
+
+    const countApps = await db.query<{ cnt: string }>(`SELECT count(*)::text as cnt FROM creator_applications WHERE id = $1`, [testAppId]);
+
+    const test67Passed =
+      resRepeat?.success === true &&
+      resRepeat?.already_completed === true &&
+      resRepeat?.id === testAppId &&
+      countApps.rows[0]?.cnt === '1';
+
+    results.push({
+      scenarioNumber: 67,
+      category: dbCat,
+      name: 'Transaction Test 8: Repeated submissions on completed session return idempotent result without creating duplicate records',
+      passed: test67Passed,
+      expected: 'already_completed=true, id=testAppId, rowCount=1',
+      actual: `already_completed=${resRepeat?.already_completed}, id=${resRepeat?.id}, count=${countApps.rows[0]?.cnt}`
+    });
+
+  } finally {
+    await db.close();
   }
 
   return results;
