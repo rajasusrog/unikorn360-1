@@ -105,8 +105,9 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Breadcrumbs
             items={[
-              { label: 'Services', current: true }
+              { label: 'Services' }
             ]}
+            onNavigate={onNavigate}
           />
 
           <div className="max-w-3xl mt-6">

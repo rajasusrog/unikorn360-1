@@ -42,6 +42,7 @@ PORT=3000
 
 Because four baseline migrations share the `20261028_` date prefix (`20261028_services_architecture.sql` creates the `service_divisions` and `service_catalog` tables that `20261028_location_neutral_update.sql` and `20261028_reorganize_services_6_divisions.sql` update), always apply migrations in the following **deterministic dependency order**:
 
+### Path A — Completely Empty Test/New Database (Clean Installation Sequence)
 1. `/supabase/migrations/20261028_services_architecture.sql`
 2. `/supabase/migrations/20261028_location_neutral_update.sql`
 3. `/supabase/migrations/20261028_reorganize_services_6_divisions.sql`
@@ -49,11 +50,20 @@ Because four baseline migrations share the `20261028_` date prefix (`20261028_se
 5. `/supabase/migrations/20261029_fix_admin_auth_and_rls.sql`
 6. `/supabase/migrations/20261030_fix_evaluator_rpc_and_activity_leak.sql`
 7. `/supabase/migrations/20261031_strict_evaluator_projection_and_notes_privacy.sql`
+8. `/supabase/migrations/20261102_reconcile_service_catalogue_drafts.sql`
+9. `/supabase/migrations/20261103_catalogue_reconciliation_review_and_draft_seed.sql`
 
-### How to Apply:
-1. Log in to the [Supabase Dashboard](https://supabase.com/dashboard).
-2. Open your project and navigate to the **SQL Editor** tab.
-3. Run the 7 migrations above in exact sequential order (or for an existing database already at `20261030`, run `20261031_strict_evaluator_projection_and_notes_privacy.sql`).
+*(Note: Historical migration `/supabase/migrations/20261101_step1c_evaluator_nested_json_and_catalog_seed.sql` is preserved on disk for audit/history but superseded for clean installs by `20261102` + `20261103` so that seed-generated `approval_status` values never auto-publish rows).*
+
+### Path B — Existing Database Forward Upgrade Path (Do Not Re-run Old Migrations)
+- **If the database already has earlier migrations applied (including `20261028_reorganize_services_6_divisions.sql`, `20261031_*`, `20261101_*`, or an earlier version of `20261102_*`):**
+  Run only the new forward migration:
+  - `/supabase/migrations/20261103_catalogue_reconciliation_review_and_draft_seed.sql`
+- **What `20261103` guarantees:**
+  - Preserves all existing `archived`, `draft`, and `published` states on `service_divisions` and `service_catalog` (zero `UPDATE` statements mutating `status`).
+  - Never infers owner approval from slugs, UUIDs, or timestamps.
+  - Seeds any missing canonical divisions (6) and missing canonical services (37) strictly as `draft` (`status = 'draft'`, `published_at = NULL`, package `approval_status = 'draft'`).
+  - Installs `public.get_service_catalogue_reconciliation_review()` (`SECURITY DEFINER`, restricted to `admin` and `superadmin`) so administrators can review records where historical intent is unknown (`SELECT * FROM public.get_service_catalogue_reconciliation_review();`) instead of automatically publishing or unpublishing them.
 
 ### Administrator Membership Table (`creator_admin_users`):
 - Explicit roles: `superadmin`, `admin`, `evaluator`.

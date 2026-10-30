@@ -4,7 +4,7 @@
 
 BEGIN;
 
--- 1. Archive superseded divisions not in the new 6-division structure
+-- 1. Archive old divisions that are being replaced or merged
 UPDATE service_divisions
 SET status = 'archived', updated_at = now()
 WHERE slug NOT IN (
@@ -16,17 +16,17 @@ WHERE slug NOT IN (
     'business-setup-documentation'
 );
 
--- 2. Upsert the 6 Canonical Divisions
+-- 2. Upsert the 6 Canonical Divisions with updated names, descriptions, and SEO metadata
 INSERT INTO service_divisions (id, name, slug, short_description, full_description, seo_title, seo_description, status, display_order, updated_at)
 VALUES
 (
     'a1000000-0000-0000-0000-000000000001',
     'Websites & Software',
     'websites-software',
-    'Build or improve a digital platform.',
-    'Engineered web presences, custom SaaS products, mobile applications, e-commerce platforms, and API integration architectures designed for real-world enterprise operations.',
-    'Websites & Software Engineering | Unikorn360',
-    'Enterprise web development, custom software applications, mobile apps, e-commerce platforms, and API systems integrations.',
+    'Custom websites, e-commerce stores, web applications, mobile apps, SaaS MVPs, and API integrations.',
+    'Build or improve your digital platform. We architect and engineer high-performance web software, e-commerce ordering platforms, custom business tools, mobile apps, and robust API integrations designed specifically around your real-world business workflows.',
+    'Websites, E-Commerce & Custom Software Development | Unikorn360',
+    'Professional website development, e-commerce stores, custom web applications, mobile apps, SaaS MVPs, and API integrations for growing businesses.',
     'published',
     1,
     now()
@@ -35,10 +35,10 @@ VALUES
     'a2000000-0000-0000-0000-000000000002',
     'Security & Maintenance',
     'security-maintenance',
-    'Protect and maintain existing technology.',
-    'Rigorous code security audits, API penetration tests, database access hardening, Supabase Row-Level Security verification, and continuous infrastructure maintenance.',
-    'Security & Application Maintenance | Unikorn360',
-    'Application security reviews, AI-generated code scrutiny, API penetration audits, database hardening, and uptime maintenance.',
+    'Application security reviews, AI code audits, API security, database reviews, server hardening, and maintenance.',
+    'Protect and maintain existing technology. We evaluate web applications, review AI-generated code for production risks, audit APIs and database security, harden cloud servers, and provide dependable ongoing technical maintenance.',
+    'Application Security Reviews & Technical Maintenance | Unikorn360',
+    'Website and application security reviews, AI-generated code audits, API security, database reviews, server hardening, and ongoing maintenance retainers.',
     'published',
     2,
     now()
@@ -47,10 +47,10 @@ VALUES
     'a3000000-0000-0000-0000-000000000003',
     'Marketing & Creator Campaigns',
     'marketing-creator-campaigns',
-    'Get more customers, attention, or leads.',
-    'Performance search engine optimization, regional creator and influencer activations, authentic UGC video production, paid advertising management, and conversion tracking.',
-    'Marketing & Creator Campaigns | Unikorn360',
-    'Local and national SEO, regional creator campaigns, UGC video production, performance advertising, and analytics reporting.',
+    'SEO, paid advertising management, social media content, UGC production, and creator campaign management.',
+    'Attract customers and build market visibility. We deliver technical and local SEO, paid advertising management across Meta and Google, social media content calendars, authentic UGC video assets, and regional creator campaign management.',
+    'SEO, Paid Advertising & Creator Campaign Management | Unikorn360',
+    'Technical and local search SEO, Meta and Google ads management, social media management, UGC video production, and regional creator campaigns.',
     'published',
     3,
     now()
@@ -59,10 +59,10 @@ VALUES
     'a4000000-0000-0000-0000-000000000004',
     'AI, Automation & Business Systems',
     'ai-automation-business-systems',
-    'Reduce manual work and improve business operations.',
-    'Enterprise workflow automation, custom AI assistants, WhatsApp Business API pipelines, automated document processing, CRM pipelines, and executive dashboards.',
-    'AI Automation & Business Systems | Unikorn360',
-    'Custom AI agents, workflow automation, WhatsApp Business integrations, document OCR processing, and unified executive dashboards.',
+    'AI chatbots, custom AI agents, business workflow automation, CRM, WhatsApp automation, and executive dashboards.',
+    'Reduce manual work and improve operations. We build conversational knowledge assistants, custom AI agents with human approval loops, cross-tool workflow automations, CRM pipelines, official WhatsApp automation, and executive dashboard systems.',
+    'AI Automation, Custom Agents & Business Systems | Unikorn360',
+    'AI chatbots, custom AI agents, cross-tool workflow automation, CRM automation, WhatsApp Business systems, and real-time executive dashboards.',
     'published',
     4,
     now()
@@ -71,10 +71,10 @@ VALUES
     'a5000000-0000-0000-0000-000000000005',
     'Research & Business Strategy',
     'research-business-strategy',
-    'Make better business decisions using research and data.',
-    'Comprehensive market analysis, competitor intelligence, industry opportunity mapping, operational bottleneck diagnostics, bankable feasibility studies, and startup advisory.',
-    'Research & Business Strategy | Unikorn360',
-    'Market research, competitor analysis, operational performance audits, financial feasibility studies, and strategic growth advisory.',
+    'Market research, competitor analysis, industry trends, performance diagnostics, feasibility, and growth consulting.',
+    'Understand opportunities and make informed business decisions. We conduct customer and competitor research, analyze business performance and margins, prepare commercial feasibility plans, and advise founders on operational growth.',
+    'Business Research, Performance Analysis & Strategy Consulting | Unikorn360',
+    'Customer research, competitor and advertising intelligence, business performance analysis, financial feasibility models, and startup consulting.',
     'published',
     5,
     now()
@@ -83,10 +83,10 @@ VALUES
     'a6000000-0000-0000-0000-000000000006',
     'Business Setup & Documentation',
     'business-setup-documentation',
-    'Handle business paperwork, registrations, and official documentation.',
-    'Fast-track entity registration, GST & Udyam licensing, trademark filing coordination, bank-ready DPR and loan documentation, and government scheme application support.',
-    'Business Setup & Documentation | Unikorn360',
-    'Entity registration, GST & MSME Udyam, trademark filing, bankable DPR project reports, and subsidy scheme documentation.',
+    'Company registration, GST & Udyam, trademark filing coordination, government schemes, DPRs, and property documentation.',
+    'Establish the business and prepare required documentation. We support business incorporation, GST and Udyam MSME priority registration, trademark filing coordination, government subsidy applications, bank-ready DPRs, and commercial property documentation.',
+    'Business Registration, GST, DPR & Documentation Support | Unikorn360',
+    'Incorporation assistance, GST and Udyam registration, trademark filing coordination, DPR loan reports, government subsidy support, and property documentation.',
     'published',
     6,
     now()
@@ -97,62 +97,20 @@ ON CONFLICT (slug) DO UPDATE SET
     full_description = EXCLUDED.full_description,
     seo_title = EXCLUDED.seo_title,
     seo_description = EXCLUDED.seo_description,
-    status = EXCLUDED.status,
+    status = 'published',
     display_order = EXCLUDED.display_order,
     updated_at = now();
 
--- 3. Archive any obsolete services that do not belong to the 37 canonical services
+-- 3. Archive any legacy services not part of the new 37-service catalog
 UPDATE service_catalog
 SET status = 'archived', updated_at = now()
 WHERE slug NOT IN (
-    -- Websites & Software (6)
-    'website-development',
-    'ecommerce-development',
-    'custom-web-applications',
-    'mobile-app-development',
-    'saas-mvp-development',
-    'api-system-integration',
-
-    -- Security & Maintenance (6)
-    'website-application-security-review',
-    'ai-generated-code-security-review',
-    'api-security-review',
-    'database-supabase-security-review',
-    'cloud-server-hardening',
-    'website-application-maintenance',
-
-    -- Marketing & Creator Campaigns (6)
-    'seo-local-search',
-    'paid-advertising-management',
-    'social-media-content-management',
-    'ugc-content-production',
-    'influencer-campaign-management',
-    'marketing-tracking-reporting',
-
-    -- AI, Automation & Business Systems (7)
-    'ai-chatbots-knowledge-assistants',
-    'custom-ai-agents',
-    'business-workflow-automation',
-    'crm-sales-automation',
-    'whatsapp-business-automation',
-    'document-processing-automation',
-    'business-dashboards-reporting-systems',
-
-    -- Research & Business Strategy (6)
-    'market-customer-research',
-    'competitor-advertising-research',
-    'industry-opportunity-research',
-    'business-performance-analysis',
-    'business-planning-financial-feasibility',
-    'startup-growth-consulting',
-
-    -- Business Setup & Documentation (6)
-    'business-registration-assistance',
-    'gst-udyam-assistance',
-    'trademark-filing-coordination',
-    'government-scheme-application-support',
-    'dpr-loan-documentation',
-    'property-documentation-coordination'
+    'website-development', 'ecommerce-development', 'custom-web-applications', 'mobile-app-development', 'saas-mvp-development', 'api-system-integration',
+    'website-application-security-review', 'ai-generated-code-security-review', 'api-security-review', 'database-supabase-security-review', 'cloud-server-hardening', 'website-application-maintenance',
+    'seo-local-search', 'paid-advertising-management', 'social-media-content-management', 'ugc-content-production', 'influencer-campaign-management', 'marketing-tracking-reporting',
+    'ai-chatbots-knowledge-assistants', 'custom-ai-agents', 'business-workflow-automation', 'crm-sales-automation', 'whatsapp-business-automation', 'document-processing-automation', 'business-dashboards-reporting-systems',
+    'market-customer-research', 'competitor-advertising-research', 'industry-opportunity-research', 'business-performance-analysis', 'business-planning-financial-feasibility', 'startup-growth-consulting',
+    'business-registration-assistance', 'gst-udyam-assistance', 'trademark-filing-coordination', 'government-scheme-application-support', 'dpr-loan-documentation', 'property-documentation-coordination'
 );
 
 COMMIT;

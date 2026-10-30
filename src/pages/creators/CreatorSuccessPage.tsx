@@ -13,24 +13,17 @@ import {
 } from 'lucide-react';
 import { SEOHead } from '../../components/SEOHead';
 import { BUSINESS_INFO } from '../../data/servicesData';
+import { extractCreatorReference } from '../../lib/router';
 
 interface CreatorSuccessPageProps {
   onNavigate: (path: string) => void;
+  search?: string;
 }
 
-export const CreatorSuccessPage: React.FC<CreatorSuccessPageProps> = ({ onNavigate }) => {
+export const CreatorSuccessPage: React.FC<CreatorSuccessPageProps> = ({ onNavigate, search }) => {
   const [copied, setCopied] = useState(false);
 
-  // Extract reference number from URL if available
-  const getRefNumber = () => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('ref') || 'U360-CR-SUCCESS';
-    }
-    return 'U360-CR-SUCCESS';
-  };
-
-  const refNumber = getRefNumber();
+  const refNumber = extractCreatorReference(search);
 
   const handleCopy = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {

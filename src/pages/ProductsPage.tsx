@@ -1,18 +1,13 @@
 import React from 'react';
-import { 
-  Layers, 
-  CheckCircle2, 
-  ArrowRight, 
-  Clock, 
-  ShieldCheck, 
-  Sparkles,
+import {
+  CheckCircle2,
+  ArrowRight,
   ExternalLink,
-  ChevronRight
+  MessageSquare
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
-import { UNIKORN_PRODUCTS } from '../data/seedData';
-import { BUSINESS_INFO } from '../data/servicesData';
+import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
 
 interface ProductsPageProps {
   onNavigate: (path: string) => void;
@@ -23,128 +18,204 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   onNavigate,
   onOpenReviewModal
 }) => {
+  const itemListSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'UNIKORN360 Software Products',
+    url: 'https://www.unikorn360.com/products',
+    numberOfItems: UNIKORN_FOUR_PRODUCTS.length,
+    itemListElement: UNIKORN_FOUR_PRODUCTS.map((product, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: product.name,
+      url: product.canonicalUrl,
+      description: product.shortDescription
+    }))
+  };
+
   return (
-    <div className="bg-[#F5F6F7] min-h-screen">
+    <div className="bg-[#F5F6F7] min-h-screen pb-20">
       <SEOHead
-        title="Software Products & Business OS Suites | UNIKORN360"
-        description="Explore UNIKORN360 proprietary software platforms: InvoicePro360, Nilam360, Deeds360, Advocate360, Startup360, Wellness360, Creator360, Personal OS, and Elite OS."
+        title="Software Products — InvoicePro360, Deeds360, Property360 & Advocate360 | UNIKORN360"
+        description="Explore UNIKORN360 standalone software applications: InvoicePro360, Deeds360, Property360, and Advocate360. View verified product details or open each web application."
         canonicalUrl="https://www.unikorn360.com/products"
+        structuredData={itemListSchema}
+      />
+
+      <Breadcrumbs
+        items={[
+          { label: 'Products', path: '/products' }
+        ]}
+        onNavigate={onNavigate}
       />
 
       {/* Header */}
-      <section className="bg-white border-b border-[#D8DEE5] pt-12 pb-16">
+      <section className="bg-white border-b border-[#D8DEE5] py-12 lg:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Breadcrumbs
-            items={[
-              { label: 'Products', current: true }
-            ]}
-          />
-
-          <div className="max-w-3xl mt-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#214E78]/5 border border-[#214E78]/20 rounded text-[#214E78] text-xs font-semibold uppercase tracking-wider mb-4">
-              <Layers className="w-3.5 h-3.5" />
-              <span>Specialized Business OS Suites &amp; Platforms</span>
+          <div className="max-w-3xl">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#505B66] mb-3">
+              <span className="font-semibold text-[#A57C35] uppercase tracking-wider">
+                UNIKORN360 Product Suite
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>4 Standalone Web Applications</span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-[#30363D] tracking-tight leading-tight">
-              Turnkey Software Platforms for Focused Industries
+              UNIKORN360 Software Products
             </h1>
 
             <p className="mt-4 text-base sm:text-lg text-[#505B66] leading-relaxed">
-              In addition to bespoke development, Unikorn360 develops pre-engineered operational platforms tailored to Indian business workflows. Each product addresses specific operational friction—from counter billing to land registry archives.
+              Explore our four dedicated web applications engineered for business invoicing, bilingual property deed drafting, property and legal case evaluation, and legal chamber practice management.
             </p>
 
-            <div className="mt-6 p-4 bg-[#F5F6F7] border border-[#D8DEE5] rounded-lg text-xs text-[#505B66]">
-              <strong className="text-[#30363D]">Commercial Distinction:</strong> Our bespoke client software services (under the Build division) are scoped and developed from scratch around your specific company workflows. The platforms below are pre-engineered turnkey frameworks available for direct deployment or pilot participation.
+            <div className="mt-6 p-4 bg-[#F5F6F7] border border-[#D8DEE5] rounded-lg text-xs text-[#505B66] leading-relaxed">
+              <strong className="text-[#30363D]">Clear Scope Distinction:</strong> These four applications operate as standalone UNIKORN360 software products with their own independent web environments and sign-in boundaries. They are separate from our custom client engineering and consulting services (under{' '}
+              <a
+                href="/services"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate('/services');
+                }}
+                className="text-[#214E78] font-semibold hover:underline"
+              >
+                Services
+              </a>
+              ) and our regional creator roster (under{' '}
+              <a
+                href="/creators"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate('/creators');
+                }}
+                className="text-[#214E78] font-semibold hover:underline"
+              >
+                Creators
+              </a>
+              ).
             </div>
           </div>
         </div>
       </section>
 
-      {/* Products Grid */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {UNIKORN_PRODUCTS.map((prod) => {
-            const isAvailable = prod.status === 'available';
-            const isPilot = prod.status === 'in-pilot';
-            const isComingSoon = prod.status === 'coming-soon';
-
-            return (
-              <div
-                key={prod.id}
-                className="bg-white border border-[#D8DEE5] rounded-xl p-6 hover:border-[#214E78] hover:shadow-md transition-all flex flex-col justify-between group"
-              >
-                <div>
-                  {/* Status Badge */}
-                  <div className="flex items-center justify-between mb-3 text-[10px] font-bold uppercase tracking-wider">
-                    <span className="text-[#A57C35]">
-                      {prod.division_ref ? `Division: ${prod.division_ref.toUpperCase()}` : 'System OS'}
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded border ${
-                        isAvailable
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : isPilot
-                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}
-                    >
-                      {isAvailable ? '● Available' : isPilot ? '◐ In Pilot' : '○ Coming Soon'}
-                    </span>
-                  </div>
-
-                  {/* Title & Tagline */}
-                  <h3 className="text-xl font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
-                    {prod.name}
-                  </h3>
-                  <p className="text-xs font-semibold text-[#A57C35] mt-0.5">
-                    {prod.tagline}
-                  </p>
-
-                  {/* Description */}
-                  <p className="mt-3 text-xs text-[#505B66] leading-relaxed">
-                    {prod.description}
-                  </p>
-
-                  {/* Target Audience */}
-                  <div className="mt-4 pt-3 border-t border-[#D8DEE5]/60 text-xs">
-                    <span className="text-[10px] font-bold text-[#30363D] uppercase tracking-wider block mb-1">
-                      Target Deployment:
-                    </span>
-                    <p className="text-[#505B66] text-[11px] leading-relaxed">
-                      {prod.target_audience}
-                    </p>
-                  </div>
-
-                  {/* Key Capabilities */}
-                  <div className="mt-4 pt-3 border-t border-[#D8DEE5]/60">
-                    <span className="text-[10px] font-bold text-[#30363D] uppercase tracking-wider block mb-2">
-                      Core Platform Capabilities:
-                    </span>
-                    <ul className="space-y-1.5 text-xs text-[#505B66]">
-                      {prod.key_capabilities.map((cap, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#214E78] shrink-0 mt-0.5" />
-                          <span className="text-[11px] leading-relaxed">{cap}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+      {/* Four Responsive Product Cards */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12" aria-label="UNIKORN360 Products Directory">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+          {UNIKORN_FOUR_PRODUCTS.map((product) => (
+            <article
+              key={product.id}
+              id={`product-card-${product.slug}`}
+              className="bg-white border border-[#D8DEE5] rounded-xl p-6 sm:p-8 hover:border-[#214E78] hover:shadow-md transition-all flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#505B66] mb-2">
+                  <span className="font-semibold text-[#A57C35] uppercase tracking-wider">
+                    {product.categoryLabel}
+                  </span>
                 </div>
 
-                {/* Bottom Action */}
-                <div className="pt-5 mt-6 border-t border-[#D8DEE5]">
-                  <button
-                    onClick={() => onOpenReviewModal(`Product Discussion: ${prod.name}`)}
-                    className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white rounded text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                {/* Product Name */}
+                <h2 className="text-2xl font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
+                  <a
+                    href={product.path}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onNavigate(product.path);
+                    }}
+                    className="focus:outline-none focus:underline"
                   >
-                    <span>{prod.cta_text}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                    {product.name}
+                  </a>
+                </h2>
+
+                {/* Approved Short Description */}
+                <p className="mt-3 text-sm text-[#505B66] leading-relaxed">
+                  {product.shortDescription}
+                </p>
+
+                {/* Intended Users Summary */}
+                <div className="mt-5 pt-4 border-t border-[#D8DEE5]/70">
+                  <span className="text-[11px] font-bold text-[#30363D] uppercase tracking-wider block mb-2">
+                    Intended Users
+                  </span>
+                  <ul className="space-y-1.5 text-xs text-[#505B66]">
+                    {product.intendedUsers.map((user, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-[#A57C35] font-bold" aria-hidden="true">·</span>
+                        <span className="leading-relaxed">{user}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Verified Capabilities Summary */}
+                <div className="mt-5 pt-4 border-t border-[#D8DEE5]/70">
+                  <span className="text-[11px] font-bold text-[#30363D] uppercase tracking-wider block mb-2">
+                    Verified Features
+                  </span>
+                  <ul className="space-y-2 text-xs text-[#505B66]">
+                    {product.verifiedFeatures.slice(0, 4).map((feat, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#214E78] shrink-0 mt-0.5" />
+                        <span className="leading-relaxed">
+                          <strong className="text-[#30363D]">{feat.title}:</strong> {feat.description}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Dual Action Buttons: View Product & Open App */}
+              <div className="pt-6 mt-6 border-t border-[#D8DEE5] flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <a
+                  href={product.path}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNavigate(product.path);
+                  }}
+                  id={`product-card-view-${product.slug}`}
+                  className="flex-1 py-2.5 px-4 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] border border-[#D8DEE5] hover:border-[#214E78] rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center justify-center gap-1.5"
+                >
+                  <span>View Product</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#214E78]" />
+                </a>
+
+                <a
+                  href={product.appUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id={`product-card-open-${product.slug}`}
+                  className="flex-1 py-2.5 px-4 bg-[#214E78] hover:bg-[#173858] text-white rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center justify-center gap-1.5"
+                >
+                  <span>Open App</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        {/* Demo Enquiry Callout */}
+        <div className="mt-12 bg-white border border-[#D8DEE5] rounded-xl p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="max-w-2xl">
+            <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#30363D]">
+              Need a Guided Product Walkthrough?
+            </h2>
+            <p className="mt-2 text-sm text-[#505B66] leading-relaxed">
+              Request a live demonstration of InvoicePro360, Deeds360, Property360, or Advocate360 through our standard project enquiry workflow.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <button
+              type="button"
+              onClick={() => onOpenReviewModal('Product Demo Request')}
+              className="px-6 py-3 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-bold uppercase tracking-[0.15em] rounded transition-colors inline-flex items-center gap-2 cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Request a Demo</span>
+            </button>
+          </div>
         </div>
       </section>
     </div>

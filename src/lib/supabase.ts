@@ -1,16 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { 
-  ServiceDivision, 
-  ServiceCatalogItem, 
-  ServiceRelation, 
-  ServicePackage,
+import {
+  ServiceDivision,
+  ServiceCatalogItem,
+  ServiceRelation,
   RecordStatus
 } from '../types/database';
-import { 
-  SEED_DIVISIONS, 
-  SEED_SERVICES, 
-  LEGACY_URL_REDIRECTS 
-} from '../data/seedData';
+import { LEGACY_URL_REDIRECTS } from '../data/seedData';
+import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
+import { generateSitemapXml, getSitemapEntries, SitemapUrlEntry } from './sitemap';
 
 const envObj: Record<string, string | undefined> =
   typeof import.meta !== 'undefined' && (import.meta as any).env
@@ -48,26 +45,30 @@ export const supabase: SupabaseClient | null = isRemoteSupabaseConfigured
     })
   : null;
 
-// Local Storage Persistence Keys - Bumped to v4 for 6-division, 37-service architecture
-const LOCAL_DIVISIONS_KEY = 'unikorn360_service_divisions_v4';
-const LOCAL_CATALOG_KEY = 'unikorn360_service_catalog_v4';
-const LOCAL_RELATIONS_KEY = 'unikorn360_service_relations_v4';
-
-const OBSOLETE_AUTH_STORAGE_KEYS = [
+const OBSOLETE_STORAGE_KEYS = [
   'unikorn360_admin_token',
   'unikorn360_admin_pin',
-  'unikorn360_admin_session'
+  'unikorn360_admin_session',
+  'unikorn360_service_divisions_v4',
+  'unikorn360_service_catalog_v4',
+  'unikorn360_service_relations_v4'
 ];
 
 export function purgeObsoleteAuthStorageKeys(): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
-    for (const key of OBSOLETE_AUTH_STORAGE_KEYS) {
+    for (const key of OBSOLETE_STORAGE_KEYS) {
       window.localStorage.removeItem(key);
     }
   } catch {
     // Ignore storage access errors
   }
+}
+
+export const SAFE_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: unknown): value is string {
+  return typeof value === 'string' && SAFE_UUID_REGEX.test(value.trim());
 }
 
 export interface SupabaseAuthLikeClient {
@@ -89,6 +90,10 @@ export interface SupabaseAuthLikeClient {
   };
 }
 
+export interface SupabaseDatabaseLikeClient {
+  from: (table: string) => any;
+}
+
 export interface VerifiedAdminSession {
   user: { id: string; email: string };
   role: 'superadmin' | 'admin' | 'evaluator';
@@ -104,127 +109,93 @@ export interface AdminSessionCheckResult {
   error?: string;
 }
 
+export interface ServicesServiceOptions {
+  authClient?: SupabaseAuthLikeClient | null;
+  dbClient?: SupabaseDatabaseLikeClient | null;
+  fetchImpl?: typeof fetch;
+}
+
 /**
- * Resilient Database & Session Layer
- * Uses Supabase SDK-managed session persistence & automatic token refresh,
- * paired with server-side administrator membership verification via /api/admin/auth/me.
+ * Connected Supabase Service Catalogue & Session Layer.
+ *
+ * - Performs all reads and writes for `service_divisions`, `service_catalog`,
+ *   and `service_relations` directly against Supabase (PostgreSQL + RLS).
+ * - Uses database UUIDs for record IDs and slugs for URLs.
+ * - Never falls back to localStorage or static seed arrays on read or write.
+ * - Never resets or reseeds records when record counts change.
  */
 export class ResilientServicesService {
-  private divisions: ServiceDivision[] = [];
-  private catalog: ServiceCatalogItem[] = [];
-  private relations: ServiceRelation[] = [];
-  private initialized = false;
   private authClient: SupabaseAuthLikeClient | null;
+  private dbClient: SupabaseDatabaseLikeClient | null;
   private fetchImpl: typeof fetch;
 
   constructor(
-    optionsOrClient?:
-      | { authClient?: SupabaseAuthLikeClient | null; fetchImpl?: typeof fetch }
-      | SupabaseAuthLikeClient
-      | null,
+    optionsOrClient?: ServicesServiceOptions | SupabaseAuthLikeClient | null,
     customFetch?: typeof fetch
   ) {
     if (
       optionsOrClient &&
       typeof optionsOrClient === 'object' &&
-      ('authClient' in optionsOrClient || 'fetchImpl' in optionsOrClient)
+      ('authClient' in optionsOrClient || 'dbClient' in optionsOrClient || 'fetchImpl' in optionsOrClient)
     ) {
-      this.authClient = optionsOrClient.authClient !== undefined ? optionsOrClient.authClient : (supabase as unknown as SupabaseAuthLikeClient | null);
+      this.authClient =
+        optionsOrClient.authClient !== undefined
+          ? optionsOrClient.authClient
+          : (supabase as unknown as SupabaseAuthLikeClient | null);
+      this.dbClient =
+        optionsOrClient.dbClient !== undefined
+          ? optionsOrClient.dbClient
+          : (supabase as unknown as SupabaseDatabaseLikeClient | null);
       this.fetchImpl = optionsOrClient.fetchImpl || ((...args: Parameters<typeof fetch>) => fetch(...args));
     } else {
-      this.authClient = optionsOrClient !== undefined ? (optionsOrClient as SupabaseAuthLikeClient | null) : (supabase as unknown as SupabaseAuthLikeClient | null);
+      const providedClient =
+        optionsOrClient !== undefined
+          ? (optionsOrClient as SupabaseAuthLikeClient | null)
+          : (supabase as unknown as SupabaseAuthLikeClient | null);
+      this.authClient = providedClient;
+      this.dbClient =
+        providedClient && typeof (providedClient as any).from === 'function'
+          ? (providedClient as unknown as SupabaseDatabaseLikeClient)
+          : (supabase as unknown as SupabaseDatabaseLikeClient | null);
       this.fetchImpl = customFetch || ((...args: Parameters<typeof fetch>) => fetch(...args));
     }
     purgeObsoleteAuthStorageKeys();
-    this.initLocalStore();
   }
 
-  private async requireCatalogAdmin(): Promise<{ user: any; role: 'superadmin' | 'admin' }> {
-    const session = await this.getCurrentAdminSession();
-    if (!session) {
-      throw new Error('Authentication required: Please sign in as an administrator.');
+  public setDatabaseClient(client: SupabaseDatabaseLikeClient | null): void {
+    this.dbClient = client;
+  }
+
+  private getRequiredDb(): SupabaseDatabaseLikeClient {
+    if (!this.dbClient || typeof this.dbClient.from !== 'function') {
+      throw new Error(
+        'Supabase database client is not configured. Service catalogue operations require an active database connection.'
+      );
     }
-    if (session.role !== 'superadmin' && session.role !== 'admin') {
+    return this.dbClient;
+  }
+
+  private async requireCatalogAdmin(): Promise<{
+    user: { id: string; email: string };
+    role: 'superadmin' | 'admin';
+    accessToken: string;
+  }> {
+    const result = await this.verifyAdminSession();
+    if (result.status !== 'authenticated' || !result.session) {
+      throw new Error(result.error || 'Authentication required: Please sign in as an administrator.');
+    }
+    if (result.session.role !== 'superadmin' && result.session.role !== 'admin') {
       throw new Error('Permission denied: Only superadmin and admin roles can manage the service catalogue.');
     }
-    return { user: session.user, role: session.role };
-  }
-
-  private initLocalStore() {
-    if (typeof window === 'undefined') {
-      this.divisions = [...SEED_DIVISIONS];
-      this.catalog = [...SEED_SERVICES];
-      return;
-    }
-
-    try {
-      const storedDivisions = localStorage.getItem(LOCAL_DIVISIONS_KEY);
-      const storedCatalog = localStorage.getItem(LOCAL_CATALOG_KEY);
-      const storedRelations = localStorage.getItem(LOCAL_RELATIONS_KEY);
-
-      let needsReseed = false;
-
-      if (storedDivisions) {
-        const parsed = JSON.parse(storedDivisions);
-        const hasLegacySlugs = parsed.some((d: ServiceDivision) => 
-          ['build', 'secure', 'grow', 'influence', 'automate', 'intelligence', 'business-support', 'consulting-education'].includes(d.slug)
-        );
-        if (!Array.isArray(parsed) || parsed.length !== 6 || hasLegacySlugs) {
-          needsReseed = true;
-        } else {
-          this.divisions = parsed;
-        }
-      } else {
-        needsReseed = true;
-      }
-
-      if (storedCatalog) {
-        const parsedCatalog = JSON.parse(storedCatalog);
-        if (!Array.isArray(parsedCatalog) || parsedCatalog.length !== SEED_SERVICES.length || needsReseed) {
-          needsReseed = true;
-        } else {
-          this.catalog = parsedCatalog;
-        }
-      } else {
-        needsReseed = true;
-      }
-
-      if (needsReseed) {
-        this.divisions = [...SEED_DIVISIONS];
-        this.catalog = [...SEED_SERVICES];
-        localStorage.setItem(LOCAL_DIVISIONS_KEY, JSON.stringify(this.divisions));
-        localStorage.setItem(LOCAL_CATALOG_KEY, JSON.stringify(this.catalog));
-      }
-
-      if (storedRelations) {
-        this.relations = JSON.parse(storedRelations);
-      } else {
-        this.relations = [];
-      }
-      this.initialized = true;
-    } catch {
-      this.divisions = [...SEED_DIVISIONS];
-      this.catalog = [...SEED_SERVICES];
-      this.relations = [];
-    }
-  }
-
-  private persist() {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(LOCAL_DIVISIONS_KEY, JSON.stringify(this.divisions));
-      localStorage.setItem(LOCAL_CATALOG_KEY, JSON.stringify(this.catalog));
-      localStorage.setItem(LOCAL_RELATIONS_KEY, JSON.stringify(this.relations));
-    } catch (e) {
-      console.warn('Failed to persist to localStorage', e);
-    }
+    return {
+      user: result.session.user,
+      role: result.session.role,
+      accessToken: result.session.accessToken
+    };
   }
 
   // --- SDK-Managed Auth & Backend Membership Verification ---
 
-  /**
-   * Obtains the current SDK-managed access token (automatically refreshed by @supabase/supabase-js).
-   */
   public async getAccessToken(): Promise<string | null> {
     purgeObsoleteAuthStorageKeys();
     if (!this.authClient) return null;
@@ -239,11 +210,6 @@ export class ResilientServicesService {
     }
   }
 
-  /**
-   * Signs in with email & password via the browser Supabase SDK (`signInWithPassword`),
-   * then verifies administrator membership through `/api/admin/auth/me`.
-   * If membership is missing or invalid, signs out immediately and returns the rejection status.
-   */
   public async signInAdmin(
     email: string,
     password: string
@@ -274,7 +240,6 @@ export class ResilientServicesService {
         return verification;
       }
 
-      // verifyTokenWithBackend already triggers signOut on 401/403, ensure clean signOut on any non-authenticated result
       await this.authClient.auth.signOut({ scope: 'local' }).catch(() => {});
       return verification;
     } catch (err: any) {
@@ -285,9 +250,6 @@ export class ResilientServicesService {
     }
   }
 
-  /**
-   * Verifies a specific SDK access token against the protected `/api/admin/auth/me` backend endpoint.
-   */
   public async verifyTokenWithBackend(accessToken: string): Promise<AdminSessionCheckResult> {
     if (!accessToken) {
       return { status: 'unauthenticated' };
@@ -360,9 +322,6 @@ export class ResilientServicesService {
     }
   }
 
-  /**
-   * Checks current SDK session and verifies membership with the backend.
-   */
   public async verifyAdminSession(): Promise<AdminSessionCheckResult> {
     purgeObsoleteAuthStorageKeys();
     if (!this.authClient) {
@@ -402,10 +361,6 @@ export class ResilientServicesService {
     return null;
   }
 
-  /**
-   * Subscribes to Supabase auth state events (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED, SIGNED_OUT)
-   * and verifies the active session token with the backend before notifying the subscriber.
-   */
   public onAdminAuthStateChange(
     callback: (result: AdminSessionCheckResult, event: string) => void
   ): () => void {
@@ -424,10 +379,6 @@ export class ResilientServicesService {
     };
   }
 
-  /**
-   * Awaits the Supabase SDK sign-out operation, clears obsolete local state,
-   * and accurately reports any sign-out failure.
-   */
   public async logoutAdmin(): Promise<{ success: boolean; error?: string }> {
     purgeObsoleteAuthStorageKeys();
     if (!this.authClient) {
@@ -451,54 +402,116 @@ export class ResilientServicesService {
     }
   }
 
+  // ====================================================================
+  // REAL SUPABASE CATALOGUE OPERATIONS (DIVISIONS, SERVICES, RELATIONS)
+  // ====================================================================
+
   // --- Divisions ---
   public async getDivisions(options?: { includeDrafts?: boolean }): Promise<ServiceDivision[]> {
     const includeDrafts = options?.includeDrafts ?? false;
+    if (includeDrafts) {
+      await this.requireCatalogAdmin();
+    }
 
-    // Filter divisions based on status
-    const filteredDivisions = this.divisions
-      .filter(d => includeDrafts || d.status === 'published')
-      .sort((a, b) => a.display_order - b.display_order);
+    const db = this.getRequiredDb();
+    let divQuery = db
+      .from('service_divisions')
+      .select('*')
+      .order('display_order', { ascending: true });
 
-    // Compute dynamic public count of published services per division
-    return filteredDivisions.map(div => {
-      const publishedCount = this.catalog.filter(
-        s => s.division_id === div.id && s.status === 'published'
-      ).length;
+    if (!includeDrafts) {
+      divQuery = divQuery.eq('status', 'published');
+    }
 
-      return {
+    const { data: divisions, error: divError } = await divQuery;
+    if (divError) {
+      throw new Error(`Failed to fetch service divisions from Supabase: ${divError.message}`);
+    }
+
+    const { data: publishedServices, error: svcError } = await db
+      .from('service_catalog')
+      .select('id, division_id, status')
+      .eq('status', 'published');
+
+    if (svcError) {
+      throw new Error(`Failed to fetch published services count from Supabase: ${svcError.message}`);
+    }
+
+    const countByDivision = new Map<string, number>();
+    for (const svc of publishedServices || []) {
+      if (svc.status === 'published' && svc.division_id) {
+        countByDivision.set(svc.division_id, (countByDivision.get(svc.division_id) || 0) + 1);
+      }
+    }
+
+    return ((divisions || []) as ServiceDivision[])
+      .filter((div) => includeDrafts || div.status === 'published')
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((div) => ({
         ...div,
-        published_service_count: publishedCount
-      };
-    });
+        published_service_count: countByDivision.get(div.id) || 0
+      }));
   }
 
   public async getDivisionBySlug(
-    slug: string, 
+    slug: string,
     options?: { includeDrafts?: boolean }
   ): Promise<{ division: ServiceDivision; services: ServiceCatalogItem[] } | null> {
+    if (!slug) return null;
     const normalizedSlug = slug.toLowerCase().trim();
     const includeDrafts = options?.includeDrafts ?? false;
-
-    const division = this.divisions.find(d => d.slug.toLowerCase() === normalizedSlug);
-    if (!division) return null;
-
-    if (!includeDrafts && division.status !== 'published') {
-      return null; // RLS: Public cannot view unpublished division
+    if (includeDrafts) {
+      await this.requireCatalogAdmin();
     }
 
-    const services = this.catalog
-      .filter(s => s.division_id === division.id && (includeDrafts || s.status === 'published'))
+    const db = this.getRequiredDb();
+    let divQuery = db
+      .from('service_divisions')
+      .select('*')
+      .eq('slug', normalizedSlug);
+
+    if (!includeDrafts) {
+      divQuery = divQuery.eq('status', 'published');
+    }
+
+    const { data: division, error: divError } = await divQuery.maybeSingle();
+    if (divError) {
+      throw new Error(`Failed to fetch division "${normalizedSlug}" from Supabase: ${divError.message}`);
+    }
+    if (!division) {
+      return null;
+    }
+    if (!includeDrafts && division.status !== 'published') {
+      return null;
+    }
+
+    let svcQuery = db
+      .from('service_catalog')
+      .select('*')
+      .eq('division_id', division.id)
+      .order('display_order', { ascending: true });
+
+    if (!includeDrafts) {
+      svcQuery = svcQuery.eq('status', 'published');
+    }
+
+    const { data: services, error: svcError } = await svcQuery;
+    if (svcError) {
+      throw new Error(`Failed to fetch services for division "${normalizedSlug}": ${svcError.message}`);
+    }
+
+    const filteredServices = ((services || []) as ServiceCatalogItem[])
+      .filter((s) => includeDrafts || s.status === 'published')
       .sort((a, b) => a.display_order - b.display_order);
+
+    const publishedCount = filteredServices.filter((s) => s.status === 'published').length;
 
     return {
       division: {
-        ...division,
-        published_service_count: this.catalog.filter(
-          s => s.division_id === division.id && s.status === 'published'
-        ).length
+        ...(division as ServiceDivision),
+        published_service_count: publishedCount
       },
-      services
+      services: filteredServices
     };
   }
 
@@ -512,53 +525,132 @@ export class ResilientServicesService {
     division: ServiceDivision;
     relatedServices: ServiceCatalogItem[];
   } | null> {
+    if (!divisionSlug || !serviceSlug) return null;
+    const includeDrafts = options?.includeDrafts ?? false;
+    if (includeDrafts) {
+      await this.requireCatalogAdmin();
+    }
+
     const divResult = await this.getDivisionBySlug(divisionSlug, options);
     if (!divResult) return null;
 
-    const { division } = divResult;
+    const { division, services: divisionServices } = divResult;
     const normalizedServiceSlug = serviceSlug.toLowerCase().trim();
-    const includeDrafts = options?.includeDrafts ?? false;
 
-    // Match exact slug or legacy alias
-    const service = this.catalog.find(
-      s => s.division_id === division.id && 
-           (s.slug.toLowerCase() === normalizedServiceSlug || 
-            (s.legacy_slugs && s.legacy_slugs.some(ls => ls.toLowerCase() === normalizedServiceSlug)))
-    );
+    const db = this.getRequiredDb();
+    let svcQuery = db
+      .from('service_catalog')
+      .select('*')
+      .eq('division_id', division.id)
+      .eq('slug', normalizedServiceSlug);
+
+    if (!includeDrafts) {
+      svcQuery = svcQuery.eq('status', 'published');
+    }
+
+    const { data: service, error: svcError } = await svcQuery.maybeSingle();
+    if (svcError) {
+      throw new Error(`Failed to fetch service "${normalizedServiceSlug}" from Supabase: ${svcError.message}`);
+    }
 
     if (!service) return null;
-
-    // RLS: Public cannot view draft or archived service
     if (!includeDrafts && service.status !== 'published') {
       return null;
     }
 
-    // Get related published services
-    const relatedServices = this.catalog
-      .filter(s => s.division_id === division.id && s.id !== service.id && s.status === 'published')
-      .slice(0, 3);
+    // Fetch explicit service_relations from Supabase
+    const relatedServices: ServiceCatalogItem[] = [];
+    const { data: relations, error: relError } = await db
+      .from('service_relations')
+      .select('*')
+      .eq('service_id', service.id)
+      .order('display_order', { ascending: true });
+
+    if (!relError && Array.isArray(relations) && relations.length > 0) {
+      const relatedIds = relations.map((r: ServiceRelation) => r.related_service_id).filter(Boolean);
+      if (relatedIds.length > 0) {
+        const { data: relSrvRows } = await db
+          .from('service_catalog')
+          .select('*')
+          .in('id', relatedIds)
+          .eq('status', 'published');
+
+        if (Array.isArray(relSrvRows) && relSrvRows.length > 0) {
+          const { data: pubDivs } = await db
+            .from('service_divisions')
+            .select('id')
+            .eq('status', 'published');
+          const pubDivSet = new Set((pubDivs || []).map((d: any) => d.id));
+          const byId = new Map<string, ServiceCatalogItem>(
+            (relSrvRows as ServiceCatalogItem[])
+              .filter((s) => s.status === 'published' && pubDivSet.has(s.division_id))
+              .map((s) => [s.id, s])
+          );
+          for (const relId of relatedIds) {
+            const match = byId.get(relId);
+            if (match && match.id !== service.id) {
+              relatedServices.push(match);
+            }
+          }
+        }
+      }
+    }
+
+    // Supplement with other published services in the same published division up to 3
+    if (division.status === 'published' && relatedServices.length < 3) {
+      for (const sibling of divisionServices) {
+        if (
+          sibling.id !== service.id &&
+          sibling.status === 'published' &&
+          !relatedServices.some((r) => r.id === sibling.id)
+        ) {
+          relatedServices.push(sibling);
+          if (relatedServices.length >= 3) break;
+        }
+      }
+    }
 
     return {
-      service,
+      service: service as ServiceCatalogItem,
       division,
       relatedServices
     };
   }
 
   public async getAllPublishedServices(): Promise<ServiceCatalogItem[]> {
-    // Only return services where both service AND parent division are published
+    const db = this.getRequiredDb();
+
+    const [divRes, svcRes] = await Promise.all([
+      db.from('service_divisions').select('id, status').eq('status', 'published'),
+      db
+        .from('service_catalog')
+        .select('*')
+        .eq('status', 'published')
+        .order('display_order', { ascending: true })
+    ]);
+
+    if (divRes.error) {
+      throw new Error(`Failed to fetch published divisions from Supabase: ${divRes.error.message}`);
+    }
+    if (svcRes.error) {
+      throw new Error(`Failed to fetch published services from Supabase: ${svcRes.error.message}`);
+    }
+
     const publishedDivisionIds = new Set(
-      this.divisions.filter(d => d.status === 'published').map(d => d.id)
+      (divRes.data || [])
+        .filter((d: any) => d.status === 'published')
+        .map((d: any) => d.id)
     );
 
-    return this.catalog
-      .filter(s => s.status === 'published' && publishedDivisionIds.has(s.division_id))
+    return ((svcRes.data || []) as ServiceCatalogItem[])
+      .filter((s) => s.status === 'published' && publishedDivisionIds.has(s.division_id))
       .sort((a, b) => a.display_order - b.display_order);
   }
 
   public async getAllServicesForAdmin(): Promise<{
     services: (ServiceCatalogItem & { division_name: string; division_slug: string })[];
     divisions: ServiceDivision[];
+    relations: ServiceRelation[];
     stats: {
       totalServices: number;
       publishedServices: number;
@@ -567,9 +659,47 @@ export class ResilientServicesService {
     };
   }> {
     await this.requireCatalogAdmin();
-    const divisionMap = new Map(this.divisions.map(d => [d.id, d]));
+    const db = this.getRequiredDb();
 
-    const enrichedServices = this.catalog.map(s => {
+    const [divRes, svcRes, relRes] = await Promise.all([
+      db.from('service_divisions').select('*').order('display_order', { ascending: true }),
+      db.from('service_catalog').select('*').order('display_order', { ascending: true }),
+      db.from('service_relations').select('*').order('display_order', { ascending: true })
+    ]);
+
+    if (divRes.error) {
+      throw new Error(`Failed to fetch divisions for admin: ${divRes.error.message}`);
+    }
+    if (svcRes.error) {
+      throw new Error(`Failed to fetch services for admin: ${svcRes.error.message}`);
+    }
+    if (relRes.error) {
+      throw new Error(`Failed to fetch service relations for admin: ${relRes.error.message}`);
+    }
+
+    const rawDivisions = ((divRes.data || []) as ServiceDivision[]).sort(
+      (a, b) => a.display_order - b.display_order
+    );
+    const rawServices = ((svcRes.data || []) as ServiceCatalogItem[]).sort(
+      (a, b) => a.display_order - b.display_order
+    );
+    const relations = (relRes.data || []) as ServiceRelation[];
+
+    const divisionMap = new Map(rawDivisions.map((d) => [d.id, d]));
+    const publishedCountByDiv = new Map<string, number>();
+
+    for (const s of rawServices) {
+      if (s.status === 'published') {
+        publishedCountByDiv.set(s.division_id, (publishedCountByDiv.get(s.division_id) || 0) + 1);
+      }
+    }
+
+    const divisions = rawDivisions.map((d) => ({
+      ...d,
+      published_service_count: publishedCountByDiv.get(d.id) || 0
+    }));
+
+    const enrichedServices = rawServices.map((s) => {
       const parent = divisionMap.get(s.division_id);
       return {
         ...s,
@@ -579,48 +709,97 @@ export class ResilientServicesService {
     });
 
     const stats = {
-      totalServices: this.catalog.length,
-      publishedServices: this.catalog.filter(s => s.status === 'published').length,
-      draftServices: this.catalog.filter(s => s.status === 'draft').length,
-      archivedServices: this.catalog.filter(s => s.status === 'archived').length
+      totalServices: rawServices.length,
+      publishedServices: rawServices.filter((s) => s.status === 'published').length,
+      draftServices: rawServices.filter((s) => s.status === 'draft').length,
+      archivedServices: rawServices.filter((s) => s.status === 'archived').length
     };
 
     return {
       services: enrichedServices,
-      divisions: this.divisions,
+      divisions,
+      relations,
       stats
     };
   }
 
-  // --- CRUD Operations (Protected for Admin & Superadmin Only) ---
+  // --- CRUD Operations (Protected for Admin & Superadmin Only via Auth + RLS) ---
+
   public async createService(
-    serviceData: Omit<ServiceCatalogItem, 'id' | 'created_at' | 'updated_at'>
+    serviceData: Omit<ServiceCatalogItem, 'id' | 'created_at' | 'updated_at'> & { id?: string }
   ): Promise<ServiceCatalogItem> {
     await this.requireCatalogAdmin();
-    // Validate unique slug within division
-    const existing = this.catalog.find(
-      s => s.division_id === serviceData.division_id && 
-           s.slug.toLowerCase() === serviceData.slug.toLowerCase()
-    );
+    const db = this.getRequiredDb();
 
-    if (existing) {
-      throw new Error(`A service with slug "${serviceData.slug}" already exists in this division.`);
+    if (!serviceData.division_id || !isValidUuid(serviceData.division_id)) {
+      throw new Error('A valid division UUID (division_id) is required to create a service.');
+    }
+    const cleanName = (serviceData.service_name || '').trim();
+    const cleanSlug = (serviceData.slug || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!cleanName || !cleanSlug) {
+      throw new Error('Service name and URL slug are required.');
     }
 
-    const newId = `srv-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
-    const now = new Date().toISOString();
+    const status: RecordStatus = serviceData.status || 'draft';
+    if (!['draft', 'published', 'archived'].includes(status)) {
+      throw new Error(`Invalid service status "${status}".`);
+    }
 
-    const newService: ServiceCatalogItem = {
-      ...serviceData,
-      id: newId,
-      created_at: now,
-      updated_at: now,
-      published_at: serviceData.status === 'published' ? now : null
+    const now = new Date().toISOString();
+    const insertPayload: Record<string, any> = {
+      division_id: serviceData.division_id,
+      service_name: cleanName,
+      slug: cleanSlug,
+      short_description: serviceData.short_description || '',
+      full_description: serviceData.full_description || '',
+      problems_solved: Array.isArray(serviceData.problems_solved) ? serviceData.problems_solved : [],
+      target_customers: Array.isArray(serviceData.target_customers) ? serviceData.target_customers : [],
+      benefits: Array.isArray(serviceData.benefits) ? serviceData.benefits : [],
+      deliverables: Array.isArray(serviceData.deliverables) ? serviceData.deliverables : [],
+      packages: Array.isArray(serviceData.packages) ? serviceData.packages : [],
+      process_steps: Array.isArray(serviceData.process_steps) ? serviceData.process_steps : [],
+      client_responsibilities: Array.isArray(serviceData.client_responsibilities)
+        ? serviceData.client_responsibilities
+        : [],
+      exclusions: Array.isArray(serviceData.exclusions) ? serviceData.exclusions : [],
+      additional_charges: Array.isArray(serviceData.additional_charges)
+        ? serviceData.additional_charges
+        : [],
+      hero_image_url: serviceData.hero_image_url || null,
+      hero_image_alt: serviceData.hero_image_alt || null,
+      gallery: Array.isArray(serviceData.gallery) ? serviceData.gallery : [],
+      faqs: Array.isArray(serviceData.faqs) ? serviceData.faqs : [],
+      seo_title: serviceData.seo_title || `${cleanName} | Unikorn360`,
+      seo_description: serviceData.seo_description || serviceData.short_description || '',
+      social_image_url: serviceData.social_image_url || null,
+      status,
+      display_order: typeof serviceData.display_order === 'number' ? serviceData.display_order : 0,
+      published_at: status === 'published' ? serviceData.published_at || now : null
     };
 
-    this.catalog.push(newService);
-    this.persist();
-    return newService;
+    if (serviceData.id !== undefined) {
+      if (!isValidUuid(serviceData.id)) {
+        throw new Error('Service ID must be a valid database UUID.');
+      }
+      insertPayload.id = serviceData.id;
+    }
+
+    const { data, error } = await db
+      .from('service_catalog')
+      .insert(insertPayload)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(`Failed to create service in Supabase: ${error?.message || 'Unknown database error'}`);
+    }
+
+    return data as ServiceCatalogItem;
   }
 
   public async updateService(
@@ -628,73 +807,194 @@ export class ResilientServicesService {
     updates: Partial<ServiceCatalogItem>
   ): Promise<ServiceCatalogItem> {
     await this.requireCatalogAdmin();
-    const index = this.catalog.findIndex(s => s.id === id);
-    if (index === -1) {
-      throw new Error(`Service with ID ${id} not found.`);
-    }
+    const db = this.getRequiredDb();
 
-    const current = this.catalog[index];
-
-    // Check slug collision if slug changed
-    if (updates.slug && updates.slug.toLowerCase() !== current.slug.toLowerCase()) {
-      const divId = updates.division_id || current.division_id;
-      const collision = this.catalog.find(
-        s => s.id !== id && s.division_id === divId && s.slug.toLowerCase() === updates.slug!.toLowerCase()
-      );
-      if (collision) {
-        throw new Error(`A service with slug "${updates.slug}" already exists in this division.`);
-      }
+    if (!isValidUuid(id)) {
+      throw new Error(`Invalid service UUID "${id}".`);
     }
 
     const now = new Date().toISOString();
-    const updatedService: ServiceCatalogItem = {
-      ...current,
-      ...updates,
-      updated_at: now,
-      published_at: updates.status === 'published' && !current.published_at ? now : current.published_at
+    const allowedColumns: (keyof ServiceCatalogItem)[] = [
+      'division_id',
+      'service_name',
+      'slug',
+      'short_description',
+      'full_description',
+      'problems_solved',
+      'target_customers',
+      'benefits',
+      'deliverables',
+      'packages',
+      'process_steps',
+      'client_responsibilities',
+      'exclusions',
+      'additional_charges',
+      'hero_image_url',
+      'hero_image_alt',
+      'gallery',
+      'faqs',
+      'seo_title',
+      'seo_description',
+      'social_image_url',
+      'status',
+      'display_order',
+      'published_at'
+    ];
+
+    const payload: Record<string, any> = {
+      updated_at: now
     };
 
-    this.catalog[index] = updatedService;
-    this.persist();
-    return updatedService;
+    for (const key of allowedColumns) {
+      if (Object.prototype.hasOwnProperty.call(updates, key) && updates[key] !== undefined) {
+        payload[key] = updates[key];
+      }
+    }
+
+    if (payload.slug !== undefined) {
+      payload.slug = String(payload.slug)
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!payload.slug) {
+        throw new Error('Service slug cannot be empty.');
+      }
+    }
+
+    if (payload.division_id !== undefined && !isValidUuid(payload.division_id)) {
+      throw new Error('Parent division_id must be a valid UUID.');
+    }
+
+    if (payload.status !== undefined) {
+      if (!['draft', 'published', 'archived'].includes(payload.status)) {
+        throw new Error(`Invalid service status "${payload.status}".`);
+      }
+      if (payload.status === 'published' && payload.published_at === undefined) {
+        payload.published_at = now;
+      } else if (payload.status !== 'published') {
+        payload.published_at = null;
+      }
+    }
+
+    const { data, error } = await db
+      .from('service_catalog')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(`Failed to update service in Supabase: ${error?.message || 'Service not found or access denied'}`);
+    }
+
+    return data as ServiceCatalogItem;
   }
 
   public async updateServiceStatus(
-    id: string, 
+    id: string,
     status: RecordStatus
   ): Promise<ServiceCatalogItem> {
-    await this.requireCatalogAdmin();
-    const token = await this.getAccessToken();
-    if (token) {
-      await this.fetchImpl(`/api/admin/services/${encodeURIComponent(id)}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ status })
-      });
+    if (!['draft', 'published', 'archived'].includes(status)) {
+      throw new Error(`Invalid status "${status}".`);
     }
-    return this.updateService(id, { status });
+    return this.updateService(id, {
+      status,
+      published_at: status === 'published' ? new Date().toISOString() : null
+    });
+  }
+
+  public async publishService(id: string): Promise<ServiceCatalogItem> {
+    return this.updateServiceStatus(id, 'published');
+  }
+
+  public async unpublishService(id: string): Promise<ServiceCatalogItem> {
+    return this.updateServiceStatus(id, 'draft');
   }
 
   public async deleteService(id: string, softArchive = true): Promise<boolean> {
     const session = await this.requireCatalogAdmin();
-    if (!softArchive && session.role !== 'superadmin') {
-      throw new Error('Permission denied: Only superadmin can permanently delete services.');
+    if (!isValidUuid(id)) {
+      throw new Error(`Invalid service UUID "${id}".`);
     }
-    const index = this.catalog.findIndex(s => s.id === id);
-    if (index === -1) return false;
 
     if (softArchive) {
-      this.catalog[index].status = 'archived';
-      this.catalog[index].updated_at = new Date().toISOString();
-    } else {
-      this.catalog.splice(index, 1);
+      await this.updateServiceStatus(id, 'archived');
+      return true;
     }
 
-    this.persist();
+    if (session.role !== 'superadmin') {
+      throw new Error('Permission denied: Only superadmin can permanently delete services.');
+    }
+
+    const db = this.getRequiredDb();
+    const { data, error } = await db
+      .from('service_catalog')
+      .delete()
+      .eq('id', id)
+      .select('id');
+
+    if (error) {
+      throw new Error(`Failed to delete service in Supabase: ${error.message}`);
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(`Service "${id}" could not be deleted or was not found.`);
+    }
+
     return true;
+  }
+
+  public async createDivision(
+    divisionData: Omit<ServiceDivision, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+  ): Promise<ServiceDivision> {
+    await this.requireCatalogAdmin();
+    const db = this.getRequiredDb();
+
+    const cleanName = (divisionData.name || '').trim();
+    const cleanSlug = (divisionData.slug || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!cleanName || !cleanSlug) {
+      throw new Error('Division name and slug are required.');
+    }
+
+    const status: RecordStatus = divisionData.status || 'draft';
+    if (!['draft', 'published', 'archived'].includes(status)) {
+      throw new Error(`Invalid division status "${status}".`);
+    }
+
+    const insertPayload: Record<string, any> = {
+      name: cleanName,
+      slug: cleanSlug,
+      short_description: divisionData.short_description || '',
+      full_description: divisionData.full_description || '',
+      seo_title: divisionData.seo_title || `${cleanName} | Unikorn360`,
+      seo_description: divisionData.seo_description || divisionData.short_description || '',
+      status,
+      display_order: typeof divisionData.display_order === 'number' ? divisionData.display_order : 0
+    };
+
+    if (divisionData.id !== undefined) {
+      if (!isValidUuid(divisionData.id)) {
+        throw new Error('Division ID must be a valid database UUID.');
+      }
+      insertPayload.id = divisionData.id;
+    }
+
+    const { data, error } = await db
+      .from('service_divisions')
+      .insert(insertPayload)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(`Failed to create division in Supabase: ${error?.message || 'Unknown database error'}`);
+    }
+
+    return data as ServiceDivision;
   }
 
   public async updateDivision(
@@ -702,59 +1002,191 @@ export class ResilientServicesService {
     updates: Partial<ServiceDivision>
   ): Promise<ServiceDivision> {
     await this.requireCatalogAdmin();
-    const index = this.divisions.findIndex(d => d.id === id);
-    if (index === -1) {
-      throw new Error(`Division with ID ${id} not found.`);
+    const db = this.getRequiredDb();
+
+    if (!isValidUuid(id)) {
+      throw new Error(`Invalid division UUID "${id}".`);
     }
 
-    const now = new Date().toISOString();
-    this.divisions[index] = {
-      ...this.divisions[index],
-      ...updates,
-      updated_at: now
+    const allowedColumns: (keyof ServiceDivision)[] = [
+      'name',
+      'slug',
+      'short_description',
+      'full_description',
+      'seo_title',
+      'seo_description',
+      'status',
+      'display_order'
+    ];
+
+    const payload: Record<string, any> = {
+      updated_at: new Date().toISOString()
     };
 
-    this.persist();
-    return this.divisions[index];
+    for (const key of allowedColumns) {
+      if (Object.prototype.hasOwnProperty.call(updates, key) && updates[key] !== undefined) {
+        payload[key] = updates[key];
+      }
+    }
+
+    if (payload.status !== undefined && !['draft', 'published', 'archived'].includes(payload.status)) {
+      throw new Error(`Invalid division status "${payload.status}".`);
+    }
+
+    const { data, error } = await db
+      .from('service_divisions')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(`Failed to update division in Supabase: ${error?.message || 'Division not found or access denied'}`);
+    }
+
+    return data as ServiceDivision;
   }
 
   public async reorderServices(divisionId: string, orderedServiceIds: string[]): Promise<void> {
     await this.requireCatalogAdmin();
-    orderedServiceIds.forEach((id, orderIndex) => {
-      const item = this.catalog.find(s => s.id === id && s.division_id === divisionId);
-      if (item) {
-        item.display_order = orderIndex + 1;
-        item.updated_at = new Date().toISOString();
+    const db = this.getRequiredDb();
+
+    if (!isValidUuid(divisionId)) {
+      throw new Error(`Invalid division UUID "${divisionId}".`);
+    }
+
+    const now = new Date().toISOString();
+    for (let idx = 0; idx < orderedServiceIds.length; idx++) {
+      const serviceId = orderedServiceIds[idx];
+      if (!isValidUuid(serviceId)) {
+        throw new Error(`Invalid service UUID "${serviceId}" in reorder list.`);
       }
-    });
-    this.persist();
+      const { data, error } = await db
+        .from('service_catalog')
+        .update({ display_order: idx + 1, updated_at: now })
+        .eq('id', serviceId)
+        .eq('division_id', divisionId)
+        .select('id')
+        .single();
+
+      if (error || !data) {
+        throw new Error(
+          `Failed to reorder service "${serviceId}" in Supabase: ${error?.message || 'Service not found in division'}`
+        );
+      }
+    }
   }
 
   public async reorderDivisions(orderedDivisionIds: string[]): Promise<void> {
     await this.requireCatalogAdmin();
-    orderedDivisionIds.forEach((id, orderIndex) => {
-      const div = this.divisions.find(d => d.id === id);
-      if (div) {
-        div.display_order = orderIndex + 1;
-        div.updated_at = new Date().toISOString();
+    const db = this.getRequiredDb();
+
+    const now = new Date().toISOString();
+    for (let idx = 0; idx < orderedDivisionIds.length; idx++) {
+      const divId = orderedDivisionIds[idx];
+      if (!isValidUuid(divId)) {
+        throw new Error(`Invalid division UUID "${divId}" in reorder list.`);
       }
-    });
-    this.persist();
+      const { data, error } = await db
+        .from('service_divisions')
+        .update({ display_order: idx + 1, updated_at: now })
+        .eq('id', divId)
+        .select('id')
+        .single();
+
+      if (error || !data) {
+        throw new Error(
+          `Failed to reorder division "${divId}" in Supabase: ${error?.message || 'Division not found'}`
+        );
+      }
+    }
   }
 
-  public resetToFactorySeed() {
-    this.divisions = [...SEED_DIVISIONS];
-    this.catalog = [...SEED_SERVICES];
-    this.relations = [];
-    this.persist();
+  // --- Service Relations ---
+  public async getServiceRelations(serviceId: string): Promise<ServiceRelation[]> {
+    if (!isValidUuid(serviceId)) {
+      throw new Error(`Invalid service UUID "${serviceId}".`);
+    }
+    const db = this.getRequiredDb();
+    const { data, error } = await db
+      .from('service_relations')
+      .select('*')
+      .eq('service_id', serviceId)
+      .order('display_order', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to fetch service relations from Supabase: ${error.message}`);
+    }
+    return (data || []) as ServiceRelation[];
+  }
+
+  public async createServiceRelation(
+    relation: Omit<ServiceRelation, 'id' | 'created_at'>
+  ): Promise<ServiceRelation> {
+    await this.requireCatalogAdmin();
+    const db = this.getRequiredDb();
+
+    if (!isValidUuid(relation.service_id) || !isValidUuid(relation.related_service_id)) {
+      throw new Error('Both service_id and related_service_id must be valid database UUIDs.');
+    }
+    if (relation.service_id === relation.related_service_id) {
+      throw new Error('A service cannot be related to itself.');
+    }
+    const relationType = relation.relation_type || 'recommended';
+    if (!['prerequisite', 'recommended', 'bundle', 'next_step'].includes(relationType)) {
+      throw new Error(`Invalid relation_type "${relationType}".`);
+    }
+
+    const { data, error } = await db
+      .from('service_relations')
+      .insert({
+        service_id: relation.service_id,
+        related_service_id: relation.related_service_id,
+        relation_type: relationType,
+        display_order: typeof relation.display_order === 'number' ? relation.display_order : 0
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(
+        `Failed to create service relation in Supabase: ${error?.message || 'Unknown database error'}`
+      );
+    }
+
+    return data as ServiceRelation;
+  }
+
+  public async deleteServiceRelation(relationId: string): Promise<boolean> {
+    const session = await this.requireCatalogAdmin();
+    if (session.role !== 'superadmin') {
+      throw new Error('Permission denied: Only superadmin can delete service relations.');
+    }
+    if (!isValidUuid(relationId)) {
+      throw new Error(`Invalid relation UUID "${relationId}".`);
+    }
+
+    const db = this.getRequiredDb();
+    const { data, error } = await db
+      .from('service_relations')
+      .delete()
+      .eq('id', relationId)
+      .select('id');
+
+    if (error) {
+      throw new Error(`Failed to delete service relation in Supabase: ${error.message}`);
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(`Service relation "${relationId}" not found.`);
+    }
+    return true;
   }
 
   // --- Legacy URL Resolver ---
   public resolveLegacyUrl(slug: string): string | null {
     if (!slug) return null;
     const cleaned = slug.toLowerCase().replace(/^\/+/, '').replace(/\/+$/, '');
-    
-    // Direct matches
+
     if (LEGACY_URL_REDIRECTS[cleaned]) {
       return LEGACY_URL_REDIRECTS[cleaned];
     }
@@ -765,7 +1197,6 @@ export class ResilientServicesService {
       return LEGACY_URL_REDIRECTS['/services/' + cleaned];
     }
 
-    // If slug starts with 'services/'
     if (cleaned.startsWith('services/')) {
       const stripped = cleaned.replace(/^services\//, '');
       if (LEGACY_URL_REDIRECTS[stripped]) {
@@ -778,6 +1209,34 @@ export class ResilientServicesService {
 
     return null;
   }
+
+  // --- Dynamic Sitemap Generation ---
+  public async getSitemapEntriesAsync(baseUrl = 'https://www.unikorn360.com'): Promise<SitemapUrlEntry[]> {
+    const [divisions, services] = await Promise.all([
+      this.getDivisions({ includeDrafts: false }),
+      this.getAllPublishedServices()
+    ]);
+    return getSitemapEntries({
+      baseUrl,
+      products: UNIKORN_FOUR_PRODUCTS,
+      divisions,
+      services
+    });
+  }
+
+  public async generateSitemapXmlAsync(baseUrl = 'https://www.unikorn360.com'): Promise<string> {
+    const [divisions, services] = await Promise.all([
+      this.getDivisions({ includeDrafts: false }),
+      this.getAllPublishedServices()
+    ]);
+    return generateSitemapXml({
+      baseUrl,
+      products: UNIKORN_FOUR_PRODUCTS,
+      divisions,
+      services
+    });
+  }
 }
 
 export const servicesDb = new ResilientServicesService();
+export { generateSitemapXml, getSitemapEntries };

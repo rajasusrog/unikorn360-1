@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { SOLUTIONS_DATA } from '../data/solutionsData';
-import { SEED_DIVISIONS } from '../data/seedData';
+import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
+import { ServiceDivision } from '../types/database';
 import { servicesDb } from '../lib/supabase';
 
 interface NavbarProps {
@@ -33,7 +34,7 @@ interface NavbarProps {
   onSelectCategory?: (category: string) => void;
 }
 
-type ActiveDropdown = 'services' | 'solutions' | null;
+type ActiveDropdown = 'services' | 'products' | 'solutions' | null;
 
 const DIVISION_ICONS: Record<string, React.ElementType> = {
   'websites-software': Code2,
@@ -53,19 +54,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
-  const [divisions, setDivisions] = useState(SEED_DIVISIONS);
+  const [divisions, setDivisions] = useState<ServiceDivision[]>([]);
   const navRef = useRef<HTMLElement>(null);
 
-  // Fetch dynamic published counts for divisions
+  // Fetch published divisions and counts from Supabase
   useEffect(() => {
     async function loadDivCounts() {
       try {
         const liveDivs = await servicesDb.getDivisions();
-        if (liveDivs && liveDivs.length > 0) {
-          setDivisions(liveDivs);
-        }
+        setDivisions(liveDivs);
       } catch (e) {
-        // Fallback to seed
+        console.error('Failed to load published divisions in Navbar:', e);
       }
     }
     loadDivCounts();
@@ -112,7 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const toggleDropdown = (menu: 'services' | 'solutions') => {
+  const toggleDropdown = (menu: 'services' | 'products' | 'solutions') => {
     setActiveDropdown((prev) => (prev === menu ? null : menu));
   };
 
@@ -286,16 +285,111 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Products Link */}
-          <button
-            onClick={() => handleNav('/products')}
-            onMouseEnter={closeDropdowns}
-            className={`px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
-              currentPath === '/products' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
-            }`}
+          {/* Products: Real Link to /products + Accessible Dropdown Toggle */}
+          <div
+            className="relative flex items-center"
+            onMouseEnter={() => setActiveDropdown('products')}
+            onMouseLeave={() => {
+              if (activeDropdown === 'products') setActiveDropdown(null);
+            }}
           >
-            Products
-          </button>
+            <a
+              href="/products"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/products');
+              }}
+              className={`pl-2.5 pr-1 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded-l focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
+                currentPath.startsWith('/products') ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
+              }`}
+            >
+              Products
+            </a>
+
+            <button
+              type="button"
+              onClick={() => toggleDropdown('products')}
+              aria-expanded={activeDropdown === 'products'}
+              aria-haspopup="true"
+              aria-label="Toggle Products Menu"
+              className={`p-1.5 mr-1 text-xs transition-colors rounded-r cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
+                activeDropdown === 'products' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
+              }`}
+            >
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform ${
+                  activeDropdown === 'products' ? 'rotate-180 text-[#214E78]' : 'text-[#505B66]'
+                }`}
+              />
+            </button>
+
+            {activeDropdown === 'products' && (
+              <div
+                className="absolute top-full left-0 mt-1 w-80 bg-white border border-[#D8DEE5] rounded-xl shadow-xl p-2.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+              >
+                <div className="px-3 py-2 border-b border-[#D8DEE5] mb-1.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] block">
+                      UNIKORN360 Suite
+                    </span>
+                    <span className="text-xs font-bold text-[#30363D]">
+                      Software Products
+                    </span>
+                  </div>
+                  <a
+                    href="/products"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleNav('/products');
+                    }}
+                    className="text-[10px] text-[#214E78] hover:underline uppercase tracking-wider font-bold"
+                  >
+                    All Products →
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1">
+                  <a
+                    href="/products"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleNav('/products');
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F5F6F7] transition-colors flex items-center justify-between group cursor-pointer border border-transparent hover:border-[#D8DEE5]"
+                  >
+                    <span className="text-xs font-bold text-[#214E78]">
+                      All Products
+                    </span>
+                    <span className="text-[10px] text-[#505B66]">
+                      /products
+                    </span>
+                  </a>
+
+                  {UNIKORN_FOUR_PRODUCTS.map((prod) => (
+                    <a
+                      key={prod.slug}
+                      href={prod.path}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleNav(prod.path);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F5F6F7] transition-colors flex items-center justify-between group cursor-pointer border border-transparent hover:border-[#D8DEE5]"
+                    >
+                      <div>
+                        <p className="text-xs font-semibold text-[#30363D] group-hover:text-[#214E78] transition-colors">
+                          {prod.name}
+                        </p>
+                        <p className="text-[10px] text-[#505B66] line-clamp-1">
+                          {prod.categoryLabel}
+                        </p>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-[#505B66] group-hover:text-[#214E78] shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Solutions Dropdown */}
           <div 
@@ -476,12 +570,44 @@ export const Navbar: React.FC<NavbarProps> = ({
               ))}
             </div>
 
-            <button
-              onClick={() => handleNav('/products')}
-              className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
+            <a
+              href="/products"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/products');
+              }}
+              className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#214E78] font-bold flex items-center justify-between"
             >
-              Products &amp; Turnkey Platforms
-            </button>
+              <span>Products</span>
+              <span className="text-[10px] text-[#505B66]">All Products</span>
+            </a>
+
+            {/* Product Sublinks in Mobile */}
+            <div className="pl-4 pr-2 py-1 grid grid-cols-2 gap-1 my-1">
+              <a
+                href="/products"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleNav('/products');
+                }}
+                className="text-left py-1 text-[11px] font-semibold text-[#214E78] hover:underline"
+              >
+                • All Products
+              </a>
+              {UNIKORN_FOUR_PRODUCTS.map((prod) => (
+                <a
+                  key={prod.slug}
+                  href={prod.path}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleNav(prod.path);
+                  }}
+                  className="text-left py-1 text-[11px] text-[#505B66] hover:text-[#214E78]"
+                >
+                  • {prod.name}
+                </a>
+              ))}
+            </div>
             <button
               onClick={() => handleNav('/solutions')}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"

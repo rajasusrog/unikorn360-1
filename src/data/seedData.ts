@@ -5,7 +5,7 @@ import { ServiceDivision, ServiceCatalogItem, ProductItem } from '../types/datab
 // ====================================================================
 export const SEED_DIVISIONS: ServiceDivision[] = [
   {
-    id: 'div-websites-software',
+    id: 'a1000000-0000-0000-0000-000000000001',
     name: 'Websites & Software',
     slug: 'websites-software',
     short_description: 'Custom websites, e-commerce stores, web applications, mobile apps, SaaS MVPs, and API integrations.',
@@ -19,7 +19,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
     updated_at: '2026-10-28T00:00:00Z'
   },
   {
-    id: 'div-security-maintenance',
+    id: 'a2000000-0000-0000-0000-000000000002',
     name: 'Security & Maintenance',
     slug: 'security-maintenance',
     short_description: 'Application security reviews, AI code audits, API security, database reviews, server hardening, and maintenance.',
@@ -33,7 +33,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
     updated_at: '2026-10-28T00:00:00Z'
   },
   {
-    id: 'div-marketing-creator-campaigns',
+    id: 'a3000000-0000-0000-0000-000000000003',
     name: 'Marketing & Creator Campaigns',
     slug: 'marketing-creator-campaigns',
     short_description: 'SEO, paid advertising management, social media content, UGC production, and creator campaign management.',
@@ -47,7 +47,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
     updated_at: '2026-10-28T00:00:00Z'
   },
   {
-    id: 'div-ai-automation-business-systems',
+    id: 'a4000000-0000-0000-0000-000000000004',
     name: 'AI, Automation & Business Systems',
     slug: 'ai-automation-business-systems',
     short_description: 'AI chatbots, custom AI agents, business workflow automation, CRM, WhatsApp automation, and executive dashboards.',
@@ -61,7 +61,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
     updated_at: '2026-10-28T00:00:00Z'
   },
   {
-    id: 'div-research-business-strategy',
+    id: 'a5000000-0000-0000-0000-000000000005',
     name: 'Research & Business Strategy',
     slug: 'research-business-strategy',
     short_description: 'Market research, competitor analysis, industry trends, performance diagnostics, feasibility, and growth consulting.',
@@ -75,7 +75,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
     updated_at: '2026-10-28T00:00:00Z'
   },
   {
-    id: 'div-business-setup-documentation',
+    id: 'a6000000-0000-0000-0000-000000000006',
     name: 'Business Setup & Documentation',
     slug: 'business-setup-documentation',
     short_description: 'Company registration, GST & Udyam, trademark filing coordination, government schemes, DPRs, and property documentation.',
@@ -98,8 +98,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 01. WEBSITES & SOFTWARE (6 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-ws-website-dev',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000001',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'Website Development',
     slug: 'website-development',
     short_description: 'Custom, mobile-first corporate and industrial websites built to generate client inquiries and showcase capabilities.',
@@ -126,7 +126,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Annual third-party hosting and domain registry fees', 'E-commerce cart checkout'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -145,16 +145,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Custom Website Development | Unikorn360',
     seo_description: 'Custom B2B and corporate website development. Fast, responsive, inquiry-focused websites for manufacturers, service firms, and growing teams.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['modern-website', 'cctv-services-website']
   },
   {
-    id: 'srv-ws-ecom-dev',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000002',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'E-commerce Development',
     slug: 'ecommerce-development',
     short_description: 'Digital ordering portals and online storefronts with wholesale tiered pricing, catalog management, and payment checkout.',
@@ -181,7 +181,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Payment gateway merchant gateway transaction processing fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -199,16 +199,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'E-commerce & B2B Ordering Portals | Unikorn360',
     seo_description: 'Custom e-commerce development and B2B ordering portals with tiered dealer pricing, GST invoicing, and secure payment checkout.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['ecommerce-stores']
   },
   {
-    id: 'srv-ws-custom-web-apps',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000003',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'Custom Web Applications',
     slug: 'custom-web-applications',
     short_description: 'Tailored operational web applications, internal tools, client portals, and quotation calculators.',
@@ -235,7 +235,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party infrastructure compute hosting costs'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -253,16 +253,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Custom Web Application Development | Unikorn360',
     seo_description: 'Bespoke web applications and internal operations software. Eliminate spreadsheet bottlenecks with custom business tools.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['quotation-estimation-tools', 'inventory-billing-systems', 'customer-client-portals', 'internal-staff-portals']
   },
   {
-    id: 'srv-ws-mobile-app-dev',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000004',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'Mobile App Development',
     slug: 'mobile-app-development',
     short_description: 'Cross-platform iOS and Android mobile apps for field teams, customer engagement, and on-the-go business workflows.',
@@ -289,7 +289,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Apple Developer ($99/yr) & Google Play ($25 one-time) publisher account fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -307,16 +307,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Mobile App Development (iOS & Android) | Unikorn360',
     seo_description: 'Cross-platform mobile application development for field teams, customer engagement, and business operations.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-ws-saas-mvp-dev',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000005',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'SaaS & MVP Development',
     slug: 'saas-mvp-development',
     short_description: 'Rapid, production-ready MVP development for software startups and founders validating market demand.',
@@ -343,7 +343,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Post-launch marketing ad spend'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -361,16 +361,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'SaaS MVP Development for Founders | Unikorn360',
     seo_description: 'Rapid, scalable MVP and SaaS development. Turn your software product vision into a production application in weeks.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-ws-api-integration',
-    division_id: 'div-websites-software',
+    id: 'b0000000-0000-4000-8000-000000000006',
+    division_id: 'a1000000-0000-0000-0000-000000000001',
     service_name: 'API & System Integration',
     slug: 'api-system-integration',
     short_description: 'Connect disparate business tools, payment gateways, ERP databases, and third-party web services.',
@@ -397,7 +397,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party API subscription costs or transaction fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -415,9 +415,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'API & System Integration Services | Unikorn360',
     seo_description: 'Connect third-party APIs, payment gateways, and business software. Reliable webhook pipelines and data sync.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['data-pipeline-integration']
@@ -427,8 +427,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 02. SECURITY & MAINTENANCE (6 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-sec-web-app-review',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000007',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'Website & Application Security Review',
     slug: 'website-application-security-review',
     short_description: 'Comprehensive vulnerability assessment, findings report, and prioritized remediation recommendations for web applications.',
@@ -455,7 +455,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Hands-on remediation code authoring (available as a separate scope)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -473,16 +473,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Website & Web Application Security Review | Unikorn360',
     seo_description: 'Independent vulnerability assessment and security reviews for web applications. Actionable findings and prioritized remediation recommendations.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-sec-ai-code-review',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000008',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'AI-Generated Code Security Review',
     slug: 'ai-generated-code-security-review',
     short_description: 'Security and production-readiness inspection of code produced by AI models, Cursor, Copilot, or rapid prototypes.',
@@ -509,7 +509,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Certification claims or guarantees of 100% immunity'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -527,16 +527,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'AI-Generated Code Security Review | Unikorn360',
     seo_description: 'Security audits for AI-generated code, Cursor, and Copilot applications. Identify leaked keys, authorization bypasses, and production vulnerabilities.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-sec-api-review',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000009',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'API Security Review',
     slug: 'api-security-review',
     short_description: 'Authentication audits, authorization boundary tests, token leakage checks, and rate-limiting scrutiny for web APIs.',
@@ -563,7 +563,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Volumetric Distributed Denial of Service (DDoS) testing'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -581,16 +581,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'API Security Review & Penetration Testing | Unikorn360',
     seo_description: 'Security review for REST and GraphQL APIs. Scrutinize authentication, broken object-level authorization (BOLA), and token flows.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-sec-db-supabase-review',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000010',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'Database & Supabase Security Review',
     slug: 'database-supabase-security-review',
     short_description: 'Audit PostgreSQL and Supabase databases for Row Level Security (RLS) leaks, secrets exposure, and backup resilience.',
@@ -617,7 +617,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['On-premise hardware infrastructure physical maintenance'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -635,16 +635,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Database & Supabase Security Review | Unikorn360',
     seo_description: 'Audit PostgreSQL and Supabase databases for Row Level Security (RLS) leaks, private storage bucket permissions, and service role security.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-sec-cloud-hardening',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000011',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'Cloud & Server Hardening',
     slug: 'cloud-server-hardening',
     short_description: 'Linux server hardening, firewall configuration, SSH key policies, TLS/SSL certificates, and backup isolation.',
@@ -671,7 +671,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Cloud hosting compute provider monthly charges'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -689,16 +689,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Cloud & Linux Server Hardening Services | Unikorn360',
     seo_description: 'Production Linux server hardening, firewall setup, SSH key policies, Fail2ban configuration, and automated offsite backups.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['digital-file-room']
   },
   {
-    id: 'srv-sec-maintenance-retainer',
-    division_id: 'div-security-maintenance',
+    id: 'b0000000-0000-4000-8000-000000000012',
+    division_id: 'a2000000-0000-0000-0000-000000000002',
     service_name: 'Website & Application Maintenance',
     slug: 'website-application-maintenance',
     short_description: 'Ongoing technical maintenance, updates and patches, backups, uptime monitoring, and priority troubleshooting.',
@@ -725,7 +725,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Major redesigns or substantial feature additions exceeding monthly hours'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -743,9 +743,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Website & Application Maintenance Retainers | Unikorn360',
     seo_description: 'Dependable website and web application maintenance. Security updates, cloud backups, 24/7 uptime monitoring, and technical support.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
@@ -755,8 +755,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 03. MARKETING & CREATOR CAMPAIGNS (6 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-mkt-seo-local-search',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000013',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'SEO & Local Search',
     slug: 'seo-local-search',
     short_description: 'Technical SEO, on-page optimization, and Google Business Profile visibility to rank for high-intent customer searches.',
@@ -783,7 +783,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Black-hat link schemes or guaranteed #1 rankings'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -801,16 +801,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'SEO & Local Search Optimization Services | Unikorn360',
     seo_description: 'Technical SEO, on-page content optimization, and Google Business Profile management. Drive qualified inbound buyer inquiries.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-mkt-paid-ads-mgmt',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000014',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'Paid Advertising Management',
     slug: 'paid-advertising-management',
     short_description: 'Strategic management of Meta Ads and Google Ads campaigns focused on return on ad spend (ROAS) and lead generation.',
@@ -837,7 +837,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Media ad spend budget paid directly to advertising networks'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved',
+        approval_status: 'draft',
         ad_spend_details: {
           agency_fee: 'Professional management retainer',
           ad_spend: 'Billed directly to client payment method by Google / Meta',
@@ -860,16 +860,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Paid Advertising Management (Meta & Google Ads) | Unikorn360',
     seo_description: 'ROI-focused paid advertising management across Google Search, Performance Max, Instagram, and Facebook. Transparent management fees.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-mkt-social-media-content',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000015',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'Social Media & Content Management',
     slug: 'social-media-content-management',
     short_description: 'Consistent organic content creation, brand design templates, and publishing calendars for corporate channels.',
@@ -896,7 +896,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Paid advertising budget', 'Daily community customer support management'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -914,16 +914,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Social Media & Content Management Services | Unikorn360',
     seo_description: 'Professional organic social media management and content design for businesses, manufacturers, and corporate brands.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['corporate-identity', 'company-profile']
   },
   {
-    id: 'srv-mkt-ugc-production',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000016',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'UGC Content Production',
     slug: 'ugc-content-production',
     short_description: 'Authentic user-generated style video assets, demonstrations, and testimonials produced for ad campaigns and social media.',
@@ -950,7 +950,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Television broadcast or theatrical licensing'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -968,16 +968,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'UGC Content Production & Video Ad Creation | Unikorn360',
     seo_description: 'Authentic user-generated style video production for Meta and TikTok ads. Scriptwriting, creator casting, and commercial licensing.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-mkt-influencer-campaigns',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000017',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'Influencer Campaign Management',
     slug: 'influencer-campaign-management',
     short_description: 'End-to-end management of regional creator collaborations, hyperlocal campaigns, and performance tracking.',
@@ -1004,7 +1004,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Individual creator compensation fees (itemized transparently in campaign budget)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1022,16 +1022,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Influencer Campaign Management & Regional Creators | Unikorn360',
     seo_description: 'End-to-end creator campaign coordination, influencer discovery, 10-point engagement scoring, and performance analytics across Tamil Nadu.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-mkt-tracking-reporting',
-    division_id: 'div-marketing-creator-campaigns',
+    id: 'b0000000-0000-4000-8000-000000000018',
+    division_id: 'a3000000-0000-0000-0000-000000000003',
     service_name: 'Marketing Tracking & Reporting',
     slug: 'marketing-tracking-reporting',
     short_description: 'Implementation of Google Analytics 4, Meta Pixel, server-side tracking, UTM pipelines, and executive dashboards.',
@@ -1058,7 +1058,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party analytics tool enterprise subscription fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1076,9 +1076,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Marketing Tracking & GA4 Reporting Services | Unikorn360',
     seo_description: 'Google Analytics 4, Meta Conversions API (CAPI), and Google Tag Manager tracking implementation. Accurate marketing attribution.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
@@ -1088,8 +1088,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 04. AI, AUTOMATION & BUSINESS SYSTEMS (7 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-ai-chatbots-assistants',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000019',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'AI Chatbots & Knowledge Assistants',
     slug: 'ai-chatbots-knowledge-assistants',
     short_description: 'Conversational AI assistants grounded strictly in your approved company documents, SOPs, and product catalogs.',
@@ -1116,7 +1116,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party LLM API compute tokens (billed at direct cost)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1134,16 +1134,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'AI Chatbots & Knowledge Assistants | Unikorn360',
     seo_description: 'Custom conversational AI assistants and enterprise RAG systems. Accurate, grounded answers from your company documentation.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-ai-custom-agents',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000020',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'Custom AI Agents',
     slug: 'custom-ai-agents',
     short_description: 'Scoped, tool-using AI agents that execute multi-step workflows with strict permission bounds and human approval gates.',
@@ -1170,7 +1170,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Fully autonomous financial disbursement without human authorization'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1188,16 +1188,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Custom AI Agents & Autonomous Workflows | Unikorn360',
     seo_description: 'Scoped tool-using AI agents for business workflows. Secure tool integration, multi-step execution, and human approval controls.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-ai-workflow-automation',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000021',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'Business Workflow Automation',
     slug: 'business-workflow-automation',
     short_description: 'End-to-end operational process automation, webhook triggers, cross-department handoffs, and task synchronization.',
@@ -1224,7 +1224,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party automation platform subscription charges'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1242,16 +1242,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Business Workflow Automation Services | Unikorn360',
     seo_description: 'End-to-end business workflow automation. Streamline cross-tool processes, departmental handoffs, and automated triggers.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['systems-automation', 'business-automation']
   },
   {
-    id: 'srv-ai-crm-sales-automation',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000022',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'CRM & Sales Automation',
     slug: 'crm-sales-automation',
     short_description: 'Automated lead capture, deal pipeline tracking, quotation follow-up sequences, and sales activity logging.',
@@ -1278,7 +1278,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party CRM software monthly seat licensing fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1296,16 +1296,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'CRM & Sales Pipeline Automation | Unikorn360',
     seo_description: 'Automate sales pipelines, lead capture, and quotation follow-ups. Streamline sales operations and improve conversion rates.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['crm-order-tracking', 'lead-inquiry-automation']
   },
   {
-    id: 'srv-ai-whatsapp-automation',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000023',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'WhatsApp Business Automation',
     slug: 'whatsapp-business-automation',
     short_description: 'Official WhatsApp Business API setup, automated order/booking confirmations, customer service routing, and templates.',
@@ -1332,7 +1332,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Meta per-conversation messaging fees billed directly by Meta'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1350,16 +1350,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Official WhatsApp Business Automation | Unikorn360',
     seo_description: 'Official Meta WhatsApp Business Cloud API setup. Automated order notifications, interactive button menus, and team support inbox.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['whatsapp-order-notifications']
   },
   {
-    id: 'srv-ai-document-processing',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000024',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'Document Processing & Automation',
     slug: 'document-processing-automation',
     short_description: 'OCR data extraction from invoices, document classification, automated PDF generation, and approval workflows.',
@@ -1386,7 +1386,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Physical document courier handling or manual scanning hardware'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1404,16 +1404,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Document Processing & OCR Automation | Unikorn360',
     seo_description: 'Automated invoice OCR data extraction, document classification, dynamic PDF generation, and digital approval workflows.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['document-digitisation', 'document-automation']
   },
   {
-    id: 'srv-ai-dashboards-reporting',
-    division_id: 'div-ai-automation-business-systems',
+    id: 'b0000000-0000-4000-8000-000000000025',
+    division_id: 'a4000000-0000-0000-0000-000000000004',
     service_name: 'Business Dashboards & Reporting Systems',
     slug: 'business-dashboards-reporting-systems',
     short_description: 'Custom web reporting dashboards, operational KPI cockpits, automated data feeds, and scheduled email reports.',
@@ -1440,7 +1440,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Third-party database hosting compute fees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1458,9 +1458,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Business Dashboards & Reporting Systems | Unikorn360',
     seo_description: 'Custom executive business dashboards, KPI cockpits, automated data pipelines, and scheduled performance reporting tools.',
-    status: 'published',
+    status: 'draft',
     display_order: 7,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['business-dashboards', 'custom-dashboards']
@@ -1470,8 +1470,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 05. RESEARCH & BUSINESS STRATEGY (6 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-res-market-customer-research',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000026',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Market & Customer Research',
     slug: 'market-customer-research',
     short_description: 'Customer demand mapping, buyer persona interviews, addressable market sizing, and purchasing behavior research.',
@@ -1498,7 +1498,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Large-scale randomized statistical consumer polling (>1,000 respondents)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1516,16 +1516,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Market & Customer Research Services | Unikorn360',
     seo_description: 'Customer demand research, buyer persona interviews, market opportunity sizing, and go-to-market strategic assessments.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-res-competitor-ad-research',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000027',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Competitor & Advertising Research',
     slug: 'competitor-advertising-research',
     short_description: 'Competitive intelligence on competitor positioning, pricing strategies, active advertising campaigns, and market gaps.',
@@ -1552,7 +1552,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Illicit corporate espionage or non-public trade secret acquisition'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1570,16 +1570,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Competitor & Advertising Research | Unikorn360',
     seo_description: 'Competitive intelligence, advertising analysis, competitor pricing audits, and strategic positioning research for business growth.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-res-industry-opportunity-research',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000028',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Industry & Opportunity Research',
     slug: 'industry-opportunity-research',
     short_description: 'Analysis of emerging sector trends, regulatory shifts, supply chain developments, and new product opportunities.',
@@ -1606,7 +1606,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Stock market equities trading advice'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1624,16 +1624,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Industry & Opportunity Research for MSMEs | Unikorn360',
     seo_description: 'Sector trends research, industry opportunity assessments, supply chain analysis, and diversification studies for business leaders.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-res-business-performance-analysis',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000029',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Business Performance Analysis',
     slug: 'business-performance-analysis',
     short_description: 'Deep-dive operational diagnostics, true product margin analysis, cost-leakage detection, and growth recommendations.',
@@ -1660,7 +1660,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Statutory tax audit or CA audit sign-off'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1678,16 +1678,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Business Performance Analysis & Margin Diagnostics | Unikorn360',
     seo_description: 'Operational diagnostics, true margin analysis, cost-leakage detection, and working capital optimization for business promoters.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['inventory-sales-analytics', 'business-diagnostic-audit', 'verify-audit', 'standard-operating-procedures']
   },
   {
-    id: 'srv-res-planning-financial-feasibility',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000030',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Business Planning & Financial Feasibility',
     slug: 'business-planning-financial-feasibility',
     short_description: 'Comprehensive business plans, commercial financial models, break-even analysis, and capital requirement forecasting.',
@@ -1714,7 +1714,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Direct investor matchmaking guarantees'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1732,16 +1732,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Business Planning & Financial Feasibility Modeling | Unikorn360',
     seo_description: 'Commercial business plans, multi-year financial projection models, break-even analysis, and capital requirement forecasting.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['project-feasibility', 'feasibility-study', 'project-consulting']
   },
   {
-    id: 'srv-res-startup-growth-consulting',
-    division_id: 'div-research-business-strategy',
+    id: 'b0000000-0000-4000-8000-000000000031',
+    division_id: 'a5000000-0000-0000-0000-000000000005',
     service_name: 'Startup & Growth Consulting',
     slug: 'startup-growth-consulting',
     short_description: 'Strategic advisory for founders and leadership teams navigating early scaling, operational bottlenecks, and milestones.',
@@ -1768,7 +1768,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Full-time interim operational executive management'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1786,9 +1786,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Startup & Growth Advisory Consulting | Unikorn360',
     seo_description: 'Strategic consulting for founders and business owners. Resolve operational bottlenecks, establish milestone tracking, and scale sustainably.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['business-structuring']
@@ -1798,8 +1798,8 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   // 06. BUSINESS SETUP & DOCUMENTATION (6 Services)
   // ------------------------------------------------------------------
   {
-    id: 'srv-doc-business-registration',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000032',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'Business Registration Assistance',
     slug: 'business-registration-assistance',
     short_description: 'Documentation support for Sole Proprietorships, Partnerships, Limited Liability Partnerships (LLP), and Private Limited companies.',
@@ -1826,7 +1826,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Government MCA stamp duty fees for capital above standard slabs'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1844,16 +1844,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Business Registration & Company Incorporation Support | Unikorn360',
     seo_description: 'Documentation support for Private Limited company incorporation, LLP registration, Partnership Deeds, DSC, and MCA filings.',
-    status: 'published',
+    status: 'draft',
     display_order: 1,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['company-incorporation', 'roc-compliance', 'factory-licence', 'fire-noc', 'fssai-licence', 'trade-licence', 'labour-epf-esi']
   },
   {
-    id: 'srv-doc-gst-udyam-assistance',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000033',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'GST & Udyam Assistance',
     slug: 'gst-udyam-assistance',
     short_description: 'GST tax registration, Udyam MSME priority certificate support, monthly filing coordination, and ITC reconciliations.',
@@ -1880,7 +1880,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Subsequent monthly return filings (available under monthly retainer)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1898,16 +1898,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'GST & Udyam MSME Registration Assistance | Unikorn360',
     seo_description: 'Fast, compliant GST registration and Udyam MSME priority certificate support. HSN classification and monthly filing coordination.',
-    status: 'published',
+    status: 'draft',
     display_order: 2,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['gst-registration', 'new-gst-registration', 'gst-returns', 'monthly-gst-filing', 'itc-reconciliation', 'udyam-registration', 'bookkeeping-mis', 'dsc-token']
   },
   {
-    id: 'srv-doc-trademark-filing',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000034',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'Trademark Filing Coordination',
     slug: 'trademark-filing-coordination',
     short_description: 'Comprehensive brand name availability searches, Nice class mapping, trademark application coordination, and examination support.',
@@ -1934,7 +1934,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Government statutory filing fees paid directly to IP India (₹4,500 for MSME / ₹9,000 for non-MSME)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -1952,16 +1952,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Trademark Filing Coordination & Brand Protection | Unikorn360',
     seo_description: 'Brand name search, Nice classification mapping, and trademark application filing coordination for Indian businesses and startups.',
-    status: 'published',
+    status: 'draft',
     display_order: 3,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
   },
   {
-    id: 'srv-doc-gov-schemes-support',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000035',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'Government Scheme Application Support',
     slug: 'government-scheme-application-support',
     short_description: 'Documentation and application coordination for MSME subsidies including PMEGP, NEEDS, and capital investment incentives.',
@@ -1988,7 +1988,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['We do not promise or guarantee government approvals, adhering strictly to official merit criteria'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -2006,16 +2006,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'MSME Government Subsidy Support (PMEGP / NEEDS) | Unikorn360',
     seo_description: 'Application support and project reports for PMEGP, NEEDS, and MSME capital subsidies. Eligibility verification and portal filing coordination.',
-    status: 'published',
+    status: 'draft',
     display_order: 4,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['government-subsidy-assistance', 'pmegp-assistance', 'statutory-approvals-roadmap', 'tnpcb-approvals']
   },
   {
-    id: 'srv-doc-dpr-loan-documentation',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000036',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'DPR & Loan Documentation',
     slug: 'dpr-loan-documentation',
     short_description: 'Bank-ready Detailed Project Reports (DPR), CMA data, debt-service coverage (DSCR) calculations, and term loan files.',
@@ -2042,7 +2042,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Loan sanction guarantees (sanction decisions rest strictly with bank credit committees)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -2060,16 +2060,16 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Bank-Ready DPR & CMA Data Preparation | Unikorn360',
     seo_description: 'Bank-ready Detailed Project Reports (DPR), CMA data formulation, working capital assessments, and loan documentation for MSMEs.',
-    status: 'published',
+    status: 'draft',
     display_order: 5,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: ['detailed-project-report', 'dpr-preparation', 'cma-data', 'cma-data-preparation', 'working-capital', 'working-capital-assessment', 'business-loan-support', 'mudra-loan-assistance']
   },
   {
-    id: 'srv-doc-property-docs-coordination',
-    division_id: 'div-business-setup-documentation',
+    id: 'b0000000-0000-4000-8000-000000000037',
+    division_id: 'a6000000-0000-0000-0000-000000000006',
     service_name: 'Property Documentation Coordination',
     slug: 'property-documentation-coordination',
     short_description: 'Coordination and review support for industrial lease deeds, title search documentation, and bank collateral indexing.',
@@ -2096,7 +2096,7 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
         exclusions: ['Direct legal advocate title opinion certification (issued by bar-registered advocates)'],
         setup_charges: 'None',
         tax_treatment: 'Subject to applicable GST (18%)',
-        approval_status: 'approved'
+        approval_status: 'draft'
       }
     ],
     process_steps: [
@@ -2114,9 +2114,9 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
     ],
     seo_title: 'Property Documentation Coordination & Lease Review | Unikorn360',
     seo_description: 'Commercial lease deed review, industrial property documentation coordination, title chain indexing, and bank collateral preparation.',
-    status: 'published',
+    status: 'draft',
     display_order: 6,
-    published_at: '2026-10-28T00:00:00Z',
+    published_at: null,
     created_at: '2026-10-28T00:00:00Z',
     updated_at: '2026-10-28T00:00:00Z',
     legacy_slugs: []
@@ -2229,51 +2229,75 @@ export const SEED_ADVISORY_OFFERINGS: AdvisoryOffering[] = [
 // C. Software Products (Preserved in separate /products section)
 export const SEED_PRODUCTS: ProductItem[] = [
   {
-    id: 'prod-personal-os',
-    name: 'Personal OS',
-    tagline: 'Life & Operating System for Promoters',
-    description: 'A structured software cockpit for founders to manage personal goals, daily executive priorities, key contacts, and reading archives.',
+    id: 'prod-invoicepro360',
+    name: 'InvoicePro360',
+    tagline: 'Business Invoicing & Ledger Workspace',
+    description:
+      'AI workspace for business invoices to create, scan, extract, validate GST tax breakdowns, track payment balances, and query invoice records.',
     status: 'available',
-    target_audience: 'Entrepreneurs, founders, and senior professionals seeking personal clarity.',
+    target_audience:
+      'Business owners, finance teams, and billing operators preparing and reconciling GST tax invoices.',
     key_capabilities: [
-      'Daily morning executive planning dashboard',
-      'Strategic reading notes and resource bookmarks',
-      'Key relationship and high-priority contact reminders',
-      'Personal health and milestone progress tracker'
+      'Invoice creation and structured line-item drafting',
+      'Invoice scanning and OCR line-item extraction',
+      'GSTIN format, HSN code, and CGST/SGST/IGST tax breakdown validation',
+      'Payment ledger with balance-due and UTR reference tracking'
     ],
-    cta_text: 'Explore Personal OS',
+    cta_text: 'View InvoicePro360',
     division_ref: 'websites-software'
   },
   {
-    id: 'prod-creator-hub-os',
-    name: 'Creator Hub OS',
-    tagline: 'All-in-One Operating Hub for Content Creators',
-    description: 'The complete digital workspace for creators to manage brand briefs, script drafts, video deliverable schedules, and client invoices.',
+    id: 'prod-deeds360',
+    name: 'Deeds360',
+    tagline: 'Property Deed Drafting & Registration Readiness',
+    description:
+      'Bilingual (English and Tamil) property deed drafting, scanned parent-deed OCR extraction, draft comparison, and Tamil Nadu STAR 2.0 readiness workspace.',
     status: 'available',
-    target_audience: 'Content creators, video producers, and influencer talent managing brand sponsorships.',
+    target_audience:
+      'Document writers, property registration practitioners, and legal teams preparing Tamil Nadu registration deeds.',
     key_capabilities: [
-      'Brand deal pipeline and sponsorship calendar',
-      'Scriptwriting templates with hook repositories',
-      'Automatic invoice generator with payment tracking',
-      'Media kit builder with dynamic analytics metrics'
+      'Guided drafting for Sale, Gift, Settlement, Lease, Mortgage, and Release deeds',
+      'Scanned parent-deed OCR extraction and side-by-side draft comparison',
+      'Schedule, Survey Number, Patta, and party name cross-verification',
+      'Tamil Nadu stamp duty and registration fee estimation'
     ],
-    cta_text: 'Explore Creator Hub OS',
-    division_ref: 'marketing-creator-campaigns'
+    cta_text: 'View Deeds360',
+    division_ref: 'business-setup-documentation'
   },
   {
-    id: 'prod-elite-os',
-    name: 'Elite OS',
-    tagline: 'Turnkey Enterprise Operating Suite',
-    description: 'The premier bespoke enterprise operating system uniting executive BI cockpits, custom job-work apps, automated workflows, and compliance.',
+    id: 'prod-property360',
+    name: 'Property360',
+    tagline: 'Property, Land Revenue & Multi-Domain Legal Analysis',
+    description:
+      'Bilingual (Tamil and English) property, land revenue, and multi-domain legal case evaluation, statutory mapping, and structured dossier generation system.',
     status: 'available',
-    target_audience: 'Established manufacturers and industrial enterprises seeking end-to-end digital transformation.',
+    target_audience:
+      'Property owners, families, and legal practitioners assessing land revenue, Patta, succession, and title matters.',
     key_capabilities: [
-      'Full bespoke operational software deployment',
-      'Real-time executive cockpit on desktop and mobile',
-      'Continuous dedicated technical and compliance retainer',
-      'Direct technical lead and key account management'
+      'Natural-language dispute intake and legal domain classification',
+      'Dynamic domain-specific prompts for survey, Patta, and revenue records',
+      'Cross-law statutory and High Court / Supreme Court precedent mapping',
+      'Bilingual (Tamil and English) multi-stage case dossiers and PDF exports'
     ],
-    cta_text: 'Discuss Elite OS Deployment',
+    cta_text: 'View Property360',
+    division_ref: 'business-setup-documentation'
+  },
+  {
+    id: 'prod-advocate360',
+    name: 'Advocate360',
+    tagline: 'Legal Chamber Workspace & Editorial Legal Intelligence',
+    description:
+      'Chamber practice management, daily matter overview, case analysis, legal drafting, evidence scoring, and multilingual legal translation for advocates.',
+    status: 'available',
+    target_audience:
+      'Practising advocates, litigation chambers, and legal counsel managing daily matters, drafting, and research.',
+    key_capabilities: [
+      'Chamber "Today" overview, matter files, and actionable task tracking',
+      'Case analysis, evidence scoring, and contradiction detection',
+      'Urgent quick notes and voice-to-text dictation mapped to matters',
+      'Legal Translation Memory (TM) preserving statutory and numerical identifiers'
+    ],
+    cta_text: 'View Advocate360',
     division_ref: 'ai-automation-business-systems'
   }
 ];

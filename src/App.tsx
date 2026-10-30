@@ -31,17 +31,21 @@ import { SOLUTIONS_DATA } from './data/solutionsData';
 import { RESOURCE_GUIDES } from './data/resourcesData';
 import { LEGACY_URL_REDIRECTS } from './data/seedData';
 import { servicesDb } from './lib/supabase';
+import { parseRouteLocation, ParsedRouteLocation } from './lib/router';
 
 // Dynamic Services Architecture Reusable Pages
 import { ServicesDirectoryPage } from './pages/ServicesDirectoryPage';
 import { DivisionPage } from './pages/DivisionPage';
 import { ServiceDetailPage } from './pages/ServiceDetailPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CreatorLandingPage } from './pages/creators/CreatorLandingPage';
 import { CreatorApplyPage } from './pages/creators/CreatorApplyPage';
 import { CreatorSuccessPage } from './pages/creators/CreatorSuccessPage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { OurProductsSection } from './components/OurProductsSection';
+import { SEOHead } from './components/SEOHead';
 
 // Other Dedicated SEO Pages
 import { SolutionPage } from './components/SolutionPage';
@@ -61,13 +65,16 @@ const KNOWN_DIVISIONS = new Set([
 ]);
 
 export default function App() {
-  // Current route pathname
-  const [currentPath, setCurrentPath] = useState<string>(() => {
+  // Store route pathname and search parameters separately
+  const [routeLocation, setRouteLocation] = useState<ParsedRouteLocation>(() => {
     if (typeof window !== 'undefined') {
-      return window.location.pathname || '/';
+      return parseRouteLocation(`${window.location.pathname || '/'}${window.location.search || ''}`);
     }
-    return '/';
+    return { pathname: '/', search: '', fullUrl: '/' };
   });
+
+  const currentPath = routeLocation.pathname;
+  const currentSearch = routeLocation.search;
 
   // Modal states
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -84,20 +91,33 @@ export default function App() {
   // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentPath(window.location.pathname || '/');
+      setRouteLocation(
+        parseRouteLocation(`${window.location.pathname || '/'}${window.location.search || ''}`)
+      );
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Client-side router navigation
+  // Client-side router navigation (preserves query strings in browser history while matching on pathname)
   const navigate = (path: string) => {
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    if (normalizedPath !== window.location.pathname) {
-      window.history.pushState({}, '', normalizedPath);
-      setCurrentPath(normalizedPath);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    const nextLocation = parseRouteLocation(path);
+    const currentWindowUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.pathname || '/'}${window.location.search || ''}`
+        : routeLocation.fullUrl;
+
+    if (
+      nextLocation.fullUrl !== currentWindowUrl ||
+      nextLocation.pathname !== routeLocation.pathname ||
+      nextLocation.search !== routeLocation.search
+    ) {
+      if (typeof window !== 'undefined') {
+        window.history.pushState({}, '', nextLocation.fullUrl);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      setRouteLocation(nextLocation);
     }
   };
 
@@ -175,6 +195,12 @@ export default function App() {
     if (currentPath === '/' || currentPath === '') {
       return (
         <main>
+          <SEOHead
+            title="UNIKORN360 — Business Intelligence, Software, Products & Creator Network"
+            description="Websites, custom software, cybersecurity, marketing, creator campaigns, AI automation, and standalone software products: InvoicePro360, Deeds360, Property360, and Advocate360."
+            canonicalUrl="https://www.unikorn360.com/"
+          />
+
           {/* Hero & clear value proposition */}
           <Hero
             onOpenReviewModal={() => handleOpenReviewModal('New Project Enquiry')}
@@ -193,6 +219,12 @@ export default function App() {
             selectedCategoryKey={selectedCategoryKey}
             onOpenQuoteModal={handleOpenQuoteModal}
             onSelectServiceModal={handleOpenDetailModal}
+          />
+
+          {/* Our Products (4 Standalone Software Products — distinct from Agency Services & Creator Network) */}
+          <OurProductsSection
+            onNavigate={navigate}
+            onOpenReviewModal={handleOpenReviewModal}
           />
 
           {/* Business problems we help solve */}
@@ -356,10 +388,21 @@ export default function App() {
       }
     }
 
-    // 4. Products: /products
-    if (currentPath === '/products') {
+    // 4. Products Directory (/products) & Individual Product Introduction Pages (/products/:slug)
+    if (cleanPath === '/products') {
       return (
         <ProductsPage
+          onNavigate={navigate}
+          onOpenReviewModal={handleOpenReviewModal}
+        />
+      );
+    }
+
+    if (cleanPath.startsWith('/products/')) {
+      const productSlug = cleanPath.replace(/^\/products\//, '').replace(/\/$/, '');
+      return (
+        <ProductDetailPage
+          productSlug={productSlug}
           onNavigate={navigate}
           onOpenReviewModal={handleOpenReviewModal}
         />
@@ -381,6 +424,7 @@ export default function App() {
       return (
         <CreatorSuccessPage
           onNavigate={navigate}
+          search={currentSearch}
         />
       );
     }

@@ -3,234 +3,404 @@
   <!-- Core Hub Pages -->
   <url>
     <loc>https://www.unikorn360.com/</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/services</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/products</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <!-- Published Product Introduction Pages -->
+  <url>
+    <loc>https://www.unikorn360.com/products/invoicepro360</loc>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://www.unikorn360.com/products/deeds360</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/products/property360</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/products/advocate360</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <!-- Core Hub Pages -->
+  <url>
     <loc>https://www.unikorn360.com/creator-network</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/solutions</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/about</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/resources</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://www.unikorn360.com/contact</loc>
-    <lastmod>2026-10-28</lastmod>
+    <lastmod>2026-10-29</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-
-  <!-- 8 Core Division Pages -->
+  <!-- 6 Canonical Division Pages -->
   <url>
-    <loc>https://www.unikorn360.com/services/build</loc>
+    <loc>https://www.unikorn360.com/services/websites-software</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/secure</loc>
+    <loc>https://www.unikorn360.com/services/security-maintenance</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/grow</loc>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/influence</loc>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/automate</loc>
+    <loc>https://www.unikorn360.com/services/research-business-strategy</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/intelligence</loc>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
+  <!-- Published Service Child Pages -->
   <url>
-    <loc>https://www.unikorn360.com/services/business-support</loc>
-    <lastmod>2026-10-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://www.unikorn360.com/services/consulting-education</loc>
-    <lastmod>2026-10-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-
-  <!-- Key Published Service Child Pages -->
-  <url>
-    <loc>https://www.unikorn360.com/services/build/modern-website</loc>
+    <loc>https://www.unikorn360.com/services/websites-software/website-development</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/build/ecommerce-stores</loc>
+    <loc>https://www.unikorn360.com/services/security-maintenance/website-application-security-review</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/build/cctv-services-website</loc>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/seo-local-search</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/secure/factory-licence</loc>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/ai-chatbots-knowledge-assistants</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/secure/tnpcb-approvals</loc>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/market-customer-research</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/secure/document-digitisation</loc>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/business-registration-assistance</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/grow/detailed-project-report</loc>
+    <loc>https://www.unikorn360.com/services/websites-software/ecommerce-development</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/grow/cma-data</loc>
+    <loc>https://www.unikorn360.com/services/security-maintenance/ai-generated-code-security-review</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/grow/government-subsidy-assistance</loc>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/paid-advertising-management</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/influence/corporate-identity</loc>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/custom-ai-agents</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/influence/company-profile</loc>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/competitor-advertising-research</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/automate/systems-automation</loc>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/gst-udyam-assistance</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/automate/business-dashboards</loc>
+    <loc>https://www.unikorn360.com/services/websites-software/custom-web-applications</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/intelligence/custom-dashboards</loc>
+    <loc>https://www.unikorn360.com/services/security-maintenance/api-security-review</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/intelligence/business-intelligence-reports</loc>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/social-media-content-management</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/business-support/gst-registration</loc>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/business-workflow-automation</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/business-support/gst-returns</loc>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/industry-opportunity-research</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/business-support/udyam-registration</loc>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/trademark-filing-coordination</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/business-support/company-incorporation</loc>
+    <loc>https://www.unikorn360.com/services/websites-software/mobile-app-development</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/consulting-education/business-structuring</loc>
+    <loc>https://www.unikorn360.com/services/security-maintenance/database-supabase-security-review</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/consulting-education/standard-operating-procedures</loc>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/ugc-content-production</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://www.unikorn360.com/services/consulting-education/business-diagnostic-audit</loc>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/crm-sales-automation</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/business-performance-analysis</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/government-scheme-application-support</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/websites-software/saas-mvp-development</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/security-maintenance/cloud-server-hardening</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/influencer-campaign-management</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/whatsapp-business-automation</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/business-planning-financial-feasibility</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/dpr-loan-documentation</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/websites-software/api-system-integration</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/security-maintenance/website-application-maintenance</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/marketing-creator-campaigns/marketing-tracking-reporting</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/document-processing-automation</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/research-business-strategy/startup-growth-consulting</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/business-setup-documentation/property-documentation-coordination</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/services/ai-automation-business-systems/business-dashboards-reporting-systems</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <!-- Published Solution Pages -->
+  <url>
+    <loc>https://www.unikorn360.com/solutions/start-a-business</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/solutions/run-and-stay-compliant</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/solutions/get-business-funding</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/solutions/digitise-your-business</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/solutions/automate-your-business</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/solutions/expand-your-business</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <!-- Published Resource Guides -->
+  <url>
+    <loc>https://www.unikorn360.com/resources/gst-compliance-checklist-tamil-nadu</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/resources/msme-government-subsidy-schemes-tamil-nadu</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/resources/dpr-preparation-guide-msme-bank-loans</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/resources/factory-licence-tnpcb-consent-guide</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.unikorn360.com/resources/msme-business-automation-roadmap</loc>
+    <lastmod>2026-10-29</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

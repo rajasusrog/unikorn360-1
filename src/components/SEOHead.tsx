@@ -4,24 +4,39 @@ export interface SEOHeadProps {
   title: string;
   description: string;
   canonicalPath?: string;
-  schema?: Record<string, any>;
+  canonicalUrl?: string;
+  schema?: Record<string, any> | Array<Record<string, any>>;
+  structuredData?: Record<string, any> | Array<Record<string, any>>;
 }
 
 export const SEOHead: React.FC<SEOHeadProps> = ({
   title = 'UNIKORN360',
   description = '',
   canonicalPath,
-  schema
+  canonicalUrl: canonicalUrlProp,
+  schema,
+  structuredData
 }) => {
   useEffect(() => {
     const safeTitle = title || 'UNIKORN360';
     const safeDescription = description || '';
-    const resolvedPath =
-      typeof canonicalPath === 'string' && canonicalPath.trim().length > 0
-        ? canonicalPath.trim()
-        : typeof window !== 'undefined' && window.location?.pathname
-          ? window.location.pathname
-          : '/';
+    const baseUrl = 'https://www.unikorn360.com';
+
+    let resolvedCanonicalUrl = baseUrl;
+    if (typeof canonicalUrlProp === 'string' && canonicalUrlProp.trim().length > 0) {
+      const trimmed = canonicalUrlProp.trim();
+      resolvedCanonicalUrl = trimmed.startsWith('http')
+        ? trimmed
+        : `${baseUrl}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`;
+    } else {
+      const resolvedPath =
+        typeof canonicalPath === 'string' && canonicalPath.trim().length > 0
+          ? canonicalPath.trim()
+          : typeof window !== 'undefined' && window.location?.pathname
+            ? window.location.pathname
+            : '/';
+      resolvedCanonicalUrl = `${baseUrl}${resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`}`;
+    }
 
     // 1. Update Title
     document.title = safeTitle;
@@ -36,15 +51,13 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     metaDesc.setAttribute('content', safeDescription);
 
     // 3. Update Canonical Link
-    const baseUrl = 'https://www.unikorn360.com';
-    const canonicalUrl = `${baseUrl}${resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`}`;
     let canonicalLink = document.querySelector('link[rel="canonical"]');
     if (!canonicalLink) {
       canonicalLink = document.createElement('link');
       canonicalLink.setAttribute('rel', 'canonical');
       document.head.appendChild(canonicalLink);
     }
-    canonicalLink.setAttribute('href', canonicalUrl);
+    canonicalLink.setAttribute('href', resolvedCanonicalUrl);
 
     // 4. Update OpenGraph Tags
     const updateOrCreateMeta = (property: string, content: string) => {
@@ -57,9 +70,9 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       meta.setAttribute('content', content);
     };
 
-    updateOrCreateMeta('og:title', title);
-    updateOrCreateMeta('og:description', description);
-    updateOrCreateMeta('og:url', canonicalUrl);
+    updateOrCreateMeta('og:title', safeTitle);
+    updateOrCreateMeta('og:description', safeDescription);
+    updateOrCreateMeta('og:url', resolvedCanonicalUrl);
 
     // 5. Update Twitter Meta
     const updateTwitterMeta = (name: string, content: string) => {
@@ -72,31 +85,31 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       meta.setAttribute('content', content);
     };
 
-    updateTwitterMeta('twitter:title', title);
-    updateTwitterMeta('twitter:description', description);
+    updateTwitterMeta('twitter:title', safeTitle);
+    updateTwitterMeta('twitter:description', safeDescription);
 
     // 6. Inject Schema JSON-LD if provided
+    const activeSchema = schema || structuredData;
     let scriptTag = document.querySelector('script#page-jsonld-schema') as HTMLScriptElement | null;
-    if (schema) {
+    if (activeSchema) {
       if (!scriptTag) {
         scriptTag = document.createElement('script');
         scriptTag.id = 'page-jsonld-schema';
         scriptTag.type = 'application/ld+json';
         document.head.appendChild(scriptTag);
       }
-      scriptTag.text = JSON.stringify(schema);
+      scriptTag.text = JSON.stringify(activeSchema);
     } else if (scriptTag) {
       scriptTag.remove();
     }
 
     return () => {
-      // Cleanup custom schema on unmount
       const existing = document.querySelector('script#page-jsonld-schema');
       if (existing) {
         existing.remove();
       }
     };
-  }, [title, description, canonicalPath, schema]);
+  }, [title, description, canonicalPath, canonicalUrlProp, schema, structuredData]);
 
   return null;
 };

@@ -118,6 +118,16 @@ export interface UploadResult {
   mimeType: string;
 }
 
+const API_BASE_URL = (
+  typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL
+    ? String((import.meta as any).env.VITE_API_BASE_URL)
+    : ''
+).replace(/\/+$/, '');
+
+function resolveApiUrl(path: string): string {
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export const creatorService = {
   // Obtain active SDK-managed admin access token Bearer header
   getAuthHeaders: async (): Promise<Record<string, string>> => {
@@ -140,7 +150,7 @@ export const creatorService = {
     onProgress(10);
 
     // 1. Request signature from server
-    const signRes = await fetch('/api/creators/upload-sign', {
+    const signRes = await fetch(resolveApiUrl('/api/creators/upload-sign'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -152,8 +162,16 @@ export const creatorService = {
     });
 
     if (!signRes.ok) {
-      const errJson = await signRes.json().catch(() => ({}));
-      throw new Error(errJson.error || 'Failed to authorize secure upload.');
+      const contentType = signRes.headers.get('content-type') || '';
+      const errJson = contentType.includes('application/json')
+        ? await signRes.json().catch(() => ({}))
+        : {};
+      if (signRes.status === 405 || contentType.includes('text/html')) {
+        throw new Error(
+          `Upload API unavailable (HTTP ${signRes.status}). This domain is serving static files only without the backend server (server.ts) running.`
+        );
+      }
+      throw new Error(errJson.error || `Failed to authorize secure upload (HTTP ${signRes.status}).`);
     }
 
     const signData = await signRes.json();
@@ -203,7 +221,7 @@ export const creatorService = {
           const base64 = (reader.result as string).split(',')[1];
           onProgress(50);
 
-          const relayRes = await fetch('/api/creators/upload-relay', {
+          const relayRes = await fetch(resolveApiUrl('/api/creators/upload-relay'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -240,16 +258,24 @@ export const creatorService = {
 
   // Submit Application to Real Backend API
   submitApplication: async (formData: CreatorApplicationFormData): Promise<CreatorApplicationRecord> => {
-    const res = await fetch('/api/creators/apply', {
+    const res = await fetch(resolveApiUrl('/api/creators/apply'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
     });
 
-    const data = await res.json().catch(() => ({}));
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await res.json().catch(() => ({}))
+      : {};
 
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to submit creator application. Please check your inputs.');
+      if (res.status === 405 || contentType.includes('text/html')) {
+        throw new Error(
+          `Application API unavailable (HTTP ${res.status}). This domain is serving static files only without the backend server (server.ts) running.`
+        );
+      }
+      throw new Error(data.error || `Failed to submit creator application (HTTP ${res.status}). Please check your inputs.`);
     }
 
     const createdRecord: CreatorApplicationRecord = {

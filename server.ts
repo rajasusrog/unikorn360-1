@@ -5,6 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { generateSitemapXml } from './src/lib/sitemap';
+import { UNIKORN_FOUR_PRODUCTS } from './src/data/productsData';
 
 dotenv.config();
 
@@ -12,8 +14,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
+const PORT = isProd
+  ? parseInt(process.env.PORT || '3000', 10)
+  : parseInt(process.env.DEFAULT_APP_PORT || '3000', 10);
 
 // Support body parsing with realistic size bounds
 app.use(express.json({ limit: '35mb' }));
@@ -97,10 +101,11 @@ export function resolveSupabaseConfig(env: NodeJS.ProcessEnv = process.env): Res
 
 export const supabaseConfig = resolveSupabaseConfig(process.env);
 export const isSupabaseConfigured = supabaseConfig.isUserAuthConfigured;
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 // Server-side privileged client using SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY fallback).
-// CRITICAL: Never substitute a publishable/anon key for supabaseAdmin!
-const supabaseAdmin: SupabaseClient | null = supabaseConfig.isPrivilegedServerConfigured
+// CRITICAL: Never substitute a publishable/anon key for supabaseAdmin, and never connect to external DB in test mode!
+const supabaseAdmin: SupabaseClient | null = !isTestEnv && supabaseConfig.isPrivilegedServerConfigured
   ? createClient(supabaseConfig.url, supabaseConfig.privilegedKey, {
       auth: {
         autoRefreshToken: false,
@@ -110,7 +115,7 @@ const supabaseAdmin: SupabaseClient | null = supabaseConfig.isPrivilegedServerCo
   : null;
 
 // Public client for normal user-token verification (never uses privileged key)
-const supabasePublic: SupabaseClient | null = supabaseConfig.isPublicClientConfigured
+const supabasePublic: SupabaseClient | null = !isTestEnv && supabaseConfig.isPublicClientConfigured
   ? createClient(supabaseConfig.url, supabaseConfig.publishableKey, {
       auth: {
         autoRefreshToken: false,
@@ -769,6 +774,14 @@ export function isValidIso8601Timestamp(value: unknown): value is string {
   return !Number.isNaN(parsedMs);
 }
 
+function isSafeScalarValue(val: unknown): val is string | number | boolean | null {
+  if (val === null) return true;
+  const t = typeof val;
+  if (t === 'string' || t === 'boolean') return true;
+  if (t === 'number') return Number.isFinite(val as number);
+  return false;
+}
+
 function projectAllowlistedObject<T extends readonly string[]>(
   rawObj: any,
   allowlist: T
@@ -777,8 +790,75 @@ function projectAllowlistedObject<T extends readonly string[]>(
   const out: Record<string, any> = {};
   for (const key of allowlist) {
     if (Object.prototype.hasOwnProperty.call(rawObj, key)) {
-      out[key] = rawObj[key];
+      const val = rawObj[key];
+      if (isSafeScalarValue(val)) {
+        out[key] = val;
+      }
     }
+  }
+  return out;
+}
+
+export const EVALUATOR_STRING_ARRAY_FIELDS = new Set<string>([
+  'social_platforms',
+  'other_profile_urls',
+  'creator_categories',
+  'languages',
+  'dialects',
+  'collaboration_preferences',
+  'portfolio_urls',
+  'campaign_matches'
+]);
+
+export function projectStringArrayForEvaluator(rawArr: unknown): string[] {
+  if (!Array.isArray(rawArr)) return [];
+  return rawArr.filter((item): item is string => typeof item === 'string');
+}
+
+export function projectExpectedRatesForEvaluator(rawObj: unknown): Record<string, string | number> {
+  if (!rawObj || typeof rawObj !== 'object' || Array.isArray(rawObj)) return {};
+  const src = rawObj as Record<string, unknown>;
+  const out: Record<string, string | number> = {};
+  for (const key of EVALUATOR_EXPECTED_RATES_FIELD_ALLOWLIST) {
+    if (Object.prototype.hasOwnProperty.call(src, key)) {
+      const val = src[key];
+      if (typeof val === 'string' || (typeof val === 'number' && Number.isFinite(val))) {
+        out[key] = val;
+      }
+    }
+  }
+  return out;
+}
+
+export function projectAudienceInsightsForEvaluator(rawObj: unknown): Record<string, string | number | string[]> {
+  if (!rawObj || typeof rawObj !== 'object' || Array.isArray(rawObj)) return {};
+  const src = rawObj as Record<string, unknown>;
+  const out: Record<string, string | number | string[]> = {};
+  for (const key of EVALUATOR_AUDIENCE_INSIGHTS_FIELD_ALLOWLIST) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+    const val = src[key];
+    if (key === 'topLocations') {
+      if (typeof val === 'string') {
+        out[key] = val;
+      } else if (Array.isArray(val)) {
+        out[key] = projectStringArrayForEvaluator(val);
+      }
+    } else if (typeof val === 'string' || (typeof val === 'number' && Number.isFinite(val))) {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+export function projectPreviousCollaborationsForEvaluator(rawObj: unknown): Record<string, boolean | string> {
+  if (!rawObj || typeof rawObj !== 'object' || Array.isArray(rawObj)) return {};
+  const src = rawObj as Record<string, unknown>;
+  const out: Record<string, boolean | string> = {};
+  if (Object.prototype.hasOwnProperty.call(src, 'hasPrior') && typeof src.hasPrior === 'boolean') {
+    out.hasPrior = src.hasPrior;
+  }
+  if (Object.prototype.hasOwnProperty.call(src, 'details') && typeof src.details === 'string') {
+    out.details = src.details;
   }
   return out;
 }
@@ -853,28 +933,28 @@ export function projectCreatorForRole(
             .filter(Boolean);
         }
       } else if (key === 'expected_rates') {
-        if (record.expected_rates && typeof record.expected_rates === 'object') {
-          projected.expected_rates = projectAllowlistedObject(
-            record.expected_rates,
-            EVALUATOR_EXPECTED_RATES_FIELD_ALLOWLIST
-          ) || {};
+        if (Object.prototype.hasOwnProperty.call(record, 'expected_rates')) {
+          projected.expected_rates = projectExpectedRatesForEvaluator(record.expected_rates);
         }
       } else if (key === 'audience_insights') {
-        if (record.audience_insights && typeof record.audience_insights === 'object') {
-          projected.audience_insights = projectAllowlistedObject(
-            record.audience_insights,
-            EVALUATOR_AUDIENCE_INSIGHTS_FIELD_ALLOWLIST
-          ) || {};
+        if (Object.prototype.hasOwnProperty.call(record, 'audience_insights')) {
+          projected.audience_insights = projectAudienceInsightsForEvaluator(record.audience_insights);
         }
       } else if (key === 'previous_collaborations') {
-        if (record.previous_collaborations && typeof record.previous_collaborations === 'object') {
-          projected.previous_collaborations = projectAllowlistedObject(
-            record.previous_collaborations,
-            EVALUATOR_PREVIOUS_COLLABS_FIELD_ALLOWLIST
-          ) || {};
+        if (Object.prototype.hasOwnProperty.call(record, 'previous_collaborations')) {
+          projected.previous_collaborations = projectPreviousCollaborationsForEvaluator(
+            record.previous_collaborations
+          );
+        }
+      } else if (EVALUATOR_STRING_ARRAY_FIELDS.has(key)) {
+        if (Object.prototype.hasOwnProperty.call(record, key)) {
+          projected[key] = projectStringArrayForEvaluator(record[key]);
         }
       } else if (Object.prototype.hasOwnProperty.call(record, key)) {
-        projected[key] = record[key];
+        const val = record[key];
+        if (isSafeScalarValue(val)) {
+          projected[key] = val;
+        }
       }
     }
     return projected;
@@ -1025,6 +1105,28 @@ function sendMissingPrivilegedConfig(res: Response) {
   });
 }
 
+let creatorBucketVerified = false;
+async function ensureCreatorStorageBucket(): Promise<void> {
+  if (!supabaseAdmin || creatorBucketVerified) return;
+  try {
+    const { data: bucket, error: getErr } = await supabaseAdmin.storage.getBucket('creator-submissions');
+    if (getErr || !bucket) {
+      const { error: createErr } = await supabaseAdmin.storage.createBucket('creator-submissions', {
+        public: false,
+        fileSizeLimit: 31457280,
+        allowedMimeTypes: ['video/mp4', 'video/quicktime', 'image/jpeg', 'image/png', 'application/pdf', 'application/json']
+      });
+      if (!createErr) {
+        creatorBucketVerified = true;
+      }
+    } else {
+      creatorBucketVerified = true;
+    }
+  } catch (err) {
+    console.warn('Could not auto-verify creator-submissions bucket:', err);
+  }
+}
+
 // ====================================================================
 // PUBLIC CREATOR API ENDPOINTS
 // ====================================================================
@@ -1048,13 +1150,25 @@ app.post('/api/creators/upload-sign', rateLimit(30, 60000), async (req: Request,
     const storagePath = `applications/${refCode}/${category}/${Date.now()}_${sanitizedName}`;
 
     if (supabaseAdmin) {
-      const { data, error } = await supabaseAdmin.storage
+      await ensureCreatorStorageBucket();
+
+      let { data, error } = await supabaseAdmin.storage
         .from('creator-submissions')
         .createSignedUploadUrl(storagePath);
 
-      if (error) {
+      if (error && (error.message?.includes('not exist') || (error as any).statusCode === '404')) {
+        creatorBucketVerified = false;
+        await ensureCreatorStorageBucket();
+        const retry = await supabaseAdmin.storage
+          .from('creator-submissions')
+          .createSignedUploadUrl(storagePath);
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error || !data) {
         return res.status(503).json({
-          error: `Storage upload signing failed: ${error.message}`,
+          error: `Storage upload signing failed: ${error?.message || 'Unknown storage error'}`,
           code: 'STORAGE_UNAVAILABLE'
         });
       }
@@ -1095,6 +1209,7 @@ app.post('/api/creators/upload-relay', rateLimit(20, 60000), async (req: Request
     }
 
     if (supabaseAdmin) {
+      await ensureCreatorStorageBucket();
       const buffer = Buffer.from(fileData, 'base64');
       const { error } = await supabaseAdmin.storage
         .from('creator-submissions')
@@ -1105,7 +1220,7 @@ app.post('/api/creators/upload-relay', rateLimit(20, 60000), async (req: Request
 
       if (error) {
         console.error('Error uploading to Supabase storage:', error);
-        return res.status(500).json({ error: 'Failed to upload file to secure storage.' });
+        return res.status(500).json({ error: `Failed to upload file to secure storage: ${error.message}` });
       }
 
       return res.json({
@@ -1178,7 +1293,7 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
 
     // D. Email & Phone Format Validation
     const emailClean = payload.email.trim().toLowerCase();
-    const phoneClean = payload.whatsapp.trim().replace(/\s+/g, '');
+    const phoneClean = payload.whatsapp.trim().replace(/[\s-]+/g, '');
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)) {
       return res.status(400).json({ error: 'Invalid email address.' });
@@ -1205,14 +1320,14 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
 
     // F. Duplicate Submission Protection
     if (supabaseAdmin) {
-      const { data: existing } = await supabaseAdmin
+      const { data: existing, error: dupErr } = await supabaseAdmin
         .from('creator_applications')
         .select('id, application_reference, application_status, created_at')
         .or(`email.eq.${emailClean},whatsapp_number.eq.${phoneClean}`)
-        .in('application_status', ['pending', 'reviewed'])
+        .in('application_status', ['pending', 'reviewed', 'new', 'reviewing'])
         .limit(1);
 
-      if (existing && existing.length > 0) {
+      if (!dupErr && existing && existing.length > 0) {
         return res.status(409).json({
           error: `An active application with this email or WhatsApp number is already being evaluated under reference ${existing[0].application_reference}.`,
           referenceNumber: existing[0].application_reference
@@ -1220,8 +1335,8 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
       }
     } else {
       const duplicate = memoryApplications.find(
-        a => (a.email.toLowerCase() === emailClean || a.whatsapp_number.replace(/\s+/g, '') === phoneClean) &&
-             ['pending', 'reviewed'].includes(a.application_status)
+        a => (a.email.toLowerCase() === emailClean || a.whatsapp_number.replace(/[\s-]+/g, '') === phoneClean) &&
+             ['pending', 'reviewed', 'new', 'reviewing'].includes(a.application_status)
       );
       if (duplicate) {
         return res.status(409).json({
@@ -1239,6 +1354,18 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
     // H. Hash Client IP for anti-fraud
     const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || '';
     const ipHash = crypto.createHash('sha256').update(rawIp + 'u360_salt').digest('hex').substring(0, 16);
+
+    const submittedAtIso = new Date().toISOString();
+    const initialActivityLog = [
+      {
+        id: `act_${Date.now()}`,
+        event_type: 'application_submitted',
+        action: 'Application Submitted',
+        actor_email: 'portal@unikorn360.com',
+        timestamp: submittedAtIso,
+        details: 'Self-registered through UNIKORN360 Creator Portal.'
+      }
+    ];
 
     const newRecordData = {
       application_reference: referenceNumber,
@@ -1285,34 +1412,19 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
       brand_sharing_consent: true,
       application_status: 'pending',
       admin_notes: '',
+      activity_log: initialActivityLog,
       ip_hash: ipHash
     };
 
-    let insertedId = `app_${Date.now()}`;
+    let insertedId = crypto.randomUUID ? crypto.randomUUID() : `app_${Date.now()}`;
 
-    // I. Persist to Supabase (or test-only memory store)
-    if (supabaseAdmin) {
-      const { data: insertedApp, error: appInsertError } = await supabaseAdmin
-        .from('creator_applications')
-        .insert(newRecordData)
-        .select('id')
-        .single();
-
-      if (appInsertError) {
-        console.error('Failed to insert creator application into Supabase:', appInsertError);
-        return res.status(500).json({ error: 'Database storage error. Please try again.' });
-      }
-
-      insertedId = insertedApp.id;
-
-      // J. Persist Assets records into `creator_assets`
-      const assetInserts: any[] = [];
-
+    const collectSubmittedAssets = (appId: string) => {
+      const assets: any[] = [];
       if (Array.isArray(payload.uploadedVideos)) {
         for (const vid of payload.uploadedVideos) {
           if (vid.name && vid.storagePath) {
-            assetInserts.push({
-              application_id: insertedId,
+            assets.push({
+              application_id: appId,
               file_type: 'video_sample',
               original_filename: vid.name,
               storage_path: vid.storagePath,
@@ -1322,12 +1434,11 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
           }
         }
       }
-
       if (Array.isArray(payload.uploadedInsights)) {
         for (const ins of payload.uploadedInsights) {
           if (ins.name && ins.storagePath) {
-            assetInserts.push({
-              application_id: insertedId,
+            assets.push({
+              application_id: appId,
               file_type: 'audience_insight',
               original_filename: ins.name,
               storage_path: ins.storagePath,
@@ -1337,10 +1448,9 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
           }
         }
       }
-
       if (payload.uploadedMediaKit?.name && payload.uploadedMediaKit?.storagePath) {
-        assetInserts.push({
-          application_id: insertedId,
+        assets.push({
+          application_id: appId,
           file_type: 'media_kit',
           original_filename: payload.uploadedMediaKit.name,
           storage_path: payload.uploadedMediaKit.storagePath,
@@ -1348,42 +1458,76 @@ app.post('/api/creators/apply', rateLimit(10, 3600000), async (req: Request, res
           file_size: payload.uploadedMediaKit.size || 0
         });
       }
+      return assets;
+    };
 
-      if (assetInserts.length > 0) {
-        const { error: assetError } = await supabaseAdmin
-          .from('creator_assets')
-          .insert(assetInserts);
+    // I. Persist to Supabase (with resilient Storage + Memory backup if SQL tables are not yet migrated)
+    if (supabaseAdmin) {
+      const { data: insertedApp, error: appInsertError } = await supabaseAdmin
+        .from('creator_applications')
+        .insert(newRecordData)
+        .select('id')
+        .single();
 
-        if (assetError) {
-          console.error('Error logging assets into creator_assets:', assetError);
+      if (!appInsertError && insertedApp) {
+        insertedId = insertedApp.id;
+        const assetInserts = collectSubmittedAssets(insertedId);
+        if (assetInserts.length > 0) {
+          const { error: assetError } = await supabaseAdmin
+            .from('creator_assets')
+            .insert(assetInserts);
+
+          if (assetError) {
+            console.error('Error logging assets into creator_assets:', assetError);
+          }
         }
+      } else if (
+        appInsertError &&
+        (appInsertError.code === 'PGRST205' ||
+          appInsertError.code === '42P01' ||
+          appInsertError.message?.includes('schema cache'))
+      ) {
+        // The PostgreSQL table has not been created in the Supabase SQL Editor yet.
+        // Persist the complete application record into the private Supabase Storage bucket and runtime store
+        // so that no applicant submission is lost.
+        await ensureCreatorStorageBucket();
+        const submittedAssets = collectSubmittedAssets(insertedId).map((a, idx) => ({
+          id: `asset_${Date.now()}_${idx}`,
+          ...a,
+          created_at: submittedAtIso
+        }));
+        const fallbackRecord: InMemAppRecord = {
+          ...newRecordData,
+          id: insertedId,
+          created_at: submittedAtIso,
+          updated_at: submittedAtIso,
+          assets: submittedAssets
+        };
+        memoryApplications.unshift(fallbackRecord);
+
+        const recordBuffer = Buffer.from(JSON.stringify(fallbackRecord, null, 2), 'utf-8');
+        await supabaseAdmin.storage
+          .from('creator-submissions')
+          .upload(`applications/_records/${referenceNumber}.json`, recordBuffer, {
+            contentType: 'application/json',
+            upsert: true
+          });
+      } else if (appInsertError) {
+        console.error('Failed to insert creator application into Supabase:', appInsertError);
+        return res.status(500).json({ error: `Database storage error: ${appInsertError.message}` });
       }
     } else {
+      const submittedAssets = collectSubmittedAssets(insertedId).map((a, idx) => ({
+        id: `asset_${Date.now()}_${idx}`,
+        ...a,
+        created_at: submittedAtIso
+      }));
       const inMemRecord: InMemAppRecord = {
         ...newRecordData,
         id: insertedId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        activity_log: [
-          {
-            id: `act_${Date.now()}`,
-            event_type: 'application_submitted',
-            action: 'Application Submitted',
-            actor_email: 'portal@unikorn360.com',
-            timestamp: new Date().toISOString(),
-            details: 'Self-registered through UNIKORN360 Creator Portal.'
-          }
-        ],
-        assets: [
-          ...(payload.uploadedVideos || []).map((v: any) => ({
-            id: `asset_${Date.now()}_${Math.random()}`,
-            file_type: 'video_sample',
-            original_filename: v.name,
-            storage_path: v.storagePath || `local_${v.name}`,
-            mime_type: v.type,
-            file_size: v.size
-          }))
-        ]
+        created_at: submittedAtIso,
+        updated_at: submittedAtIso,
+        assets: submittedAssets
       };
       memoryApplications.unshift(inMemRecord);
     }
@@ -2226,24 +2370,36 @@ app.patch('/api/admin/services/:id/status', requireAdminAuth, requireRole(['supe
   try {
     const { id } = req.params;
     const { status } = req.body;
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return res.status(400).json({ error: 'Invalid service UUID' });
+    }
     if (!['draft', 'published', 'archived'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status code' });
     }
 
-    if (supabaseAdmin) {
+    const nowIso = new Date().toISOString();
+    const updatePayload: Record<string, any> = {
+      status,
+      updated_at: nowIso
+    };
+    if (status === 'published') {
+      updatePayload.published_at = nowIso;
+    } else if (status === 'draft') {
+      updatePayload.published_at = null;
+    }
+
+    if (supabaseAdmin && !isTestMemoryFallbackEnabled()) {
       const { data, error } = await supabaseAdmin
         .from('service_catalog')
-        .update({ status, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', id)
         .select()
         .single();
 
-      if (!error && data) {
-        return res.json({ success: true, service: data });
+      if (error || !data) {
+        return res.status(500).json({ error: error?.message || 'Service record not found in Supabase.' });
       }
-      if (error && !isTestMemoryFallbackEnabled()) {
-        return res.status(500).json({ error: error.message });
-      }
+      return res.json({ success: true, service: data });
     }
 
     if (!isTestMemoryFallbackEnabled()) {
@@ -2254,6 +2410,49 @@ app.patch('/api/admin/services/:id/status', requireAdminAuth, requireRole(['supe
   } catch (err: any) {
     console.error('Error updating service status:', err);
     res.status(500).json({ error: 'Failed to update service status' });
+  }
+});
+
+// ====================================================================
+// 12. DYNAMIC XML SITEMAP ENDPOINT (/sitemap.xml)
+// ====================================================================
+app.get('/sitemap.xml', async (_req: Request, res: Response) => {
+  try {
+    let divisions: any[] | undefined = undefined;
+    let services: any[] | undefined = undefined;
+
+    const dbClient = supabasePublic || supabaseAdmin;
+    if (dbClient) {
+      const [divRes, svcRes] = await Promise.all([
+        dbClient.from('service_divisions').select('*').eq('status', 'published').order('display_order', { ascending: true }),
+        dbClient.from('service_catalog').select('*').eq('status', 'published').order('display_order', { ascending: true })
+      ]);
+      if (!divRes.error && Array.isArray(divRes.data) && divRes.data.length > 0) {
+        divisions = divRes.data;
+      }
+      if (!svcRes.error && Array.isArray(svcRes.data) && svcRes.data.length > 0) {
+        services = svcRes.data;
+      }
+    }
+
+    const xml = generateSitemapXml({
+      baseUrl: 'https://www.unikorn360.com',
+      products: UNIKORN_FOUR_PRODUCTS,
+      divisions,
+      services
+    });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.status(200).send(xml);
+  } catch (err) {
+    console.error('Error generating dynamic sitemap.xml:', err);
+    const fallbackXml = generateSitemapXml({
+      baseUrl: 'https://www.unikorn360.com',
+      products: UNIKORN_FOUR_PRODUCTS
+    });
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    return res.status(200).send(fallbackXml);
   }
 });
 

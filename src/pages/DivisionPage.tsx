@@ -103,7 +103,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
               onClick={() => onNavigate('/services')}
               className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors cursor-pointer"
             >
-              Browse All 8 Divisions
+              Browse All 6 Divisions
             </button>
             <button
               onClick={() => onNavigate('/')}
@@ -133,9 +133,10 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Breadcrumbs
             items={[
-              { label: 'Services', href: '/services' },
-              { label: division.name, current: true }
+              { label: 'Services', path: '/services' },
+              { label: division.name }
             ]}
+            onNavigate={onNavigate}
           />
 
           <div className="mt-6 flex flex-col lg:flex-row lg:items-center justify-between gap-8">

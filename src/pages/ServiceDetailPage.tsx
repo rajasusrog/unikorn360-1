@@ -236,10 +236,11 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Breadcrumbs
             items={[
-              { label: 'Services', href: '/services' },
-              { label: division.name, href: `/services/${division.slug}` },
-              { label: service.service_name, current: true }
+              { label: 'Services', path: '/services' },
+              { label: division.name, path: `/services/${division.slug}` },
+              { label: service.service_name }
             ]}
+            onNavigate={onNavigate}
           />
 
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">

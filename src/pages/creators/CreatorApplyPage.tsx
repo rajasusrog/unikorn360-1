@@ -471,7 +471,7 @@ export const CreatorApplyPage: React.FC<CreatorApplyPageProps> = ({ onNavigate }
       <SEOHead
         title="Apply to UNIKORN360 Creator Network — Tamil Content Creators"
         description="Submit your creator registration for commercial brand video assignments. 100% free registration for Tamil creators, influencers, and UGC producers."
-        canonicalUrl="https://www.unikorn360.com/creators/apply"
+        canonicalPath="/creators/apply"
       />
 
       {/* Top Banner */}
@@ -1205,7 +1205,7 @@ export const CreatorApplyPage: React.FC<CreatorApplyPageProps> = ({ onNavigate }
                               <span>{(ins.size / (1024 * 1024)).toFixed(1)} MB</span>
                               {ins.status === 'uploading' && <span className="text-amber-400 font-semibold">• Uploading ({ins.progress}%)...</span>}
                               {ins.status === 'ready' && <span className="text-emerald-400 font-semibold">• Secured</span>}
-                              {ins.status === 'error' && <span className="text-rose-400 font-semibold">• Failed</span>}
+                              {ins.status === 'error' && <span className="text-rose-400 font-semibold">• {ins.errorMessage || 'Upload failed'}</span>}
                             </div>
                           </div>
                         </div>
@@ -1237,7 +1237,7 @@ export const CreatorApplyPage: React.FC<CreatorApplyPageProps> = ({ onNavigate }
                           <span>{(formData.uploadedMediaKit.size / (1024 * 1024)).toFixed(1)} MB</span>
                           {formData.uploadedMediaKit.status === 'uploading' && <span className="text-amber-400 font-semibold">• Uploading ({formData.uploadedMediaKit.progress}%)...</span>}
                           {formData.uploadedMediaKit.status === 'ready' && <span className="text-emerald-400 font-semibold">• Secured</span>}
-                          {formData.uploadedMediaKit.status === 'error' && <span className="text-rose-400 font-semibold">• Failed</span>}
+                          {formData.uploadedMediaKit.status === 'error' && <span className="text-rose-400 font-semibold">• {formData.uploadedMediaKit.errorMessage || 'Upload failed'}</span>}
                         </div>
                       </div>
                     </div>

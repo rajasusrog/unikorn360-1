@@ -98,8 +98,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
       setServices(data.services);
       setDivisions(data.divisions);
       setStats(data.stats);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load admin catalog data', err);
+      setErrorMessage(err?.message || 'Failed to load service catalogue from Supabase.');
     } finally {
       setLoading(false);
     }
@@ -145,9 +146,43 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
     const [moved] = newDivs.splice(index, 1);
     newDivs.splice(targetIndex, 0, moved);
 
-    const orderedIds = newDivs.map(d => d.id);
-    await servicesDb.reorderDivisions(orderedIds);
-    await loadAdminData();
+    try {
+      const orderedIds = newDivs.map(d => d.id);
+      await servicesDb.reorderDivisions(orderedIds);
+      await loadAdminData();
+      setSaveMessage('Division display order saved to Supabase.');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to reorder divisions in Supabase.');
+      setTimeout(() => setErrorMessage(''), 4000);
+    }
+  };
+
+  // Service Reordering within Division
+  const handleMoveService = async (serviceId: string, divisionId: string, direction: 'up' | 'down') => {
+    const divServices = services
+      .filter(s => s.division_id === divisionId)
+      .sort((a, b) => a.display_order - b.display_order);
+
+    const index = divServices.findIndex(s => s.id === serviceId);
+    if (index === -1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= divServices.length) return;
+
+    const reordered = [...divServices];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    try {
+      await servicesDb.reorderServices(divisionId, reordered.map(s => s.id));
+      await loadAdminData();
+      setSaveMessage('Service display order saved to Supabase.');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to reorder services in Supabase.');
+      setTimeout(() => setErrorMessage(''), 4000);
+    }
   };
 
   // Service Save
@@ -161,6 +196,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
           throw new Error('Please fill in required fields (Division, Service Name, Slug).');
         }
 
+        const siblingCount = services.filter(s => s.division_id === editingService.division_id).length;
         await servicesDb.createService({
           division_id: editingService.division_id,
           service_name: editingService.service_name,
@@ -181,13 +217,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
           seo_title: editingService.seo_title || `${editingService.service_name} | Unikorn360`,
           seo_description: editingService.seo_description || editingService.short_description || '',
           status: editingService.status || 'draft',
-          display_order: services.length + 1
+          display_order: siblingCount + 1
         });
-        setSaveMessage('New service created successfully as draft.');
+        setSaveMessage('New service created in Supabase.');
       } else {
         if (!editingService.id) return;
         await servicesDb.updateService(editingService.id, editingService);
-        setSaveMessage('Service updated successfully.');
+        setSaveMessage('Service updated in Supabase.');
       }
 
       setEditingService(null);
@@ -197,15 +233,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
     } catch (err: any) {
       setErrorMessage(err.message || 'Save failed');
       setTimeout(() => setErrorMessage(''), 5000);
-    }
-  };
-
-  const handleResetFactory = () => {
-    if (confirm('Reset services and divisions to factory initial seed? This will restore the 6 specialized divisions and 37 initial services.')) {
-      servicesDb.resetToFactorySeed();
-      loadAdminData();
-      setSaveMessage('Restored to factory seed successfully.');
-      setTimeout(() => setSaveMessage(''), 3000);
     }
   };
 
@@ -378,7 +405,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
               }`}
             >
               <Layers className="w-4 h-4 text-[#214E78]" />
-              <span>Services Catalog ({stats.totalServices || 64})</span>
+              <span>Services Catalog ({stats.totalServices})</span>
             </button>
           )}
         </div>
@@ -400,7 +427,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
                 <div className="text-2xl font-bold font-serif text-[#30363D] mt-1">
                   {stats.totalServices}
                 </div>
-                <span className="text-[10px] text-[#505B66]">Across 8 Divisions</span>
+                <span className="text-[10px] text-[#505B66]">Across {divisions.length} Divisions</span>
               </div>
 
           <div className="bg-white border border-[#D8DEE5] rounded-xl p-5 shadow-sm">
@@ -439,20 +466,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-bold font-serif text-[#30363D]">
-                The Eight Divisions (Display Order &amp; Live Counts)
+                Service Divisions (Display Order &amp; Live Counts)
               </h2>
               <p className="text-xs text-[#505B66]">
-                Reorder divisions or verify dynamic published count.
+                Reorder divisions in Supabase or verify dynamic published count.
               </p>
             </div>
-            <button
-              onClick={handleResetFactory}
-              className="text-xs text-[#505B66] hover:text-[#214E78] flex items-center gap-1 font-semibold"
-              title="Reset data to factory seed"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Factory Seed</span>
-            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -635,7 +654,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
                           <option value="archived">Archived</option>
                         </select>
                       </td>
-                      <td className="py-3 px-4 text-right space-x-2">
+                      <td className="py-3 px-4 text-right space-x-1.5">
+                        <button
+                          onClick={() => handleMoveService(srv.id, srv.division_id, 'up')}
+                          className="p-1 hover:bg-[#E9EDF0] text-[#505B66] rounded cursor-pointer"
+                          title="Move Up in Division"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5 inline" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveService(srv.id, srv.division_id, 'down')}
+                          className="p-1 hover:bg-[#E9EDF0] text-[#505B66] rounded cursor-pointer"
+                          title="Move Down in Division"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5 inline" />
+                        </button>
                         <button
                           onClick={() => {
                             setIsCreatingNew(false);

@@ -262,12 +262,48 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/products"
                   onClick={(e) => { e.preventDefault(); handleNav('/products'); }}
-                  className="hover:text-[#214E78] transition-colors block font-medium"
+                  className="hover:text-[#214E78] transition-colors block font-bold text-[#30363D]"
                 >
-                  Products &amp; Turnkey OS
+                  All Products →
                 </a>
               </li>
               <li>
+                <a
+                  href="/products/invoicepro360"
+                  onClick={(e) => { e.preventDefault(); handleNav('/products/invoicepro360'); }}
+                  className="hover:text-[#214E78] transition-colors block"
+                >
+                  InvoicePro360
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/products/deeds360"
+                  onClick={(e) => { e.preventDefault(); handleNav('/products/deeds360'); }}
+                  className="hover:text-[#214E78] transition-colors block"
+                >
+                  Deeds360
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/products/property360"
+                  onClick={(e) => { e.preventDefault(); handleNav('/products/property360'); }}
+                  className="hover:text-[#214E78] transition-colors block"
+                >
+                  Property360
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/products/advocate360"
+                  onClick={(e) => { e.preventDefault(); handleNav('/products/advocate360'); }}
+                  className="hover:text-[#214E78] transition-colors block"
+                >
+                  Advocate360
+                </a>
+              </li>
+              <li className="pt-2 border-t border-[#D8DEE5]">
                 <a
                   href="/creators"
                   onClick={(e) => { e.preventDefault(); handleNav('/creators'); }}

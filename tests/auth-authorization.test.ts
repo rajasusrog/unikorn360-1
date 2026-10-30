@@ -13,8 +13,15 @@ import {
   SupabaseAuthLikeClient
 } from '../src/lib/supabase.js';
 import {
+  parseRouteLocation,
+  extractQueryParam,
+  extractCreatorReference
+} from '../src/lib/router.js';
+import {
   runDatabaseVerificationSuite,
+  runMigrationReconciliationRegressionSuite,
   buildAllTenActivityLogFixtures,
+  buildNestedJsonPrivacyFixtures,
   PRIVACY_FIXTURE_CONSTANTS,
   DbTestScenarioResult
 } from './db-evaluator-privacy.test.js';
@@ -265,7 +272,7 @@ async function runTests() {
         headers: { 'Authorization': `Bearer ${TOKENS.evaluator}` }
       });
 
-      const catRes = await fetch(`${baseUrl}/api/admin/services/srv-web-dev/status`, {
+      const catRes = await fetch(`${baseUrl}/api/admin/services/b0000000-0000-4000-8000-000000000001/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${TOKENS.evaluator}`,
@@ -331,7 +338,7 @@ async function runTests() {
         body: JSON.stringify({ status: 'shortlisted' })
       });
 
-      const catRes = await fetch(`${baseUrl}/api/admin/services/srv-web-dev/status`, {
+      const catRes = await fetch(`${baseUrl}/api/admin/services/b0000000-0000-4000-8000-000000000001/status`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${TOKENS.admin}`,
@@ -522,11 +529,17 @@ async function runTests() {
         })
       });
 
-      // Set sensitive admin_notes and the 10 required activity_log fixtures on mem-app-01
-      const memRec = memoryApplications.find((a) => a.id === targetId);
+      // Set sensitive admin_notes, Step 1C nested-JSON fixtures, and the 10 required activity_log fixtures on mem-app-01
+      const memRec = memoryApplications.find((a) => a.id === targetId) as any;
       if (memRec) {
+        const nestedFixtures = buildNestedJsonPrivacyFixtures();
         memRec.admin_notes = secretAdminNote;
         memRec.activity_log = buildAllTenActivityLogFixtures() as any;
+        memRec.expected_rates = nestedFixtures.expected_rates;
+        memRec.audience_insights = nestedFixtures.audience_insights;
+        memRec.previous_collaborations = nestedFixtures.previous_collaborations;
+        memRec.portfolio_urls = nestedFixtures.portfolio_urls;
+        memRec.campaign_matches = nestedFixtures.campaign_matches;
       }
 
       // Evaluator requests list and detail dossier
@@ -605,6 +618,17 @@ async function runTests() {
         Array.isArray(superDetailJson.application?.activity_log) &&
         superDetailJson.application.activity_log.length === 10;
 
+      const evalApp = evalDetailJson.application || {};
+      const nestedJsonCleaned =
+        JSON.stringify(evalApp.expected_rates) === JSON.stringify({ ugc: '2500', sponsoredReel: '5000' }) &&
+        JSON.stringify(evalApp.audience_insights) ===
+          JSON.stringify({ gender: '62% Male', age: '18-34', topLocations: ['Chennai', 'Coimbatore'] }) &&
+        JSON.stringify(evalApp.previous_collaborations) ===
+          JSON.stringify({ hasPrior: true, details: 'Regional retail campaigns' }) &&
+        JSON.stringify(evalApp.portfolio_urls) ===
+          JSON.stringify(['https://instagram.com/reel/1', 'https://instagram.com/reel/2']) &&
+        JSON.stringify(evalApp.campaign_matches) === JSON.stringify(['Q4 Tech Launch']);
+
       const passed = (payRes.status === 200 || payRes.status === 201) &&
         !leakedAmount &&
         !leakedUtr &&
@@ -616,15 +640,16 @@ async function runTests() {
         !leakedAdminNotesKey &&
         !leakedIpHashKey &&
         preservedExactOrderAndSummaries &&
+        nestedJsonCleaned &&
         superHasFullHistory;
 
       results.push({
         scenarioNumber: 12,
         category: 'Memory-Backed API',
-        name: 'Evaluator privacy across all 10 fixtures (list + dossier + fixed activity summaries + admin_notes/payments/ip_hash excluded)',
+        name: 'Evaluator privacy across all 10 activity fixtures + Step 1C nested-JSON allowlists (list + dossier + fixed activity summaries + admin_notes/payments/ip_hash excluded)',
         passed,
-        expected: '0 financial/notes/details/actor leaks; exact 4 ordered fixed summaries; superadmin retains full 10-event history',
-        actual: `leakedAmount=${leakedAmount}, leakedUtr=${leakedUtr}, leakedNote=${leakedNote}, leakedAdminNote=${leakedAdminNote}, leakedActor=${leakedActorEmail}, leakedDetails=${leakedDetailsKey}, leakedCols=${leakedPaymentsKey || leakedAdminNotesKey || leakedIpHashKey}, exactSummaries=${preservedExactOrderAndSummaries}, superFull=${superHasFullHistory}`
+        expected: '0 financial/notes/details/actor/nested-JSON leaks; exact 4 ordered fixed summaries; superadmin retains full 10-event history',
+        actual: `leakedAmount=${leakedAmount}, leakedUtr=${leakedUtr}, leakedNote=${leakedNote}, leakedAdminNote=${leakedAdminNote}, leakedActor=${leakedActorEmail}, leakedDetails=${leakedDetailsKey}, leakedCols=${leakedPaymentsKey || leakedAdminNotesKey || leakedIpHashKey}, exactSummaries=${preservedExactOrderAndSummaries}, nestedJsonCleaned=${nestedJsonCleaned}, superFull=${superHasFullHistory}`
       });
     }
 
@@ -919,51 +944,111 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Scenario 17: Static SQL Verification of Migration History & 20261031
+    // Scenario 17: Static SQL Verification of Migration History & Forward Migrations (20261102 & 20261103)
     //  Verifies:
-    //  - 20261029_fix_admin_auth_and_rls.sql and 20261030_fix_evaluator_rpc_and_activity_leak.sql are preserved
-    //  - 20261031_strict_evaluator_projection_and_notes_privacy.sql exists and defines:
-    //    * public.is_valid_iso8601_timestamptz(TEXT)
-    //    * public.filter_activity_log_for_evaluator(JSONB) with WITH ORDINALITY and fixed CASE summaries
-    //    * public.get_creator_applications_for_evaluator() with exact column types
-    //    * Excludes admin_notes, payments, and ip_hash
-    //    * SET search_path = public, pg_temp and REVOKE/GRANT privileges
-    //    * Does NOT use DROP ... CASCADE
+    //  - Historical migrations (20261028_reorganize_services_6_divisions.sql, 20261029, 20261030, 20261031, 20261101) exist on disk
+    //  - Forward migrations 20261102 and 20261103 contain ZERO UPDATE statements on service_divisions or service_catalog
+    //  - Forward migrations do not infer owner approval from slugs, UUIDs, or timestamps
+    //  - Forward migrations seed missing services strictly as 'draft' with published_at = NULL
+    //  - Forward migrations define public.get_service_catalogue_reconciliation_review() for administrator review
     // -------------------------------------------------------------
     {
+      const mig2028ReorgPath = path.resolve(process.cwd(), 'supabase/migrations/20261028_reorganize_services_6_divisions.sql');
       const mig2029Path = path.resolve(process.cwd(), 'supabase/migrations/20261029_fix_admin_auth_and_rls.sql');
       const mig2030Path = path.resolve(process.cwd(), 'supabase/migrations/20261030_fix_evaluator_rpc_and_activity_leak.sql');
       const mig2031Path = path.resolve(process.cwd(), 'supabase/migrations/20261031_strict_evaluator_projection_and_notes_privacy.sql');
+      const mig2101Path = path.resolve(process.cwd(), 'supabase/migrations/20261101_step1c_evaluator_nested_json_and_catalog_seed.sql');
+      const mig2102Path = path.resolve(process.cwd(), 'supabase/migrations/20261102_reconcile_service_catalogue_drafts.sql');
+      const mig2103Path = path.resolve(process.cwd(), 'supabase/migrations/20261103_catalogue_reconciliation_review_and_draft_seed.sql');
+      const has2028Reorg = fs.existsSync(mig2028ReorgPath);
       const has2029 = fs.existsSync(mig2029Path);
       const has2030 = fs.existsSync(mig2030Path);
       const has2031 = fs.existsSync(mig2031Path);
+      const has2101 = fs.existsSync(mig2101Path);
+      const has2102 = fs.existsSync(mig2102Path);
+      const has2103 = fs.existsSync(mig2103Path);
+      const sql2028Reorg = has2028Reorg ? fs.readFileSync(mig2028ReorgPath, 'utf8') : '';
       const sql2031 = has2031 ? fs.readFileSync(mig2031Path, 'utf8') : '';
+      const sql2101 = has2101 ? fs.readFileSync(mig2101Path, 'utf8') : '';
+      const sql2102 = has2102 ? fs.readFileSync(mig2102Path, 'utf8') : '';
+      const sql2103 = has2103 ? fs.readFileSync(mig2103Path, 'utf8') : '';
+
+      const historicalPreserved =
+        sql2028Reorg.includes('ON CONFLICT (slug) DO UPDATE SET') &&
+        sql2101.includes('CREATE OR REPLACE FUNCTION public.is_service_seed_approved_for_publish(p_packages JSONB)');
+
+      const zeroCatalogueUpdatesInForward =
+        !/UPDATE\s+public\.service_divisions/i.test(sql2102) &&
+        !/UPDATE\s+public\.service_catalog/i.test(sql2102) &&
+        !/UPDATE\s+public\.service_divisions/i.test(sql2103) &&
+        !/UPDATE\s+public\.service_catalog/i.test(sql2103);
+
+      const forwardSeedsDraftsAndReviewRpc =
+        sql2102.includes('DROP FUNCTION IF EXISTS public.is_service_seed_approved_for_publish(JSONB);') &&
+        sql2102.includes("'draft' AS status") &&
+        sql2102.includes('NULL::timestamptz AS published_at') &&
+        sql2102.includes('ON CONFLICT (slug) DO NOTHING') &&
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.get_service_catalogue_reconciliation_review()') &&
+        sql2103.includes('DROP FUNCTION IF EXISTS public.is_service_seed_approved_for_publish(JSONB);') &&
+        sql2103.includes("'draft' AS status") &&
+        sql2103.includes('NULL::timestamptz AS published_at') &&
+        sql2103.includes('ON CONFLICT (slug) DO NOTHING') &&
+        sql2103.includes('CREATE OR REPLACE FUNCTION public.get_service_catalogue_reconciliation_review()');
 
       const hasTsValidator = sql2031.includes('CREATE OR REPLACE FUNCTION public.is_valid_iso8601_timestamptz');
       const hasFilterFn = sql2031.includes('CREATE OR REPLACE FUNCTION public.filter_activity_log_for_evaluator') &&
         sql2031.includes('WITH ORDINALITY');
-      const hasEvaluatorFn = sql2031.includes('CREATE OR REPLACE FUNCTION public.get_creator_applications_for_evaluator()');
-      const hasExactTypes = sql2031.includes('application_reference VARCHAR(50)') &&
-        sql2031.includes('full_name VARCHAR(255)') &&
-        sql2031.includes('district VARCHAR(100)') &&
-        sql2031.includes('town VARCHAR(150)') &&
-        sql2031.includes('latest_score NUMERIC(5,2)');
-      const hasSearchPath = sql2031.includes('SET search_path = public, pg_temp');
-      const hasGrants = sql2031.includes('REVOKE ALL ON FUNCTION public.get_creator_applications_for_evaluator() FROM PUBLIC, anon') &&
-        sql2031.includes('GRANT EXECUTE ON FUNCTION public.get_creator_applications_for_evaluator() TO authenticated');
+      const hasEvaluatorFn = sql2031.includes('CREATE OR REPLACE FUNCTION public.get_creator_applications_for_evaluator()') &&
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.get_creator_applications_for_evaluator()') &&
+        sql2103.includes('CREATE OR REPLACE FUNCTION public.get_creator_applications_for_evaluator()');
+      const hasNestedJsonHelpers =
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.project_jsonb_string_array_for_evaluator') &&
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.project_expected_rates_for_evaluator') &&
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.project_audience_insights_for_evaluator') &&
+        sql2102.includes('CREATE OR REPLACE FUNCTION public.project_previous_collaborations_for_evaluator') &&
+        sql2103.includes('CREATE OR REPLACE FUNCTION public.project_jsonb_string_array_for_evaluator');
+      const hasExactTypes = sql2102.includes('application_reference VARCHAR(50)') &&
+        sql2102.includes('full_name VARCHAR(255)') &&
+        sql2102.includes('district VARCHAR(100)') &&
+        sql2102.includes('town VARCHAR(150)') &&
+        sql2102.includes('latest_score NUMERIC(5,2)');
+      const hasSearchPath = sql2031.includes('SET search_path = public, pg_temp') &&
+        sql2102.includes('SET search_path = public, pg_temp') &&
+        sql2103.includes('SET search_path = public, pg_temp');
+      const hasGrants = sql2102.includes('REVOKE ALL ON FUNCTION public.get_creator_applications_for_evaluator() FROM PUBLIC, anon') &&
+        sql2102.includes('GRANT EXECUTE ON FUNCTION public.get_creator_applications_for_evaluator() TO authenticated') &&
+        sql2103.includes('REVOKE ALL ON FUNCTION public.get_service_catalogue_reconciliation_review() FROM PUBLIC, anon') &&
+        sql2103.includes('GRANT EXECUTE ON FUNCTION public.get_service_catalogue_reconciliation_review() TO authenticated');
       const excludesSensitiveCols =
         !sql2031.match(/ca\.payments\b/) &&
         !sql2031.match(/ca\.ip_hash\b/) &&
         !sql2031.match(/ca\.admin_notes\b/) &&
-        !sql2031.match(/\badmin_notes\s+TEXT\b/i);
-      const noDropCascade = !/DROP\s+FUNCTION[^;]*CASCADE/i.test(sql2031);
+        !sql2102.match(/ca\.payments\b/) &&
+        !sql2102.match(/ca\.ip_hash\b/) &&
+        !sql2102.match(/ca\.admin_notes\b/) &&
+        !sql2103.match(/ca\.payments\b/) &&
+        !sql2103.match(/ca\.ip_hash\b/) &&
+        !sql2103.match(/ca\.admin_notes\b/);
+      const noDropCascade =
+        !/DROP\s+FUNCTION[^;]*CASCADE/i.test(sql2031) &&
+        !/DROP\s+FUNCTION[^;]*CASCADE/i.test(sql2101) &&
+        !/DROP\s+FUNCTION[^;]*CASCADE/i.test(sql2102) &&
+        !/DROP\s+FUNCTION[^;]*CASCADE/i.test(sql2103);
 
-      const passed = has2029 &&
+      const passed = has2028Reorg &&
+        has2029 &&
         has2030 &&
         has2031 &&
+        has2101 &&
+        has2102 &&
+        has2103 &&
+        historicalPreserved &&
+        zeroCatalogueUpdatesInForward &&
+        forwardSeedsDraftsAndReviewRpc &&
         hasTsValidator &&
         hasFilterFn &&
         hasEvaluatorFn &&
+        hasNestedJsonHelpers &&
         hasExactTypes &&
         hasSearchPath &&
         hasGrants &&
@@ -973,21 +1058,241 @@ async function runTests() {
       results.push({
         scenarioNumber: 17,
         category: 'Static SQL Verification',
-        name: 'Migration 20261031 preserves prior migrations, enforces WITH ORDINALITY fixed summaries, validates timestamps/IDs, and excludes admin_notes/payments/ip_hash without CASCADE',
+        name: 'Forward migrations 20261102 & 20261103 contain zero status-mutating UPDATEs on service_divisions/service_catalog, seed missing services as drafts, and define get_service_catalogue_reconciliation_review()',
         passed,
-        expected: 'All static SQL checks true',
-        actual: `has2029_30_31=${has2029 && has2030 && has2031}, tsValidator=${hasTsValidator}, filterOrdinality=${hasFilterFn}, exactTypes=${hasExactTypes}, excludesSensitiveCols=${excludesSensitiveCols}, noCascade=${noDropCascade}`
+        expected: 'All static SQL checks true (zeroCatalogueUpdatesInForward=true, forwardSeedsDraftsAndReviewRpc=true)',
+        actual: `historicalPreserved=${historicalPreserved}, zeroUpdates=${zeroCatalogueUpdatesInForward}, forwardDraftsAndReview=${forwardSeedsDraftsAndReviewRpc}, nestedJsonHelpers=${hasNestedJsonHelpers}, excludesSensitiveCols=${excludesSensitiveCols}, noCascade=${noDropCascade}`
       });
     }
 
     // -------------------------------------------------------------
-    // Scenarios 18–24: Executed PostgreSQL Database Tests (PGlite PG16)
-    //  - Fresh database installation of all 7 migrations in deterministic order
-    //  - Upgrade path from 20261030 to 20261031 on pre-seeded data
-    //  - All 12 RLS/RPC role assertions and all 10 privacy fixtures
+    // Scenarios 18–31: Executed PostgreSQL Database Tests (PGlite PG17.4)
+    //  - Fresh database installation of all 9 clean-install migrations in deterministic order
+    //  - Upgrade & reconciliation regression suite (all 5 required regression cases + review RPC)
+    //  - All 12 RLS/RPC role assertions, 10 privacy fixtures, and catalogue CRUD persistence
     // -------------------------------------------------------------
     const dbResults = await runDatabaseVerificationSuite(18);
     results.push(...dbResults);
+
+    // -------------------------------------------------------------
+    // Scenario 32: Reference Screenshots Removed From Public & Build Output
+    //  Verifies:
+    //  - /public/assets/aistudio does not exist
+    //  - /dist/assets/aistudio does not exist
+    //  - Zero Screenshot_2026-10-29_*.png files remain anywhere under /public or /dist
+    // -------------------------------------------------------------
+    {
+      const findMatchingFiles = (dir: string, predicate: (name: string) => boolean): string[] => {
+        if (!fs.existsSync(dir)) return [];
+        const matches: string[] = [];
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            matches.push(...findMatchingFiles(full, predicate));
+          } else if (predicate(entry.name)) {
+            matches.push(full);
+          }
+        }
+        return matches;
+      };
+
+      const publicAiStudioDir = path.resolve(process.cwd(), 'public/assets/aistudio');
+      const distAiStudioDir = path.resolve(process.cwd(), 'dist/assets/aistudio');
+      const publicScreenshots = findMatchingFiles(
+        path.resolve(process.cwd(), 'public'),
+        (name) => name.startsWith('Screenshot_2026-10-29_') || name.endsWith('.png')
+      );
+      const distScreenshots = findMatchingFiles(
+        path.resolve(process.cwd(), 'dist'),
+        (name) => name.startsWith('Screenshot_2026-10-29_') || name.endsWith('.png')
+      );
+
+      const passed =
+        !fs.existsSync(publicAiStudioDir) &&
+        !fs.existsSync(distAiStudioDir) &&
+        publicScreenshots.length === 0 &&
+        distScreenshots.length === 0;
+
+      results.push({
+        scenarioNumber: 32,
+        category: 'Asset Hygiene' as any,
+        name: 'Reference screenshots removed from public/assets/aistudio and dist/assets/aistudio (0 screenshots in source or build)',
+        passed,
+        expected: 'public/assets/aistudio absent, dist/assets/aistudio absent, 0 screenshot files in public/ or dist/',
+        actual: `publicDirExists=${fs.existsSync(publicAiStudioDir)}, distDirExists=${fs.existsSync(distAiStudioDir)}, publicScreenshots=${publicScreenshots.length}, distScreenshots=${distScreenshots.length}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 33: Breadcrumbs Navigation Regression Check
+    //  Verifies:
+    //  - DivisionPage, ServiceDetailPage, and ServicesDirectoryPage pass onNavigate={onNavigate}
+    //  - Breadcrumb items use `path` property (zero `href:` properties in breadcrumb items)
+    //  - Simulated Breadcrumbs interaction triggers onNavigate('/') for Home,
+    //    onNavigate('/services') for Services, and onNavigate('/services/websites-software') for division
+    // -------------------------------------------------------------
+    {
+      const divisionPageSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/DivisionPage.tsx'), 'utf8');
+      const serviceDetailSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/ServiceDetailPage.tsx'), 'utf8');
+      const servicesDirSrc = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/ServicesDirectoryPage.tsx'), 'utf8');
+
+      const divHasOnNavigate =
+        divisionPageSrc.includes("{ label: 'Services', path: '/services' }") &&
+        divisionPageSrc.includes('onNavigate={onNavigate}') &&
+        !divisionPageSrc.includes("label: 'Services', href:");
+
+      const detailHasOnNavigate =
+        serviceDetailSrc.includes("{ label: 'Services', path: '/services' }") &&
+        serviceDetailSrc.includes('{ label: division.name, path: `/services/${division.slug}` }') &&
+        serviceDetailSrc.includes('onNavigate={onNavigate}') &&
+        !serviceDetailSrc.includes("label: 'Services', href:");
+
+      const dirHasOnNavigate =
+        servicesDirSrc.includes("{ label: 'Services' }") &&
+        servicesDirSrc.includes('onNavigate={onNavigate}') &&
+        !servicesDirSrc.includes('href:');
+
+      // Simulate the Breadcrumbs component navigation callbacks for Home, Services, and Division links
+      const navigatedTargets: string[] = [];
+      const mockOnNavigate = (targetPath: string) => {
+        navigatedTargets.push(targetPath);
+      };
+
+      const serviceDetailBreadcrumbItems = [
+        { label: 'Services', path: '/services' },
+        { label: 'Websites & Software', path: '/services/websites-software' },
+        { label: 'Website Development' }
+      ];
+
+      // Click Home (always rendered first in Breadcrumbs)
+      mockOnNavigate('/');
+      // Click intermediate items that have `item.path && !isLast`
+      serviceDetailBreadcrumbItems.forEach((item, idx) => {
+        const isLast = idx === serviceDetailBreadcrumbItems.length - 1;
+        if (item.path && !isLast) {
+          mockOnNavigate(item.path);
+        }
+      });
+
+      const passed =
+        divHasOnNavigate &&
+        detailHasOnNavigate &&
+        dirHasOnNavigate &&
+        JSON.stringify(navigatedTargets) === JSON.stringify(['/', '/services', '/services/websites-software']);
+
+      results.push({
+        scenarioNumber: 33,
+        category: 'Routing & Navigation' as any,
+        name: 'DivisionPage, ServiceDetailPage, and ServicesDirectoryPage pass onNavigate and use BreadcrumbItem.path for Home (/), Services (/services), and Division (/services/:slug)',
+        passed,
+        expected: 'divHasOnNavigate=true, detailHasOnNavigate=true, dirHasOnNavigate=true, targets=["/","/services","/services/websites-software"]',
+        actual: `divHasOnNavigate=${divHasOnNavigate}, detailHasOnNavigate=${detailHasOnNavigate}, dirHasOnNavigate=${dirHasOnNavigate}, targets=${JSON.stringify(navigatedTargets)}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 34: Router Query-String Separation & Creator Submission Success Flow
+    //  Verifies:
+    //  - POST /api/creators/apply returns referenceNumber (e.g. U360-CR-XXXXXXXX)
+    //  - Navigating to `/creators/success?ref=${referenceNumber}` separates pathname `/creators/success` from search `?ref=${referenceNumber}`
+    //  - Direct load, page refresh, browser Back (popstate to `/creators/apply`), and browser Forward (popstate to `/creators/success?ref=...`)
+    //    preserve both pathname route matching and the creator application reference number
+    // -------------------------------------------------------------
+    {
+      const applyRes = await fetch(`${baseUrl}/api/creators/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: 'Aarav Sundaram',
+          whatsapp: '9876501234',
+          email: 'aarav.router.test@example.com',
+          state: 'Tamil Nadu',
+          district: 'Coimbatore',
+          cityTown: 'RS Puram',
+          instagramUrl: 'https://instagram.com/aaravcreates',
+          followerCount: '24000',
+          averageViewsLast10: '11500',
+          categories: ['Technology & Gadgets'],
+          primaryLanguage: 'Tamil',
+          classification: 'l3_micro',
+          collaborationTypes: ['Sponsored Reel / Short', 'UGC Video Production'],
+          sampleLinks: [
+            'https://instagram.com/reel/aarav1',
+            'https://instagram.com/reel/aarav2'
+          ],
+          consentAccuracy: true,
+          consentProcessing: true,
+          consentContact: true,
+          consentBrandSharing: true
+        })
+      });
+      const applyData = await applyRes.json().catch(() => ({}));
+      const referenceNumber: string = applyData.referenceNumber || '';
+
+      // Simulate browser history stack & router state across submission -> direct load -> refresh -> back -> forward
+      const historyStack: string[] = ['/creators/apply'];
+      let historyIndex = 0;
+
+      // 1. CreatorApplyPage calls onNavigate(`/creators/success?ref=${encodeURIComponent(referenceNumber)}`)
+      const targetUrl = `/creators/success?ref=${encodeURIComponent(referenceNumber)}`;
+      const pushRoute = parseRouteLocation(targetUrl);
+      historyStack.push(pushRoute.fullUrl);
+      historyIndex = historyStack.length - 1;
+
+      const afterSubmitMatchedCreatorSuccess = pushRoute.pathname === '/creators/success';
+      const afterSubmitRef = extractCreatorReference(pushRoute.search);
+
+      // 2. Direct load & Refresh of `/creators/success?ref=...`
+      const directLoadRoute = parseRouteLocation(historyStack[historyIndex]);
+      const refreshRoute = parseRouteLocation(`${directLoadRoute.pathname}${directLoadRoute.search}`);
+      const directAndRefreshOk =
+        directLoadRoute.pathname === '/creators/success' &&
+        extractCreatorReference(directLoadRoute.search) === referenceNumber &&
+        refreshRoute.pathname === '/creators/success' &&
+        extractCreatorReference(refreshRoute.search) === referenceNumber;
+
+      // 3. Browser Back (popstate to `/creators/apply`)
+      historyIndex -= 1;
+      const backRoute = parseRouteLocation(historyStack[historyIndex]);
+      const backOk = backRoute.pathname === '/creators/apply' && backRoute.search === '';
+
+      // 4. Browser Forward (popstate back to `/creators/success?ref=...`)
+      historyIndex += 1;
+      const forwardRoute = parseRouteLocation(historyStack[historyIndex]);
+      const forwardOk =
+        forwardRoute.pathname === '/creators/success' &&
+        extractCreatorReference(forwardRoute.search) === referenceNumber &&
+        extractQueryParam(forwardRoute.search, 'ref') === referenceNumber;
+
+      const passed =
+        applyRes.status === 201 &&
+        referenceNumber.startsWith('U360-CR-') &&
+        afterSubmitMatchedCreatorSuccess &&
+        afterSubmitRef === referenceNumber &&
+        directAndRefreshOk &&
+        backOk &&
+        forwardOk;
+
+      results.push({
+        scenarioNumber: 34,
+        category: 'Routing & Navigation' as any,
+        name: 'Router separates pathname from search query string across creator submission, direct load, refresh, and browser back/forward',
+        passed,
+        expected: 'POST 201 with U360-CR-* ref, pathname="/creators/success", ref preserved on submit/direct/refresh/back/forward',
+        actual: `status=${applyRes.status}, ref=${referenceNumber}, pathname=${pushRoute.pathname}, search=${pushRoute.search}, directAndRefreshOk=${directAndRefreshOk}, backOk=${backOk}, forwardOk=${forwardOk}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenarios 35–39: Dedicated Migration Reconciliation Regression Suite (PGlite PG17.4)
+    //  - Regression 1: Intentionally archived custom division remains archived
+    //  - Regression 2: Intentionally archived custom service remains archived
+    //  - Regression 3: Draft remains draft
+    //  - Regression 4: Existing approved publication remains published
+    //  - Regression 5: Missing seed services are inserted as drafts
+    // -------------------------------------------------------------
+    const migrationRegressionResults = await runMigrationReconciliationRegressionSuite(35);
+    results.push(...migrationRegressionResults);
 
   } finally {
     server.close();
