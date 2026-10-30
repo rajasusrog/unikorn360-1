@@ -22,6 +22,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { servicesDb } from '../lib/supabase';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
+import { getDivisionBanner } from '../data/mediaAssets';
 
 interface ServicesDirectoryPageProps {
   onNavigate: (path: string) => void;
@@ -218,20 +219,43 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {divisions.map((div) => {
                 const IconComponent = DIVISION_ICONS[div.slug] || Briefcase;
                 const count = div.published_service_count || 0;
+                const banner = getDivisionBanner(div.slug);
 
                 return (
                   <div
                     key={div.id}
-                    className="bg-white border border-[#D8DEE5] rounded-lg p-5 hover:border-[#214E78] hover:shadow-md transition-all group flex flex-col justify-between"
+                    className="bg-white border border-[#D8DEE5] rounded-xl p-5 hover:border-[#214E78] hover:shadow-md transition-all group flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-10 h-10 rounded bg-[#F5F6F7] border border-[#D8DEE5] flex items-center justify-center text-[#214E78] group-hover:bg-[#214E78] group-hover:text-white transition-all">
-                          <IconComponent className="w-5 h-5" />
+                      {/* Banner Artwork Thumbnail (Complete artwork with object-contain) */}
+                      {banner && (
+                        <div
+                          onClick={() => onNavigate(`/services/${div.slug}`)}
+                          className="w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-4 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
+                        >
+                          <img
+                            src={banner.src}
+                            alt={banner.alt}
+                            width={banner.width}
+                            height={banner.height}
+                            loading="lazy"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded bg-[#F5F6F7] border border-[#D8DEE5] flex items-center justify-center text-[#214E78] group-hover:bg-[#214E78] group-hover:text-white transition-all">
+                            <IconComponent className="w-4 h-4" />
+                          </div>
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35]">
+                            Division
+                          </span>
                         </div>
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-[#F5F6F7] border border-[#D8DEE5] text-[#214E78] rounded">
                           {count} {count === 1 ? 'Service' : 'Services'}
@@ -239,7 +263,12 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                       </div>
 
                       <h3 className="text-lg font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
-                        {div.name}
+                        <button
+                          onClick={() => onNavigate(`/services/${div.slug}`)}
+                          className="text-left cursor-pointer hover:underline"
+                        >
+                          {div.name}
+                        </button>
                       </h3>
 
                       <p className="mt-2 text-xs text-[#505B66] line-clamp-3 leading-relaxed">

@@ -8,6 +8,7 @@ import {
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
+import { getProductDesign } from '../data/mediaAssets';
 
 interface ProductsPageProps {
   onNavigate: (path: string) => void;
@@ -110,18 +111,41 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
       {/* Four Responsive Product Cards */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12" aria-label="UNIKORN360 Products Directory">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-          {UNIKORN_FOUR_PRODUCTS.map((product) => (
-            <article
-              key={product.id}
-              id={`product-card-${product.slug}`}
-              className="bg-white border border-[#D8DEE5] rounded-xl p-6 sm:p-8 hover:border-[#214E78] hover:shadow-md transition-all flex flex-col justify-between group"
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-[#505B66] mb-2">
-                  <span className="font-semibold text-[#A57C35] uppercase tracking-wider">
-                    {product.categoryLabel}
-                  </span>
-                </div>
+          {UNIKORN_FOUR_PRODUCTS.map((product) => {
+            const design = getProductDesign(product.slug);
+
+            return (
+              <article
+                key={product.id}
+                id={`product-card-${product.slug}`}
+                className="bg-white border border-[#D8DEE5] rounded-xl p-6 sm:p-8 hover:border-[#214E78] hover:shadow-md transition-all flex flex-col justify-between group"
+              >
+                <div>
+                  {/* Proposed UI Design Image Showcase */}
+                  {design && (
+                    <div
+                      onClick={() => onNavigate(product.path)}
+                      className="relative w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-5 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
+                    >
+                      <img
+                        src={design.src}
+                        alt={design.alt}
+                        width={design.width}
+                        height={design.height}
+                        loading="lazy"
+                        className="w-full h-full object-contain"
+                      />
+                      <span className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-[#09182B]/90 border border-white/20 text-[#A57C35] font-mono font-bold text-[10px] uppercase tracking-wider rounded backdrop-blur-xs">
+                        {design.badgeLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-[#505B66] mb-2">
+                    <span className="font-semibold text-[#A57C35] uppercase tracking-wider">
+                      {product.categoryLabel}
+                    </span>
+                  </div>
 
                 {/* Product Name */}
                 <h2 className="text-2xl font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
@@ -202,7 +226,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 </a>
               </div>
             </article>
-          ))}
+          );
+        })}
         </div>
 
         {/* Demo Enquiry Callout */}

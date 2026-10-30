@@ -216,6 +216,7 @@ export default function App() {
 
           {/* Six service categories */}
           <ServicesCatalog
+            onNavigate={navigate}
             selectedCategoryKey={selectedCategoryKey}
             onOpenQuoteModal={handleOpenQuoteModal}
             onSelectServiceModal={handleOpenDetailModal}

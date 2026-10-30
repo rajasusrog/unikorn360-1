@@ -20,6 +20,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { servicesDb } from '../lib/supabase';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
+import { getDivisionBanner } from '../data/mediaAssets';
 
 interface DivisionPageProps {
   divisionSlug: string;
@@ -139,7 +140,25 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
             onNavigate={onNavigate}
           />
 
-          <div className="mt-6 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+          {/* Division Conceptual Banner (Beneath breadcrumbs, natural 16:9 / 3:1 ratio, max-w 1200px) */}
+          {(() => {
+            const banner = getDivisionBanner(division.slug);
+            if (!banner) return null;
+            return (
+              <div className="mt-6 max-w-[1200px] mx-auto bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-sm">
+                <img
+                  src={banner.src}
+                  alt={banner.alt}
+                  width={banner.width}
+                  height={banner.height}
+                  loading="eager"
+                  className="w-full h-auto object-contain max-h-[360px] sm:max-h-[460px] mx-auto"
+                />
+              </div>
+            );
+          })()}
+
+          <div className="mt-8 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
             <div className="max-w-3xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#214E78]/5 border border-[#214E78]/20 rounded text-[#214E78] text-xs font-semibold uppercase tracking-wider mb-4">
                 <IconComponent className="w-4 h-4 text-[#214E78]" />

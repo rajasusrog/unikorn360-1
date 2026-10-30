@@ -8,10 +8,13 @@ import {
   Users,
   HelpCircle,
   Layers,
-  ChevronDown
+  ChevronDown,
+  Maximize2
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
+import { ImageLightboxModal } from '../components/ImageLightboxModal';
+import { getProductDesign } from '../data/mediaAssets';
 import {
   PRODUCTS_BY_SLUG,
   PRODUCT_FAQS_BY_SLUG,
@@ -38,10 +41,14 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     productFaqs.length > 0 ? [productFaqs[0].id] : []
   );
 
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const design = product ? getProductDesign(product.slug) : null;
+
   // Reset open accordion state when navigating between products
   useEffect(() => {
     const faqsForSlug = product ? (PRODUCT_FAQS_BY_SLUG[product.slug] || product.faqs) : [];
     setOpenFaqIds(faqsForSlug.length > 0 ? [faqsForSlug[0].id] : []);
+    setIsLightboxOpen(false);
   }, [normalizedSlug, product]);
 
   const toggleFaqItem = (faqId: string) => {
@@ -217,9 +224,70 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               </a>{' '}
               <span aria-hidden="true">·</span> Opens in a separate browser tab with independent application sign-in.
             </p>
+
+            {/* Proposed Interface Design Preview (Beneath introduction & CTAs) */}
+            {design && (
+              <div className="mt-8 pt-6 border-t border-[#D8DEE5]">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 bg-[#09182B] text-[#A57C35] font-mono font-bold text-[10px] uppercase tracking-wider rounded border border-[#A57C35]/30">
+                      {design.badgeLabel}
+                    </span>
+                    <span className="text-xs text-[#505B66] font-medium">
+                      Design Preview
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsLightboxOpen(true)}
+                    className="text-xs font-semibold text-[#214E78] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-[#214E78]" />
+                    <span>Expand Full Size</span>
+                  </button>
+                </div>
+
+                <div
+                  onClick={() => setIsLightboxOpen(true)}
+                  className="bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-md group relative cursor-pointer hover:border-[#214E78] transition-all"
+                >
+                  <img
+                    src={design.src}
+                    alt={design.alt}
+                    width={design.width}
+                    height={design.height}
+                    loading="eager"
+                    className="w-full h-auto object-contain max-h-[460px] sm:max-h-[560px] mx-auto"
+                  />
+                  <div className="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="px-4 py-2 bg-[#09182B]/90 text-white text-xs font-bold uppercase tracking-wider rounded shadow-lg backdrop-blur-xs flex items-center gap-1.5 border border-white/20">
+                      <Maximize2 className="w-4 h-4 text-[#A57C35]" />
+                      <span>Click to Enlarge</span>
+                    </span>
+                  </div>
+                </div>
+
+                <p className="mt-2 text-center text-xs text-[#505B66] italic">
+                  {design.detailCaption}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </section>
+
+      {/* Accessible Image Lightbox Modal */}
+      {design && (
+        <ImageLightboxModal
+          isOpen={isLightboxOpen}
+          onClose={() => setIsLightboxOpen(false)}
+          imageSrc={design.src}
+          imageAlt={design.alt}
+          caption={design.detailCaption}
+          badgeLabel={design.badgeLabel}
+        />
+      )}
 
       {/* Main Content Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 space-y-12">

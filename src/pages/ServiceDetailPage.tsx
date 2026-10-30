@@ -21,6 +21,7 @@ import { WhatsAppSubmitButton } from '../components/WhatsAppSubmitButton';
 import { servicesDb } from '../lib/supabase';
 import { ServiceDivision, ServiceCatalogItem, ServicePackage } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
+import { getDivisionBanner } from '../data/mediaAssets';
 
 interface ServiceDetailPageProps {
   divisionSlug: string;
@@ -242,6 +243,27 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
             ]}
             onNavigate={onNavigate}
           />
+
+          {/* Division / Service Hero Banner Showcase */}
+          {(() => {
+            const banner = getDivisionBanner(division.slug);
+            const displaySrc = service.hero_image_url || (banner ? banner.src : null);
+            if (!displaySrc) return null;
+            return (
+              <div className="mt-6 max-w-[1200px] bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-xs">
+                <img
+                  src={displaySrc}
+                  alt={service.service_name || (banner ? banner.alt : division.name)}
+                  loading="eager"
+                  className="w-full h-auto object-contain max-h-[300px] sm:max-h-[400px] mx-auto"
+                />
+                <div className="px-4 py-1.5 bg-[#0B192C] text-[10px] text-slate-300 font-mono flex items-center justify-between border-t border-white/10">
+                  <span>Division Architecture: {division.name}</span>
+                  <span className="text-[#A57C35]">Service illustration</span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             {/* Left 8 Cols: Title, Value Prop, Problem Solved */}
