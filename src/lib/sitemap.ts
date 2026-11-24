@@ -6,7 +6,7 @@ import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 
 export interface SitemapUrlEntry {
   loc: string;
-  lastmod: string;
+  lastmod?: string;
   changefreq: 'daily' | 'weekly' | 'monthly';
   priority: string;
   section?: string;
@@ -29,7 +29,7 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function toIsoDateOnly(isoOrDate?: string, fallback = '2026-10-29'): string {
+function toIsoDateOnly(isoOrDate?: string, fallback?: string): string | undefined {
   if (!isoOrDate) return fallback;
   const match = isoOrDate.match(/^\d{4}-\d{2}-\d{2}/);
   return match ? match[0] : fallback;
@@ -37,93 +37,101 @@ function toIsoDateOnly(isoOrDate?: string, fallback = '2026-10-29'): string {
 
 /**
  * Builds the canonical list of indexable URL entries for UNIKORN360,
- * automatically including the dynamic paths for the four product introduction
- * pages (/products/invoicepro360, /products/deeds360, /products/property360, /products/advocate360),
- * published divisions, published services, solutions, and resource guides.
+ * covering only canonical HTTP 200 indexable routes (no admin, login,
+ * form/success routes, legacy redirect URLs, 404s, or external subdomains).
+ *
+ * When `options.services` is omitted (seed fallback mode), includes all seed services
+ * belonging to published divisions; when `options.services` is explicitly supplied
+ * from Supabase, includes only `status === 'published'` services.
  */
 export function getSitemapEntries(options: GenerateSitemapOptions = {}): SitemapUrlEntry[] {
   const baseUrl = (options.baseUrl || 'https://www.unikorn360.com').replace(/\/+$/, '');
-  const defaultDate = options.lastmodDate || '2026-10-29';
+  const optionalDefaultDate = options.lastmodDate;
   const products = options.products || UNIKORN_FOUR_PRODUCTS;
   const divisions = (options.divisions || SEED_DIVISIONS)
     .filter((d) => d.status === 'published')
     .sort((a, b) => a.display_order - b.display_order);
   const divisionById = new Map<string, ServiceDivision>(divisions.map((d) => [d.id, d]));
 
-  const services = (options.services || SEED_SERVICES)
-    .filter((s) => s.status === 'published' && divisionById.has(s.division_id))
+  const hasLiveServices = Array.isArray(options.services);
+  const services = (
+    hasLiveServices
+      ? options.services!.filter((s) => s.status === 'published')
+      : SEED_SERVICES
+  )
+    .filter((s) => divisionById.has(s.division_id))
     .sort((a, b) => a.display_order - b.display_order);
 
   const entries: SitemapUrlEntry[] = [
     // 1. Core Hub Pages
     {
       loc: `${baseUrl}/`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'weekly',
       priority: '1.0',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/services`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'weekly',
       priority: '0.95',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/products`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'weekly',
       priority: '0.9',
       section: 'Core Hub Pages'
     }
   ];
 
-  // 2. Dynamic Product Introduction Pages (automatically generated from UNIKORN_FOUR_PRODUCTS)
+  // 2. Product Introduction Pages
   for (const product of products) {
     const cleanPath = product.path.startsWith('/') ? product.path : `/products/${product.slug}`;
     entries.push({
       loc: `${baseUrl}${cleanPath}`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'weekly',
       priority: '0.9',
       section: 'Published Product Introduction Pages'
     });
   }
 
-  // 3. Remaining Core Hub Pages
+  // 3. Remaining Canonical Core Hub Pages (/creators canonical; /creator-network redirects to /creators)
   entries.push(
     {
-      loc: `${baseUrl}/creator-network`,
-      lastmod: defaultDate,
+      loc: `${baseUrl}/creators`,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.85',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/solutions`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.9',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/about`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.8',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/resources`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'weekly',
       priority: '0.8',
       section: 'Core Hub Pages'
     },
     {
       loc: `${baseUrl}/contact`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.8',
       section: 'Core Hub Pages'
@@ -134,7 +142,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
   for (const division of divisions) {
     entries.push({
       loc: `${baseUrl}/services/${division.slug}`,
-      lastmod: toIsoDateOnly(division.updated_at, defaultDate),
+      lastmod: options.divisions ? toIsoDateOnly(division.updated_at, optionalDefaultDate) : optionalDefaultDate,
       changefreq: 'weekly',
       priority: '0.9',
       section: '6 Canonical Division Pages'
@@ -147,7 +155,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
     if (!parentDivision) continue;
     entries.push({
       loc: `${baseUrl}/services/${parentDivision.slug}/${service.slug}`,
-      lastmod: toIsoDateOnly(service.updated_at, defaultDate),
+      lastmod: hasLiveServices ? toIsoDateOnly(service.updated_at, optionalDefaultDate) : optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.85',
       section: 'Published Service Child Pages'
@@ -158,7 +166,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
   for (const solution of Object.values(SOLUTIONS_DATA)) {
     entries.push({
       loc: `${baseUrl}/solutions/${solution.slug}`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.85',
       section: 'Published Solution Pages'
@@ -169,7 +177,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
   for (const guide of Object.values(RESOURCE_GUIDES)) {
     entries.push({
       loc: `${baseUrl}/resources/${guide.slug}`,
-      lastmod: defaultDate,
+      lastmod: optionalDefaultDate,
       changefreq: 'monthly',
       priority: '0.8',
       section: 'Published Resource Guides'
@@ -186,7 +194,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
 }
 
 /**
- * Generates standard Sitemap 0.9 XML string including all dynamic product introduction pages.
+ * Generates standard Sitemap 0.9 XML string for all canonical indexable pages.
  */
 export function generateSitemapXml(options: GenerateSitemapOptions = {}): string {
   const entries = getSitemapEntries(options);
@@ -203,7 +211,9 @@ export function generateSitemapXml(options: GenerateSitemapOptions = {}): string
     }
     lines.push('  <url>');
     lines.push(`    <loc>${escapeXml(entry.loc)}</loc>`);
-    lines.push(`    <lastmod>${escapeXml(entry.lastmod)}</lastmod>`);
+    if (entry.lastmod) {
+      lines.push(`    <lastmod>${escapeXml(entry.lastmod)}</lastmod>`);
+    }
     lines.push(`    <changefreq>${escapeXml(entry.changefreq)}</changefreq>`);
     lines.push(`    <priority>${escapeXml(entry.priority)}</priority>`);
     lines.push('  </url>');

@@ -34,11 +34,12 @@ export const CreatorSuccessPage: React.FC<CreatorSuccessPageProps> = ({ onNaviga
   };
 
   return (
-    <div className="bg-[#06162D] text-white min-h-screen py-16 px-4 sm:px-6">
+    <main className="bg-[#06162D] text-white min-h-screen py-16 px-4 sm:px-6">
       <SEOHead
         title="Application Received — UNIKORN360 Creator Network"
         description="Your creator network application has been recorded. Review timeline, evaluation steps, and campaign matching details."
         canonicalUrl="https://www.unikorn360.com/creators/success"
+        robots="noindex, nofollow"
       />
 
       <div className="max-w-2xl mx-auto text-center">
@@ -158,22 +159,30 @@ export const CreatorSuccessPage: React.FC<CreatorSuccessPageProps> = ({ onNaviga
 
         {/* Navigation Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button
-            onClick={() => onNavigate('/creators')}
+          <a
+            href="/creators"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/creators');
+            }}
             className="w-full sm:w-auto px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
             <span>Back to Creator Hub</span>
-          </button>
+          </a>
 
-          <button
-            onClick={() => onNavigate('/')}
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/');
+            }}
             className="w-full sm:w-auto px-6 py-3.5 bg-[#F3C94F] hover:bg-[#e0b83f] text-[#06162D] rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg"
           >
             <Home className="w-4 h-4" />
             <span>Return to Homepage</span>
-          </button>
+          </a>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

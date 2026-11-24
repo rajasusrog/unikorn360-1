@@ -87,7 +87,7 @@ export const GuidePage: React.FC<GuidePageProps> = ({
   };
 
   return (
-    <article className="min-h-screen bg-[#F5F6F7] text-[#505B66] pt-20">
+    <main className="min-h-screen bg-[#F5F6F7] text-[#505B66] pt-20">
       <SEOHead
         title={guide.metaTitle}
         description={guide.metaDescription}
@@ -103,6 +103,8 @@ export const GuidePage: React.FC<GuidePageProps> = ({
         ]}
         onNavigate={onNavigate}
       />
+
+      <article>
 
       {/* Guide Header */}
       <header className="py-12 lg:py-16 border-b border-[#D8DEE5] bg-white relative overflow-hidden">
@@ -273,6 +275,7 @@ export const GuidePage: React.FC<GuidePageProps> = ({
         )}
 
       </div>
-    </article>
+      </article>
+    </main>
   );
 };

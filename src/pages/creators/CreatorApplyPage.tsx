@@ -467,20 +467,28 @@ export const CreatorApplyPage: React.FC<CreatorApplyPageProps> = ({ onNavigate }
   };
 
   return (
-    <div className="bg-[#06162D] text-white min-h-screen pb-24">
+    <main className="bg-[#06162D] text-white min-h-screen pb-24">
       <SEOHead
         title="Apply to UNIKORN360 Creator Network — Tamil Content Creators"
         description="Submit your creator registration for commercial brand video assignments. 100% free registration for Tamil creators, influencers, and UGC producers."
         canonicalPath="/creators/apply"
+        robots="noindex, nofollow"
       />
 
       {/* Top Banner */}
       <div className="border-b border-[#06162D]/60 bg-[#06162D]/95 backdrop-blur-md sticky top-20 z-30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-2 text-slate-300">
-            <button onClick={() => onNavigate('/creators')} className="hover:text-[#F3C94F]">
+            <a
+              href="/creators"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/creators');
+              }}
+              className="hover:text-[#F3C94F]"
+            >
               Creators
-            </button>
+            </a>
             <span>/</span>
             <span className="text-[#43C8E8] font-medium">Application Wizard</span>
           </div>
@@ -1705,6 +1713,6 @@ export const CreatorApplyPage: React.FC<CreatorApplyPageProps> = ({ onNavigate }
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

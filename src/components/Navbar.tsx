@@ -24,7 +24,8 @@ import { BUSINESS_INFO } from '../data/servicesData';
 import { SOLUTIONS_DATA } from '../data/solutionsData';
 import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
 import { ServiceDivision } from '../types/database';
-import { servicesDb } from '../lib/supabase';
+import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
+import { getSeedDivisionsWithCounts } from '../data/seedData';
 
 interface NavbarProps {
   currentPath?: string;
@@ -54,17 +55,21 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
-  const [divisions, setDivisions] = useState<ServiceDivision[]>([]);
+  const [divisions, setDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
   const navRef = useRef<HTMLElement>(null);
 
-  // Fetch published divisions and counts from Supabase
+  // Fetch published divisions and counts from Supabase (with seed fallback when unconfigured)
   useEffect(() => {
     async function loadDivCounts() {
+      if (!isRemoteSupabaseConfigured) {
+        return;
+      }
       try {
         const liveDivs = await servicesDb.getDivisions();
         setDivisions(liveDivs);
       } catch (e) {
-        console.error('Failed to load published divisions in Navbar:', e);
+        console.warn('Could not load published divisions from Supabase, using seed fallback:', e);
+        setDivisions(getSeedDivisionsWithCounts());
       }
     }
     loadDivCounts();
@@ -152,8 +157,12 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Main Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         {/* Brand Logo */}
-        <button 
-          onClick={() => handleNav('/')}
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            handleNav('/');
+          }}
           className="flex items-center gap-3 group text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#214E78] rounded p-1"
           id="nav-brand-logo"
           aria-label="Unikorn360 Home"
@@ -178,19 +187,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               Business Intelligence &amp; Systems
             </p>
           </div>
-        </button>
+        </a>
 
         {/* Desktop Navigation: Home | Services | Products | Solutions | How We Work | Creator Network | Resources | About | Contact */}
         <nav ref={navRef} className="hidden lg:flex items-center gap-1" aria-label="Main Navigation">
-          <button
-            onClick={() => handleNav('/')}
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/');
+            }}
             onMouseEnter={closeDropdowns}
             className={`px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
               currentPath === '/' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
             }`}
           >
             Home
-          </button>
+          </a>
 
           {/* Services: Real Link to /services + Accessible Dropdown Toggle */}
           <div 
@@ -260,9 +273,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                     const count = div.published_service_count || 0;
 
                     return (
-                      <button
+                      <a
                         key={div.id}
-                        onClick={() => handleNav(`/services/${div.slug}`)}
+                        href={`/services/${div.slug}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleNav(`/services/${div.slug}`);
+                        }}
                         className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F5F6F7] transition-colors flex items-center justify-between group cursor-pointer border border-transparent hover:border-[#D8DEE5]"
                       >
                         <div className="flex items-center gap-2.5">
@@ -281,7 +298,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-[#F5F6F7] text-[#505B66] border border-[#D8DEE5]">
                           {count}
                         </span>
-                      </button>
+                      </a>
                     );
                   })}
                 </div>
@@ -395,24 +412,38 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Solutions Dropdown */}
+          {/* Solutions: Real Link to /solutions + Accessible Dropdown Toggle */}
           <div 
-            className="relative"
+            className="relative flex items-center"
             onMouseEnter={() => setActiveDropdown('solutions')}
             onMouseLeave={() => {
               if (activeDropdown === 'solutions') setActiveDropdown(null);
             }}
           >
-            <button
-              onClick={() => toggleDropdown('solutions')}
-              aria-expanded={activeDropdown === 'solutions'}
-              aria-haspopup="true"
-              className={`flex items-center gap-1 px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
-                currentPath.startsWith('/solutions') || activeDropdown === 'solutions' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
+            <a
+              href="/solutions"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/solutions');
+              }}
+              className={`pl-2.5 pr-1 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded-l focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
+                currentPath.startsWith('/solutions') ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
               }`}
             >
               Solutions
-              <ChevronDown className={`w-3 h-3 transition-transform ${activeDropdown === 'solutions' ? 'rotate-180 text-[#214E78]' : 'text-[#505B66]'}`} />
+            </a>
+
+            <button
+              type="button"
+              onClick={() => toggleDropdown('solutions')}
+              aria-expanded={activeDropdown === 'solutions'}
+              aria-haspopup="true"
+              aria-label="Toggle Solutions Menu"
+              className={`p-1.5 mr-1 text-xs transition-colors rounded-r cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
+                activeDropdown === 'solutions' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
+              }`}
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${activeDropdown === 'solutions' ? 'rotate-180 text-[#214E78]' : 'text-[#505B66]'}`} />
             </button>
 
             {activeDropdown === 'solutions' && (
@@ -436,9 +467,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
 
                 {Object.values(SOLUTIONS_DATA).map((sol) => (
-                  <button
+                  <a
                     key={sol.slug}
-                    onClick={() => handleNav(`/solutions/${sol.slug}`)}
+                    href={`/solutions/${sol.slug}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleNav(`/solutions/${sol.slug}`);
+                    }}
                     className="w-full text-left p-2 rounded-lg hover:bg-[#F5F6F7] transition-colors group border border-transparent hover:border-[#D8DEE5] cursor-pointer flex items-center justify-between"
                   >
                     <div>
@@ -449,24 +484,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                         {sol.subtitle}
                       </span>
                     </div>
-                  </button>
+                  </a>
                 ))}
               </div>
             )}
           </div>
 
           {/* How We Work */}
-          <button
-            onClick={() => handleNav('/', 'how-we-work')}
+          <a
+            href="/#how-we-work"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/', 'how-we-work');
+            }}
             onMouseEnter={closeDropdowns}
             className="px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold text-[#505B66] hover:text-[#214E78] cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78]"
           >
             How We Work
-          </button>
+          </a>
 
           {/* Creator Network Link */}
-          <button
-            onClick={() => handleNav('/creators')}
+          <a
+            href="/creators"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/creators');
+            }}
             onMouseEnter={closeDropdowns}
             className={`px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] flex items-center gap-1 ${
               currentPath.startsWith('/creators') || currentPath === '/creator-network' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
@@ -474,11 +517,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Sparkles className="w-3 h-3 text-[#A57C35]" />
             <span>Creators</span>
-          </button>
+          </a>
 
           {/* Resources */}
-          <button
-            onClick={() => handleNav('/resources')}
+          <a
+            href="/resources"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/resources');
+            }}
             onMouseEnter={closeDropdowns}
             className={`flex items-center gap-1 px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
               currentPath.startsWith('/resources') ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
@@ -486,29 +533,37 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <BookOpen className="w-3.5 h-3.5 text-[#214E78]" />
             <span>Resources</span>
-          </button>
+          </a>
 
           {/* About */}
-          <button
-            onClick={() => handleNav('/about')}
+          <a
+            href="/about"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/about');
+            }}
             onMouseEnter={closeDropdowns}
             className={`px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
               currentPath === '/about' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
             }`}
           >
             About
-          </button>
+          </a>
 
           {/* Contact */}
-          <button
-            onClick={() => handleNav('/contact')}
+          <a
+            href="/contact"
+            onClick={(e) => {
+              e.preventDefault();
+              handleNav('/contact');
+            }}
             onMouseEnter={closeDropdowns}
             className={`px-2.5 py-2 text-xs uppercase tracking-[0.15em] transition-colors font-semibold cursor-pointer rounded focus:outline-none focus:ring-2 focus:ring-[#214E78] ${
               currentPath === '/contact' ? 'text-[#214E78]' : 'text-[#505B66] hover:text-[#214E78]'
             }`}
           >
             Contact
-          </button>
+          </a>
         </nav>
 
         {/* Primary Action Button: "Discuss Your Project" */}
@@ -547,30 +602,42 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div className="lg:hidden border-b border-[#D8DEE5] bg-white px-4 py-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-lg">
           <div className="grid gap-1.5 text-xs font-medium">
-            <button
-              onClick={() => handleNav('/')}
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
             >
               Home
-            </button>
-            <button
-              onClick={() => handleNav('/services')}
+            </a>
+            <a
+              href="/services"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/services');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#214E78] font-bold flex items-center justify-between"
             >
               <span>Services (6 Divisions)</span>
               <span className="text-[10px] bg-[#E9EDF0] px-1.5 py-0.5 rounded">All Directory</span>
-            </button>
+            </a>
             
             {/* Division Sublinks in Mobile */}
             <div className="pl-4 pr-2 py-1 grid grid-cols-2 gap-1 border-l-2 border-[#214E78]/20 my-1">
               {divisions.map((d) => (
-                <button
+                <a
                   key={d.id}
-                  onClick={() => handleNav(`/services/${d.slug}`)}
+                  href={`/services/${d.slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleNav(`/services/${d.slug}`);
+                  }}
                   className="text-left py-1 text-[11px] text-[#505B66] hover:text-[#214E78]"
                 >
                   • {d.name}
-                </button>
+                </a>
               ))}
             </div>
 
@@ -612,48 +679,76 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </a>
               ))}
             </div>
-            <button
-              onClick={() => handleNav('/solutions')}
+            <a
+              href="/solutions"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/solutions');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
             >
               Business Solutions
-            </button>
-            <button
-              onClick={() => handleNav('/', 'how-we-work')}
+            </a>
+            <a
+              href="/#how-we-work"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/', 'how-we-work');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
             >
               How We Work
-            </button>
-            <button
-              onClick={() => handleNav('/creators')}
+            </a>
+            <a
+              href="/creators"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/creators');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#A57C35] font-semibold"
             >
               Creator Network (Join as Creator)
-            </button>
-            <button
-              onClick={() => handleNav('/resources')}
+            </a>
+            <a
+              href="/resources"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/resources');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#505B66]"
             >
               Resources &amp; Practical Guides
-            </button>
-            <button
-              onClick={() => handleNav('/about')}
+            </a>
+            <a
+              href="/about"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/about');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
             >
               About Unikorn360
-            </button>
-            <button
-              onClick={() => handleNav('/contact')}
+            </a>
+            <a
+              href="/contact"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/contact');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#30363D]"
             >
               Contact Advisory Desk
-            </button>
-            <button
-              onClick={() => handleNav('/admin')}
+            </a>
+            <a
+              href="/admin"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNav('/admin');
+              }}
               className="text-left py-2 px-3 rounded hover:bg-[#F5F6F7] text-[#505B66] text-[11px]"
             >
               Admin Desk (Restricted)
-            </button>
+            </a>
           </div>
 
           <div className="pt-4 border-t border-[#D8DEE5] space-y-2 text-xs">

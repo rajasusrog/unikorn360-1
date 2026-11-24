@@ -92,7 +92,7 @@ export const SolutionPage: React.FC<SolutionPageProps> = ({
   };
 
   return (
-    <article className="min-h-screen bg-[#F5F6F7] text-[#505B66] pt-12 sm:pt-16">
+    <main className="min-h-screen bg-[#F5F6F7] text-[#505B66] pt-12 sm:pt-16">
       <SEOHead
         title={solution.metaTitle}
         description={solution.metaDescription}
@@ -353,6 +353,6 @@ export const SolutionPage: React.FC<SolutionPageProps> = ({
 
         </div>
       </div>
-    </article>
+    </main>
   );
 };

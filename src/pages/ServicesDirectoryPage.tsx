@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
-import { servicesDb } from '../lib/supabase';
+import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
+import { SEED_SERVICES, getSeedDivisionsWithCounts } from '../data/seedData';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { getDivisionBanner } from '../data/mediaAssets';
@@ -44,21 +45,24 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
   onOpenReviewModal,
   onOpenQuoteModal
 }) => {
-  const [divisions, setDivisions] = useState<ServiceDivision[]>([]);
-  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [divisions, setDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
+  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>(() => SEED_SERVICES);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDivisionSlug, setSelectedDivisionSlug] = useState<string>('all');
 
   useEffect(() => {
     async function loadData() {
+      if (!isRemoteSupabaseConfigured) {
+        return;
+      }
       try {
         const divs = await servicesDb.getDivisions();
         const srvs = await servicesDb.getAllPublishedServices();
         setDivisions(divs);
         setAllServices(srvs);
       } catch (err) {
-        console.error('Failed to load services directory data', err);
+        console.warn('Could not load services directory from Supabase, using seed fallback:', err);
       } finally {
         setLoading(false);
       }
@@ -94,7 +98,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
   const totalPublishedCount = allServices.length;
 
   return (
-    <div className="bg-[#F5F6F7] min-h-screen">
+    <main className="bg-[#F5F6F7] min-h-screen">
       <SEOHead
         title="Services Directory | UNIKORN360 Business Intelligence & Systems"
         description="Explore Unikorn360's six specialized divisions: Websites & Software, Security & Maintenance, Marketing & Creator Campaigns, AI Automation, Research & Strategy, and Business Setup."
@@ -202,7 +206,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
       {/* Main Content Area */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* 8 Divisions Overview Grid (Only shown when not searching and viewing 'all') */}
+        {/* 6 Divisions Overview Grid (Only shown when not searching and viewing 'all') */}
         {!searchQuery && selectedDivisionSlug === 'all' && (
           <div className="mb-16">
             <div className="flex items-center justify-between mb-8">
@@ -233,8 +237,12 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                     <div>
                       {/* Banner Artwork Thumbnail (Complete artwork with object-contain) */}
                       {banner && (
-                        <div
-                          onClick={() => onNavigate(`/services/${div.slug}`)}
+                        <a
+                          href={`/services/${div.slug}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onNavigate(`/services/${div.slug}`);
+                          }}
                           className="w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-4 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
                         >
                           <img
@@ -245,7 +253,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                             loading="lazy"
                             className="w-full h-full object-contain"
                           />
-                        </div>
+                        </a>
                       )}
 
                       <div className="flex items-center justify-between mb-3">
@@ -263,12 +271,16 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                       </div>
 
                       <h3 className="text-lg font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
-                        <button
-                          onClick={() => onNavigate(`/services/${div.slug}`)}
+                        <a
+                          href={`/services/${div.slug}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onNavigate(`/services/${div.slug}`);
+                          }}
                           className="text-left cursor-pointer hover:underline"
                         >
                           {div.name}
-                        </button>
+                        </a>
                       </h3>
 
                       <p className="mt-2 text-xs text-[#505B66] line-clamp-3 leading-relaxed">
@@ -277,13 +289,17 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-[#D8DEE5]/60 flex items-center justify-between text-xs font-semibold">
-                      <button
-                        onClick={() => onNavigate(`/services/${div.slug}`)}
+                      <a
+                        href={`/services/${div.slug}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onNavigate(`/services/${div.slug}`);
+                        }}
                         className="text-[#214E78] group-hover:text-[#173858] flex items-center gap-1 cursor-pointer"
                       >
                         <span>Explore Division</span>
                         <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
+                      </a>
                     </div>
                   </div>
                 );
@@ -358,12 +374,16 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
                       {/* Service Title */}
                       <h3 className="text-base font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
-                        <button
-                          onClick={() => onNavigate(`/services/${divisionSlug}/${service.slug}`)}
+                        <a
+                          href={`/services/${divisionSlug}/${service.slug}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onNavigate(`/services/${divisionSlug}/${service.slug}`);
+                          }}
                           className="text-left cursor-pointer hover:underline"
                         >
                           {service.service_name}
-                        </button>
+                        </a>
                       </h3>
 
                       {/* Short Description */}
@@ -391,13 +411,17 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
                     {/* Card Actions */}
                     <div className="pt-4 mt-4 border-t border-[#D8DEE5] flex items-center justify-between gap-3">
-                      <button
-                        onClick={() => onNavigate(`/services/${divisionSlug}/${service.slug}`)}
+                      <a
+                        href={`/services/${divisionSlug}/${service.slug}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onNavigate(`/services/${divisionSlug}/${service.slug}`);
+                        }}
                         className="text-xs font-semibold text-[#214E78] hover:text-[#173858] flex items-center gap-1 cursor-pointer"
                       >
                         <span>Full Scope</span>
                         <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
+                      </a>
 
                       <button
                         onClick={() => onOpenQuoteModal(service.service_name)}
@@ -434,15 +458,19 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
             >
               Request Free First Assessment
             </button>
-            <button
-              onClick={() => onNavigate('/services/consulting-education/business-diagnostic-audit')}
+            <a
+              href="/services/research-business-strategy/business-performance-analysis"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/services/research-business-strategy/business-performance-analysis');
+              }}
               className="w-full sm:w-auto px-5 py-3 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] text-xs font-bold uppercase tracking-wider rounded border border-[#D8DEE5] cursor-pointer transition-all text-center"
             >
               Learn About VERIFY
-            </button>
+            </a>
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 };

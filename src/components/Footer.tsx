@@ -18,13 +18,15 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({
-  onNavigate = (path: string) => { window.location.pathname = path; },
+  onNavigate = (path: string) => {
+    if (typeof window !== 'undefined') window.location.pathname = path;
+  },
   onOpenReviewModal,
   onScrollToSection,
   onSelectCategory
 }) => {
   const handleNav = (path: string, sectionId?: string) => {
-    if (sectionId && window.location.pathname === '/') {
+    if (sectionId && typeof window !== 'undefined' && window.location.pathname === '/') {
       onScrollToSection(sectionId);
     } else {
       onNavigate(path);

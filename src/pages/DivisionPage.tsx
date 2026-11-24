@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
-import { servicesDb } from '../lib/supabase';
+import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
+import { getSeedDivisionsWithCounts, getSeedDivisionBySlug } from '../data/seedData';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { getDivisionBanner } from '../data/mediaAssets';
@@ -44,16 +45,30 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
   onOpenReviewModal,
   onOpenQuoteModal
 }) => {
-  const [division, setDivision] = useState<ServiceDivision | null>(null);
-  const [services, setServices] = useState<ServiceCatalogItem[]>([]);
-  const [allDivisions, setAllDivisions] = useState<ServiceDivision[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const initialSeed = getSeedDivisionBySlug(divisionSlug);
+  const [division, setDivision] = useState<ServiceDivision | null>(() => initialSeed?.division ?? null);
+  const [services, setServices] = useState<ServiceCatalogItem[]>(() => initialSeed?.services ?? []);
+  const [allDivisions, setAllDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(() => !initialSeed);
 
   useEffect(() => {
     async function fetchDivisionData() {
-      setLoading(true);
-      setNotFound(false);
+      const seedResult = getSeedDivisionBySlug(divisionSlug);
+      setAllDivisions(getSeedDivisionsWithCounts());
+      if (!isRemoteSupabaseConfigured) {
+        if (!seedResult) {
+          setNotFound(true);
+          setDivision(null);
+          setServices([]);
+        } else {
+          setNotFound(false);
+          setDivision(seedResult.division);
+          setServices(seedResult.services);
+        }
+        setLoading(false);
+        return;
+      }
       try {
         const divs = await servicesDb.getDivisions();
         setAllDivisions(divs);
@@ -64,12 +79,21 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
           setDivision(null);
           setServices([]);
         } else {
+          setNotFound(false);
           setDivision(result.division);
           setServices(result.services);
         }
       } catch (err) {
-        console.error('Error fetching division data', err);
-        setNotFound(true);
+        console.warn('Could not fetch division from Supabase, using seed fallback:', err);
+        if (!seedResult) {
+          setNotFound(true);
+          setDivision(null);
+          setServices([]);
+        } else {
+          setNotFound(false);
+          setDivision(seedResult.division);
+          setServices(seedResult.services);
+        }
       } finally {
         setLoading(false);
       }
@@ -92,7 +116,13 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
   // Handle Missing or Unknown Division (Strict 404 behavior - never fallback to first record)
   if (notFound || !division) {
     return (
-      <div className="min-h-screen bg-[#F5F6F7] flex items-center justify-center px-4 py-16">
+      <main className="min-h-screen bg-[#F5F6F7] flex items-center justify-center px-4 py-16">
+        <SEOHead
+          title="Division Not Found | UNIKORN360"
+          description="The requested service division does not exist on UNIKORN360 Business Intelligence."
+          canonicalUrl={`https://www.unikorn360.com/services/${divisionSlug}`}
+          robots="noindex, nofollow"
+        />
         <div className="bg-white border border-[#D8DEE5] rounded-xl p-8 max-w-md w-full text-center shadow-sm">
           <HelpCircle className="w-12 h-12 text-[#A57C35] mx-auto mb-4" />
           <h1 className="text-xl font-bold font-serif text-[#30363D]">Division Not Found</h1>
@@ -100,21 +130,29 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
             The service division <code className="bg-[#F5F6F7] px-1.5 py-0.5 rounded text-[#214E78]">/services/{divisionSlug}</code> does not exist or has not been published yet.
           </p>
           <div className="mt-6 flex flex-col gap-2">
-            <button
-              onClick={() => onNavigate('/services')}
-              className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors cursor-pointer"
+            <a
+              href="/services"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/services');
+              }}
+              className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors cursor-pointer block"
             >
               Browse All 6 Divisions
-            </button>
-            <button
-              onClick={() => onNavigate('/')}
-              className="w-full py-2 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] text-xs font-semibold rounded border border-[#D8DEE5] transition-colors cursor-pointer"
+            </a>
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/');
+              }}
+              className="w-full py-2 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] text-xs font-semibold rounded border border-[#D8DEE5] transition-colors cursor-pointer block"
             >
               Return to Homepage
-            </button>
+            </a>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -122,7 +160,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
   const publishedCount = services.length;
 
   return (
-    <div className="bg-[#F5F6F7] min-h-screen">
+    <main className="bg-[#F5F6F7] min-h-screen">
       <SEOHead
         title={division.seo_title || `${division.name} Services | Unikorn360`}
         description={division.seo_description || division.short_description}
@@ -223,9 +261,13 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
             <span>Switch Division:</span>
           </span>
           {allDivisions.map((d) => (
-            <button
+            <a
               key={d.id}
-              onClick={() => onNavigate(`/services/${d.slug}`)}
+              href={`/services/${d.slug}`}
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate(`/services/${d.slug}`);
+              }}
               className={`px-3 py-1.5 text-xs font-semibold rounded whitespace-nowrap transition-colors cursor-pointer ${
                 d.slug === division.slug
                   ? 'bg-[#214E78] text-white'
@@ -233,7 +275,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
               }`}
             >
               {d.name}
-            </button>
+            </a>
           ))}
         </div>
       </section>
@@ -299,12 +341,16 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
 
                     {/* Service Name */}
                     <h3 className="text-lg font-serif font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
-                      <button
-                        onClick={() => onNavigate(`/services/${division.slug}/${service.slug}`)}
+                      <a
+                        href={`/services/${division.slug}/${service.slug}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onNavigate(`/services/${division.slug}/${service.slug}`);
+                        }}
                         className="text-left cursor-pointer hover:underline"
                       >
                         {service.service_name}
-                      </button>
+                      </a>
                     </h3>
 
                     {/* Description */}
@@ -332,13 +378,17 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
 
                   {/* Actions footer */}
                   <div className="pt-4 mt-6 border-t border-[#D8DEE5] flex items-center justify-between gap-3">
-                    <button
-                      onClick={() => onNavigate(`/services/${division.slug}/${service.slug}`)}
+                    <a
+                      href={`/services/${division.slug}/${service.slug}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigate(`/services/${division.slug}/${service.slug}`);
+                      }}
                       className="text-xs font-bold text-[#214E78] hover:text-[#173858] flex items-center gap-1 cursor-pointer"
                     >
                       <span>Explore Scope</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </button>
+                    </a>
 
                     <button
                       onClick={() => onOpenQuoteModal(service.service_name)}
@@ -355,13 +405,17 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
 
         {/* Back to All Services Navigation */}
         <div className="mt-16 pt-8 border-t border-[#D8DEE5] flex items-center justify-between">
-          <button
-            onClick={() => onNavigate('/services')}
+          <a
+            href="/services"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/services');
+            }}
             className="flex items-center gap-2 text-xs font-semibold text-[#505B66] hover:text-[#214E78] cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to All 8 Divisions</span>
-          </button>
+            <span>Back to All 6 Divisions</span>
+          </a>
 
           <button
             onClick={() => onOpenReviewModal(`General ${division.name} Consultation`)}
@@ -371,6 +425,6 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
           </button>
         </div>
       </section>
-    </div>
+    </main>
   );
 };

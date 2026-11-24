@@ -70,11 +70,12 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   if (!product) {
     return (
-      <div className="bg-[#F5F6F7] min-h-screen">
+      <main className="bg-[#F5F6F7] min-h-screen">
         <SEOHead
           title="Product Not Found | UNIKORN360 Products"
           description="The requested UNIKORN360 software product page was not found. View all published UNIKORN360 software applications."
           canonicalUrl="https://www.unikorn360.com/products"
+          robots="noindex, nofollow"
         />
         <Breadcrumbs
           items={[
@@ -104,7 +105,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             </a>
           </div>
         </section>
-      </div>
+      </main>
     );
   }
 
@@ -145,7 +146,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       : null;
 
   return (
-    <div className="bg-[#F5F6F7] min-h-screen pb-20">
+    <main className="bg-[#F5F6F7] min-h-screen pb-20">
       <SEOHead
         title={product.seoTitle}
         description={product.seoDescription}
@@ -248,9 +249,11 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   </button>
                 </div>
 
-                <div
+                <button
+                  type="button"
                   onClick={() => setIsLightboxOpen(true)}
-                  className="bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-md group relative cursor-pointer hover:border-[#214E78] transition-all"
+                  aria-label={`Enlarge ${product.name} design preview`}
+                  className="w-full block bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-md group relative cursor-pointer hover:border-[#214E78] transition-all"
                 >
                   <img
                     src={design.src}
@@ -266,7 +269,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                       <span>Click to Enlarge</span>
                     </span>
                   </div>
-                </div>
+                </button>
 
                 <p className="mt-2 text-center text-xs text-[#505B66] italic">
                   {design.detailCaption}
@@ -586,6 +589,6 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           </div>
         </section>
       </div>
-    </div>
+    </main>
   );
 };

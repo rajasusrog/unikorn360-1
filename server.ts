@@ -3,11 +3,17 @@ import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { generateSitemapXml } from './src/lib/sitemap';
 import { UNIKORN_FOUR_PRODUCTS } from './src/data/productsData';
+import {
+  CANONICAL_ORIGIN,
+  injectSsrIntoTemplate,
+  resolveCanonicalRedirect,
+  resolvePublicRouteMeta
+} from './src/lib/seo';
 
 dotenv.config();
 
@@ -46,9 +52,17 @@ export interface ResolvedSupabaseConfig {
 
 export function resolveSupabaseConfig(env: NodeJS.ProcessEnv = process.env): ResolvedSupabaseConfig {
   const url = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim();
-  const isValidUrl = Boolean(url && !url.includes('example.com') && url.startsWith('https://'));
+  const isPlaceholderUrl =
+    !url ||
+    url.includes('example.com') ||
+    url.includes('your-project-ref') ||
+    url.includes('your-project');
+  const isValidUrl = Boolean(!isPlaceholderUrl && url.startsWith('https://'));
 
-  // 1. Publishable / Public key resolution (never allow secret keys here)
+  const isPlaceholderKey = (val: string): boolean =>
+    !val || val.startsWith('your-') || val.includes('...');
+
+  // 1. Publishable / Public key resolution (never allow secret keys or placeholders here)
   let publishableKey = '';
   let publishableKeySource: ResolvedSupabaseConfig['publishableKeySource'] = 'none';
   const pubCandidates: Array<[ResolvedSupabaseConfig['publishableKeySource'], string | undefined]> = [
@@ -59,7 +73,7 @@ export function resolveSupabaseConfig(env: NodeJS.ProcessEnv = process.env): Res
   ];
   for (const [source, rawVal] of pubCandidates) {
     const val = (rawVal || '').trim();
-    if (val && !val.startsWith('sb_secret_')) {
+    if (val && !val.startsWith('sb_secret_') && !isPlaceholderKey(val)) {
       publishableKey = val;
       publishableKeySource = source;
       break;
@@ -69,17 +83,23 @@ export function resolveSupabaseConfig(env: NodeJS.ProcessEnv = process.env): Res
   // 2. Privileged server credential resolution:
   //    - SUPABASE_SECRET_KEY is the preferred privileged server credential
   //    - SUPABASE_SERVICE_ROLE_KEY is supported only as a legacy compatibility fallback
-  //    - Never substitute a publishable/anon key for a privileged client
+  //    - Never substitute a publishable/anon key or placeholder for a privileged client
   let privilegedKey = '';
   let privilegedKeySource: ResolvedSupabaseConfig['privilegedKeySource'] = 'none';
   const secretKeyVal = (env.SUPABASE_SECRET_KEY || '').trim();
   const legacyServiceRoleVal = (env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-  if (secretKeyVal && !secretKeyVal.startsWith('sb_publishable_') && secretKeyVal !== publishableKey) {
+  if (
+    secretKeyVal &&
+    !isPlaceholderKey(secretKeyVal) &&
+    !secretKeyVal.startsWith('sb_publishable_') &&
+    secretKeyVal !== publishableKey
+  ) {
     privilegedKey = secretKeyVal;
     privilegedKeySource = 'SUPABASE_SECRET_KEY';
   } else if (
     legacyServiceRoleVal &&
+    !isPlaceholderKey(legacyServiceRoleVal) &&
     !legacyServiceRoleVal.startsWith('sb_publishable_') &&
     legacyServiceRoleVal !== publishableKey
   ) {
@@ -3351,23 +3371,175 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
   }
 });
 
+// ====================================================================
+// 13. CRAWLER TEXT FILES (/robots.txt & /llms.txt) & CANONICAL REDIRECTS
+// ====================================================================
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  const candidates = [
+    path.resolve(__dirname, 'dist', 'robots.txt'),
+    path.resolve(__dirname, 'public', 'robots.txt')
+  ];
+  for (const filePath of candidates) {
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.status(200).send(fs.readFileSync(filePath, 'utf-8'));
+    }
+  }
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  return res
+    .status(200)
+    .send('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nSitemap: https://www.unikorn360.com/sitemap.xml\n');
+});
+
+app.get('/llms.txt', (_req: Request, res: Response) => {
+  const candidates = [
+    path.resolve(__dirname, 'dist', 'llms.txt'),
+    path.resolve(__dirname, 'public', 'llms.txt')
+  ];
+  for (const filePath of candidates) {
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.status(200).send(fs.readFileSync(filePath, 'utf-8'));
+    }
+  }
+  return res.status(404).type('text/plain').send('Not Found');
+});
+
+const ASSET_EXTENSION_REGEX = /\.[a-z0-9]{1,8}$/i;
+
+// Canonical host & legacy path 301 redirects (never intercepts /api, Vite dev internals, or files with extensions)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next();
+  }
+
+  const reqPath = req.path || '/';
+  if (
+    reqPath.startsWith('/api/') ||
+    reqPath.startsWith('/assets/') ||
+    reqPath.startsWith('/@') ||
+    reqPath.startsWith('/src/') ||
+    reqPath.startsWith('/node_modules/') ||
+    reqPath === '/sitemap.xml' ||
+    reqPath === '/robots.txt' ||
+    reqPath === '/llms.txt' ||
+    reqPath === '/health' ||
+    ASSET_EXTENSION_REGEX.test(reqPath)
+  ) {
+    return next();
+  }
+
+  // Host-level apex -> www redirect when directly serving the production domain
+  const rawHostHeader = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const hostname = rawHostHeader.split(',')[0].trim().split(':')[0].toLowerCase();
+  if (hostname === 'unikorn360.com') {
+    const targetPath = resolveCanonicalRedirect(req.originalUrl) || req.originalUrl;
+    return res.redirect(301, `${CANONICAL_ORIGIN}${targetPath}`);
+  }
+
+  const canonicalPathRedirect = resolveCanonicalRedirect(req.originalUrl);
+  if (canonicalPathRedirect) {
+    return res.redirect(301, canonicalPathRedirect);
+  }
+
+  return next();
+});
+
 export { app };
 
 // ====================================================================
-// VITE SPA & STATIC ASSETS SETUP
+// SSR, PRERENDERED STATIC ASSETS & HTTP 404 SETUP
 // ====================================================================
 async function startServer() {
   if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa'
+      appType: 'custom'
     });
     app.use(vite.middlewares);
+
+    app.get('*', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (
+          req.path.startsWith('/api/') ||
+          ASSET_EXTENSION_REGEX.test(req.path)
+        ) {
+          return next();
+        }
+
+        const indexHtml = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        const transformedTemplate = await vite.transformIndexHtml(req.originalUrl, indexHtml);
+        const ssrModule = await vite.ssrLoadModule('/src/entry-server.tsx');
+        const { html, statusCode, meta } = ssrModule.render(req.originalUrl);
+        const finalHtml = injectSsrIntoTemplate(transformedTemplate, meta, html);
+
+        res.status(statusCode);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        if (!meta.isIndexable) {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        }
+        return res.send(finalHtml);
+      } catch (err) {
+        vite.ssrFixStacktrace(err as Error);
+        return next(err);
+      }
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
+    const distServerEntry = path.resolve(__dirname, 'dist-server', 'entry-server.js');
+    const appShellPath = path.resolve(distPath, 'app-shell.html');
+
+    app.use(express.static(distPath, { index: false }));
+
+    app.get('*', async (req: Request, res: Response) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API route not found' });
+      }
+
+      const routeMeta = resolvePublicRouteMeta(req.path);
+      const cleanRelPath = routeMeta.pathname.replace(/^\/+/, '');
+      const candidateHtmlPath =
+        routeMeta.pathname === '/'
+          ? path.resolve(distPath, 'index.html')
+          : path.resolve(distPath, cleanRelPath, 'index.html');
+
+      if (
+        routeMeta.statusCode === 200 &&
+        candidateHtmlPath.startsWith(distPath) &&
+        fs.existsSync(candidateHtmlPath)
+      ) {
+        if (!routeMeta.isIndexable) {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        }
+        return res.status(200).sendFile(candidateHtmlPath);
+      }
+
+      // Dynamic SSR fallback if dist-server bundle and clean app-shell exist
+      if (fs.existsSync(distServerEntry) && fs.existsSync(appShellPath)) {
+        try {
+          const templateHtml = fs.readFileSync(appShellPath, 'utf-8');
+          const ssrModule = await import(pathToFileURL(distServerEntry).href);
+          const { html, statusCode, meta } = ssrModule.render(req.originalUrl);
+          const finalHtml = injectSsrIntoTemplate(templateHtml, meta, html);
+
+          if (!meta.isIndexable) {
+            res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+          }
+          return res.status(statusCode).type('text/html; charset=utf-8').send(finalHtml);
+        } catch (err) {
+          console.error('Production SSR fallback error:', err);
+        }
+      }
+
+      // Genuine HTTP 404 for unknown routes (never fallback to homepage HTML with 200)
+      const notFoundHtmlPath = path.resolve(distPath, '404.html');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      if (fs.existsSync(notFoundHtmlPath)) {
+        return res.status(404).sendFile(notFoundHtmlPath);
+      }
+      return res.status(404).type('text/plain').send('404 Not Found');
     });
   }
 

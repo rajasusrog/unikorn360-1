@@ -258,6 +258,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
         <SEOHead
           title="Verifying Admin Access | UNIKORN360"
           description="Verifying Supabase authentication credentials."
+          canonicalUrl="https://www.unikorn360.com/admin"
+          robots="noindex, nofollow"
         />
         <div className="flex flex-col items-center gap-3 text-slate-300">
           <div className="w-8 h-8 border-2 border-[#43C8E8] border-t-transparent rounded-full animate-spin" />
@@ -274,6 +276,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
         <SEOHead
           title="Access Restricted | UNIKORN360"
           description="Administrative control desk for Unikorn360."
+          canonicalUrl="https://www.unikorn360.com/admin"
+          robots="noindex, nofollow"
         />
         <div className="bg-[#081B37] border border-slate-800 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
           <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center justify-center text-rose-400 mx-auto mb-4">
@@ -309,7 +313,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
     <div className="bg-[#F5F6F7] min-h-screen pb-20">
       <SEOHead
         title="Admin Services Manager | UNIKORN360"
-        description="Manage the 8 divisions, 64 services, packages, and statuses."
+        description="Manage the 6 divisions, 37 services, packages, and statuses."
+        canonicalUrl="https://www.unikorn360.com/admin"
+        robots="noindex, nofollow"
       />
 
       {/* Admin Top Navigation */}

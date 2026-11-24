@@ -116,13 +116,17 @@ export const ServicesCatalog: React.FC<ServicesCatalogProps> = ({
 
                 {/* Card Action Link */}
                 <div className="p-6 pt-0 mt-auto">
-                  <button
-                    onClick={() => handleDivisionClick(div.slug)}
+                  <a
+                    href={`/services/${div.slug}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDivisionClick(div.slug);
+                    }}
                     className="w-full py-2.5 px-4 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-2xs group-hover:shadow-xs"
                   >
                     <span>Explore Services</span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                  </button>
+                  </a>
                 </div>
               </div>
             );
@@ -131,13 +135,17 @@ export const ServicesCatalog: React.FC<ServicesCatalogProps> = ({
 
         {/* Directory Link Footer */}
         <div className="mt-12 text-center">
-          <button
-            onClick={() => handleDivisionClick('')}
+          <a
+            href="/services"
+            onClick={(e) => {
+              e.preventDefault();
+              handleDivisionClick('');
+            }}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-white border border-[#D8DEE5] hover:border-[#214E78] text-[#30363D] hover:text-[#214E78] text-xs font-bold uppercase tracking-wider rounded-lg transition-all shadow-2xs cursor-pointer"
           >
             <span>View Full Services Directory</span>
             <ExternalLink className="w-3.5 h-3.5 text-[#A57C35]" />
-          </button>
+          </a>
         </div>
       </div>
     </section>

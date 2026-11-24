@@ -18,7 +18,8 @@ import {
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { WhatsAppSubmitButton } from '../components/WhatsAppSubmitButton';
-import { servicesDb } from '../lib/supabase';
+import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
+import { getSeedServiceByDivisionAndSlug } from '../data/seedData';
 import { ServiceDivision, ServiceCatalogItem, ServicePackage } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { getDivisionBanner } from '../data/mediaAssets';
@@ -38,20 +39,27 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
   onOpenReviewModal,
   onOpenQuoteModal
 }) => {
+  const initialSeed = getSeedServiceByDivisionAndSlug(divisionSlug, serviceSlug);
   const [data, setData] = useState<{
     service: ServiceCatalogItem;
     division: ServiceDivision;
     relatedServices: ServiceCatalogItem[];
-  } | null>(null);
+  } | null>(() => initialSeed);
 
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [legacyRedirectTarget, setLegacyRedirectTarget] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(() => !initialSeed);
+  const [legacyRedirectTarget, setLegacyRedirectTarget] = useState<string | null>(() => {
+    const legacyTarget = servicesDb.resolveLegacyUrl(serviceSlug);
+    return legacyTarget && legacyTarget !== `/services/${divisionSlug}/${serviceSlug}` ? legacyTarget : null;
+  });
 
   // Selected package for quick WhatsApp inquiry
-  const [selectedPackage, setSelectedPackage] = useState<ServicePackage | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<ServicePackage | null>(
+    () => initialSeed?.service.packages?.find(p => p.approval_status === 'approved') || null
+  );
   const [visitorName, setVisitorName] = useState('');
   const [visitorPhone, setVisitorPhone] = useState('');
+  const [whatsAppError, setWhatsAppError] = useState('');
   const [isPreparingWhatsApp, setIsPreparingWhatsApp] = useState(false);
   const [whatsAppInitiated, setWhatsAppInitiated] = useState(false);
 
@@ -60,15 +68,30 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
 
   useEffect(() => {
     async function fetchService() {
-      setLoading(true);
-      setNotFound(false);
-      setLegacyRedirectTarget(null);
+      setWhatsAppError('');
+      const seedRes = getSeedServiceByDivisionAndSlug(divisionSlug, serviceSlug);
 
       try {
         // First check if this slug is a legacy URL redirect
         const legacyTarget = servicesDb.resolveLegacyUrl(serviceSlug);
         if (legacyTarget && legacyTarget !== `/services/${divisionSlug}/${serviceSlug}`) {
           setLegacyRedirectTarget(legacyTarget);
+        } else {
+          setLegacyRedirectTarget(null);
+        }
+
+        if (!isRemoteSupabaseConfigured) {
+          if (!seedRes) {
+            setNotFound(true);
+            setData(null);
+          } else {
+            setNotFound(false);
+            setData(seedRes);
+            const approved = seedRes.service.packages?.find(p => p.approval_status === 'approved');
+            setSelectedPackage(approved || null);
+          }
+          setLoading(false);
+          return;
         }
 
         const res = await servicesDb.getServiceByDivisionAndSlug(divisionSlug, serviceSlug);
@@ -76,14 +99,23 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
           setNotFound(true);
           setData(null);
         } else {
+          setNotFound(false);
           setData(res);
           // Auto-select first approved package if available
           const approved = res.service.packages?.find(p => p.approval_status === 'approved');
-          if (approved) setSelectedPackage(approved);
+          setSelectedPackage(approved || null);
         }
       } catch (err) {
-        console.error('Error fetching service detail', err);
-        setNotFound(true);
+        console.warn('Could not fetch service detail from Supabase, using seed fallback:', err);
+        if (!seedRes) {
+          setNotFound(true);
+          setData(null);
+        } else {
+          setNotFound(false);
+          setData(seedRes);
+          const approved = seedRes.service.packages?.find(p => p.approval_status === 'approved');
+          setSelectedPackage(approved || null);
+        }
       } finally {
         setLoading(false);
       }
@@ -98,10 +130,11 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
     if (!data) return;
 
     if (!visitorName.trim() || !visitorPhone.trim()) {
-      alert('Please enter your Name and Phone Number to prepare your WhatsApp enquiry.');
+      setWhatsAppError('Please enter your Name and Phone Number to prepare your WhatsApp enquiry.');
       return;
     }
 
+    setWhatsAppError('');
     setIsPreparingWhatsApp(true);
 
     const messageLines = [
@@ -146,7 +179,13 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
   // Handle Missing or Unknown Service (Strict 404 behavior - never fallback to first record)
   if (notFound || !data) {
     return (
-      <div className="min-h-screen bg-[#F5F6F7] flex items-center justify-center px-4 py-16">
+      <main className="min-h-screen bg-[#F5F6F7] flex items-center justify-center px-4 py-16">
+        <SEOHead
+          title="Service Not Found | UNIKORN360"
+          description="The requested service route does not exist on UNIKORN360 Business Intelligence."
+          canonicalUrl={`https://www.unikorn360.com/services/${divisionSlug}/${serviceSlug}`}
+          robots="noindex, nofollow"
+        />
         <div className="bg-white border border-[#D8DEE5] rounded-xl p-8 max-w-lg w-full text-center shadow-sm">
           <HelpCircle className="w-12 h-12 text-[#A57C35] mx-auto mb-4" />
           <h1 className="text-xl font-bold font-serif text-[#30363D]">Service Not Found</h1>
@@ -158,38 +197,51 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
             <div className="mt-4 p-3 bg-[#214E78]/5 border border-[#214E78]/20 rounded text-left">
               <p className="text-xs font-semibold text-[#214E78]">Looking for this service?</p>
               <p className="text-[11px] text-[#505B66] mt-0.5">This service has been migrated to a new location in the architecture:</p>
-              <button
-                onClick={() => onNavigate(legacyRedirectTarget)}
+              <a
+                href={legacyRedirectTarget}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate(legacyRedirectTarget);
+                }}
                 className="mt-2 text-xs font-bold text-[#214E78] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <span>Continue to {legacyRedirectTarget}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              </a>
             </div>
           )}
 
           <div className="mt-6 flex flex-col gap-2">
-            <button
-              onClick={() => onNavigate(`/services/${divisionSlug}`)}
-              className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors cursor-pointer"
+            <a
+              href={`/services/${divisionSlug}`}
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate(`/services/${divisionSlug}`);
+              }}
+              className="w-full py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-semibold uppercase tracking-wider rounded transition-colors cursor-pointer block"
             >
               Back to {divisionSlug.toUpperCase()} Division
-            </button>
-            <button
-              onClick={() => onNavigate('/services')}
-              className="w-full py-2 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] text-xs font-semibold rounded border border-[#D8DEE5] transition-colors cursor-pointer"
+            </a>
+            <a
+              href="/services"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/services');
+              }}
+              className="w-full py-2 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] text-xs font-semibold rounded border border-[#D8DEE5] transition-colors cursor-pointer block"
             >
               Browse All Services Directory
-            </button>
+            </a>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
   const { service, division, relatedServices } = data;
+  const serviceCanonicalUrl = `https://www.unikorn360.com/services/${division.slug}/${service.slug}`;
 
-  // Generate Schema.org JSON-LD structured data for FAQ and Service
+  // Generate Schema.org JSON-LD structured data for Service, BreadcrumbList, and FAQPage
   const faqSchema = service.faqs && service.faqs.length > 0 ? {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -203,33 +255,35 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
     }))
   } : null;
 
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.unikorn360.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Services", "item": "https://www.unikorn360.com/services" },
+      { "@type": "ListItem", "position": 3, "name": division.name, "item": `https://www.unikorn360.com/services/${division.slug}` },
+      { "@type": "ListItem", "position": 4, "name": service.service_name, "item": serviceCanonicalUrl }
+    ]
+  };
+
   const serviceSchema = {
     "@context": "https://schema.org",
     "@type": "Service",
     "name": service.service_name,
     "description": service.short_description,
+    "url": serviceCanonicalUrl,
     "provider": {
-      "@type": "LocalBusiness",
-      "name": BUSINESS_INFO.brand,
-      "telephone": BUSINESS_INFO.phone,
-      "address": {
-        "@type": "PostalAddress",
-        "streetAddress": BUSINESS_INFO.address.line1,
-        "addressLocality": BUSINESS_INFO.address.city,
-        "addressRegion": BUSINESS_INFO.address.state,
-        "postalCode": BUSINESS_INFO.address.pincode,
-        "addressCountry": "IN"
-      }
+      "@id": "https://www.unikorn360.com/#organization"
     }
   };
 
   return (
-    <div className="bg-[#F5F6F7] min-h-screen">
+    <main className="bg-[#F5F6F7] min-h-screen">
       <SEOHead
         title={service.seo_title || `${service.service_name} | Unikorn360`}
         description={service.seo_description || service.short_description}
-        canonicalUrl={`https://www.unikorn360.com/services/${division.slug}/${service.slug}`}
-        structuredData={[serviceSchema, ...(faqSchema ? [faqSchema] : [])]}
+        canonicalUrl={serviceCanonicalUrl}
+        structuredData={[serviceSchema, breadcrumbSchema, ...(faqSchema ? [faqSchema] : [])]}
       />
 
       {/* Hero Header */}
@@ -401,6 +455,12 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                   preparedLabel="Inquiry Prepared · Opening WhatsApp..."
                   className="w-full justify-center"
                 />
+
+                {whatsAppError && (
+                  <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2.5 py-1.5 mt-1" role="alert">
+                    {whatsAppError}
+                  </p>
+                )}
 
                 {whatsAppInitiated && (
                   <p className="text-[10px] text-[#505B66] text-center italic mt-1">
@@ -741,13 +801,17 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                     {rel.short_description}
                   </p>
                 </div>
-                <button
-                  onClick={() => onNavigate(`/services/${division.slug}/${rel.slug}`)}
+                <a
+                  href={`/services/${division.slug}/${rel.slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNavigate(`/services/${division.slug}/${rel.slug}`);
+                  }}
                   className="mt-4 pt-3 border-t border-[#D8DEE5] text-xs font-semibold text-[#214E78] flex items-center gap-1 cursor-pointer"
                 >
                   <span>View Details</span>
                   <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                </button>
+                </a>
               </div>
             ))}
           </div>
@@ -757,21 +821,29 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
       {/* Bottom Back / Navigation Links */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
         <div className="flex items-center justify-between text-xs font-semibold">
-          <button
-            onClick={() => onNavigate(`/services/${division.slug}`)}
+          <a
+            href={`/services/${division.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate(`/services/${division.slug}`);
+            }}
             className="flex items-center gap-1.5 text-[#505B66] hover:text-[#214E78] cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back to {division.name} Division</span>
-          </button>
-          <button
-            onClick={() => onNavigate('/services')}
+          </a>
+          <a
+            href="/services"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/services');
+            }}
             className="text-[#214E78] hover:underline cursor-pointer"
           >
             All Services Directory →
-          </button>
+          </a>
         </div>
       </section>
-    </div>
+    </main>
   );
 };

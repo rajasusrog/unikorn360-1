@@ -79,8 +79,12 @@ export const OurProductsSection: React.FC<OurProductsSectionProps> = ({
                 <div>
                   {/* Proposed UI Design Image Showcase */}
                   {design && (
-                    <div
-                      onClick={() => onNavigate(product.path)}
+                    <a
+                      href={product.path}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigate(product.path);
+                      }}
                       className="relative w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-5 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
                     >
                       <img
@@ -94,7 +98,7 @@ export const OurProductsSection: React.FC<OurProductsSectionProps> = ({
                       <span className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-[#09182B]/90 border border-white/20 text-[#A57C35] font-mono font-bold text-[10px] uppercase tracking-wider rounded backdrop-blur-xs">
                         {design.badgeLabel}
                       </span>
-                    </div>
+                    </a>
                   )}
 
                   <div className="text-[11px] font-semibold text-[#A57C35] uppercase tracking-wider mb-1.5">

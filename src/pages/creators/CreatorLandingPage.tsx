@@ -75,7 +75,7 @@ export const CreatorLandingPage: React.FC<CreatorLandingPageProps> = ({
   ];
 
   return (
-    <div className="bg-[#06162D] text-white min-h-screen">
+    <main className="bg-[#06162D] text-white min-h-screen">
       <SEOHead
         title="Tamil Content Creators Wanted — UNIKORN360 Creator Network"
         description="Get paid to create brand videos. Join the UNIKORN360 Creator Network. Free registration for Tamil UGC, nano, micro, and established digital creators across all districts."
@@ -86,12 +86,16 @@ export const CreatorLandingPage: React.FC<CreatorLandingPageProps> = ({
       <div className="border-b border-[#06162D]/60 bg-[#06162D]/90 backdrop-blur-md sticky top-20 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 text-slate-300">
-            <button 
-              onClick={() => onNavigate('/')} 
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/');
+              }}
               className="hover:text-[#F3C94F] transition-colors"
             >
               Home
-            </button>
+            </a>
             <span>/</span>
             <span className="text-[#43C8E8] font-medium">Creator Network</span>
           </div>
@@ -156,14 +160,18 @@ export const CreatorLandingPage: React.FC<CreatorLandingPageProps> = ({
 
             {/* CTA Buttons */}
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button
-                onClick={() => onNavigate('/creators/apply')}
+              <a
+                href="/creators/apply"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate('/creators/apply');
+                }}
                 id="hero-apply-btn"
                 className="w-full sm:w-auto px-8 py-4 bg-[#F3C94F] hover:bg-[#e0b83f] text-[#06162D] font-bold text-sm tracking-wider uppercase rounded-xl shadow-lg shadow-[#F3C94F]/20 transition-all flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-[#F3C94F]"
               >
                 <span>Apply to Join Network</span>
                 <ArrowRight className="w-4 h-4" />
-              </button>
+              </a>
 
               <button
                 onClick={() => {
@@ -552,13 +560,17 @@ export const CreatorLandingPage: React.FC<CreatorLandingPageProps> = ({
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button
-              onClick={() => onNavigate('/creators/apply')}
+            <a
+              href="/creators/apply"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('/creators/apply');
+              }}
               className="w-full sm:w-auto px-8 py-4 bg-[#F3C94F] hover:bg-[#e0b83f] text-[#06162D] font-bold text-sm tracking-wider uppercase rounded-xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
               <span>Start Creator Application</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
+            </a>
           </div>
 
           <div className="mt-8 flex items-center justify-center gap-6 text-xs text-slate-400">
@@ -669,6 +681,6 @@ export const CreatorLandingPage: React.FC<CreatorLandingPageProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 };

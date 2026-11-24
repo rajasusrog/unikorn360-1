@@ -29,9 +29,11 @@ import { ServiceItem } from './types';
 import { SERVICES_LIST } from './data/servicesData';
 import { SOLUTIONS_DATA } from './data/solutionsData';
 import { RESOURCE_GUIDES } from './data/resourcesData';
-import { LEGACY_URL_REDIRECTS } from './data/seedData';
 import { servicesDb } from './lib/supabase';
 import { parseRouteLocation, ParsedRouteLocation } from './lib/router';
+
+import { resolveCanonicalRedirect, HOMEPAGE_SEO_TITLE, HOMEPAGE_SEO_DESCRIPTION } from './lib/seo';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 // Dynamic Services Architecture Reusable Pages
 import { ServicesDirectoryPage } from './pages/ServicesDirectoryPage';
@@ -55,20 +57,23 @@ import { ResourcesHubPage } from './components/ResourcesHubPage';
 import { AboutPage } from './components/AboutPage';
 import { ContactPage } from './components/ContactPage';
 
-const KNOWN_DIVISIONS = new Set([
-  'websites-software',
-  'security-maintenance',
-  'marketing-creator-campaigns',
-  'ai-automation-business-systems',
-  'research-business-strategy',
-  'business-setup-documentation'
-]);
+export interface AppProps {
+  initialPath?: string;
+  initialSearch?: string;
+}
 
-export default function App() {
-  // Store route pathname and search parameters separately
+export default function App({ initialPath, initialSearch }: AppProps = {}) {
+  // Store route pathname and search parameters separately (supports SSR + hydration)
   const [routeLocation, setRouteLocation] = useState<ParsedRouteLocation>(() => {
+    if (typeof initialPath === 'string') {
+      const parsedInitial = parseRouteLocation(`${initialPath}${initialSearch || ''}`);
+      const canonical = resolveCanonicalRedirect(parsedInitial.fullUrl);
+      return canonical ? parseRouteLocation(canonical) : parsedInitial;
+    }
     if (typeof window !== 'undefined') {
-      return parseRouteLocation(`${window.location.pathname || '/'}${window.location.search || ''}`);
+      const rawUrl = `${window.location.pathname || '/'}${window.location.search || ''}`;
+      const canonical = resolveCanonicalRedirect(rawUrl);
+      return parseRouteLocation(canonical || rawUrl);
     }
     return { pathname: '/', search: '', fullUrl: '/' };
   });
@@ -88,21 +93,36 @@ export default function App() {
 
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('bi-dashboards');
 
-  // Handle browser back/forward buttons
+  // Normalize any legacy or trailing-slash URL in browser history on initial load & popstate
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const rawUrl = `${window.location.pathname || '/'}${window.location.search || ''}`;
+    const canonical = resolveCanonicalRedirect(rawUrl);
+    if (canonical && canonical !== rawUrl) {
+      window.history.replaceState({}, '', canonical);
+      setRouteLocation(parseRouteLocation(canonical));
+    }
+
     const handlePopState = () => {
-      setRouteLocation(
-        parseRouteLocation(`${window.location.pathname || '/'}${window.location.search || ''}`)
-      );
+      const nextRaw = `${window.location.pathname || '/'}${window.location.search || ''}`;
+      const nextCanonical = resolveCanonicalRedirect(nextRaw);
+      if (nextCanonical && nextCanonical !== nextRaw) {
+        window.history.replaceState({}, '', nextCanonical);
+        setRouteLocation(parseRouteLocation(nextCanonical));
+      } else {
+        setRouteLocation(parseRouteLocation(nextRaw));
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Client-side router navigation (preserves query strings in browser history while matching on pathname)
+  // Client-side router navigation (normalizes legacy slugs & preserves query strings)
   const navigate = (path: string) => {
-    const nextLocation = parseRouteLocation(path);
+    const canonicalTarget = resolveCanonicalRedirect(path) || path;
+    const nextLocation = parseRouteLocation(canonicalTarget);
     const currentWindowUrl =
       typeof window !== 'undefined'
         ? `${window.location.pathname || '/'}${window.location.search || ''}`
@@ -196,8 +216,8 @@ export default function App() {
       return (
         <main>
           <SEOHead
-            title="UNIKORN360 — Business Intelligence, Software, Products & Creator Network"
-            description="Websites, custom software, cybersecurity, marketing, creator campaigns, AI automation, and standalone software products: InvoicePro360, Deeds360, Property360, and Advocate360."
+            title={HOMEPAGE_SEO_TITLE}
+            description={HOMEPAGE_SEO_DESCRIPTION}
             canonicalUrl="https://www.unikorn360.com/"
           />
 
@@ -522,20 +542,12 @@ export default function App() {
       );
     }
 
-    // Fallback to Home if unknown route
+    // Return branded HTTP 404 NotFoundPage for unrecognized paths & invalid sub-slugs
     return (
-      <main>
-        <Hero
-          onOpenReviewModal={() => handleOpenReviewModal()}
-          onScrollToSection={handleScrollToSection}
-        />
-        <ServicesCatalog
-          selectedCategoryKey={selectedCategoryKey}
-          onOpenQuoteModal={handleOpenQuoteModal}
-          onSelectServiceModal={handleOpenDetailModal}
-        />
-        <ProjectEnquirySection />
-      </main>
+      <NotFoundPage
+        onNavigate={navigate}
+        requestedPath={currentPath}
+      />
     );
   };
 

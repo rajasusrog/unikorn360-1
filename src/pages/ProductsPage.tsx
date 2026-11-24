@@ -35,7 +35,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   };
 
   return (
-    <div className="bg-[#F5F6F7] min-h-screen pb-20">
+    <main className="bg-[#F5F6F7] min-h-screen pb-20">
       <SEOHead
         title="Software Products — InvoicePro360, Deeds360, Property360 & Advocate360 | UNIKORN360"
         description="Explore UNIKORN360 standalone software applications: InvoicePro360, Deeds360, Property360, and Advocate360. View verified product details or open each web application."
@@ -123,8 +123,12 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                 <div>
                   {/* Proposed UI Design Image Showcase */}
                   {design && (
-                    <div
-                      onClick={() => onNavigate(product.path)}
+                    <a
+                      href={product.path}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigate(product.path);
+                      }}
                       className="relative w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-5 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
                     >
                       <img
@@ -138,7 +142,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                       <span className="absolute top-2.5 right-2.5 px-2.5 py-1 bg-[#09182B]/90 border border-white/20 text-[#A57C35] font-mono font-bold text-[10px] uppercase tracking-wider rounded backdrop-blur-xs">
                         {design.badgeLabel}
                       </span>
-                    </div>
+                    </a>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2 text-xs text-[#505B66] mb-2">
@@ -252,6 +256,6 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 };

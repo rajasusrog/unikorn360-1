@@ -25,13 +25,26 @@ const rawPublishableKey = (
   ''
 ).trim();
 
-// Never allow a secret key in the browser client
-const supabasePublishableKey = rawPublishableKey.startsWith('sb_secret_') ? '' : rawPublishableKey;
+// Never allow a secret key or placeholder value in the browser client
+const isPlaceholderKey = (val: string): boolean =>
+  !val ||
+  val.startsWith('sb_secret_') ||
+  val.startsWith('your-') ||
+  val.includes('...') ||
+  val === 'sb_publishable_';
+
+const supabasePublishableKey = isPlaceholderKey(rawPublishableKey) ? '' : rawPublishableKey;
+
+const isPlaceholderUrl = (url: string): boolean =>
+  !url ||
+  url.includes('example.com') ||
+  url.includes('your-project-ref') ||
+  url.includes('your-project');
 
 export const isRemoteSupabaseConfigured = Boolean(
   supabaseUrl &&
   supabasePublishableKey &&
-  !supabaseUrl.includes('example.com') &&
+  !isPlaceholderUrl(supabaseUrl) &&
   supabaseUrl.startsWith('https://')
 );
 

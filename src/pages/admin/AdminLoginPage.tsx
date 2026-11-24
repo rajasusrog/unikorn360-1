@@ -61,11 +61,12 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
   };
 
   return (
-    <div className="bg-[#06162D] min-h-screen flex items-center justify-center p-4">
+    <main className="bg-[#06162D] min-h-screen flex items-center justify-center p-4">
       <SEOHead
         title="Admin Portal Login — UNIKORN360"
         description="Restricted administrative portal for UNIKORN360 operations and Creator Network roster management."
         canonicalUrl="https://www.unikorn360.com/admin/login"
+        robots="noindex, nofollow"
       />
 
       <div className="max-w-md w-full bg-[#081B37] border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl text-left">
@@ -153,15 +154,18 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
         </form>
 
         <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <button
-            type="button"
-            onClick={() => onNavigate('/')}
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/');
+            }}
             className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
           >
             ← Return to Public Website
-          </button>
+          </a>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

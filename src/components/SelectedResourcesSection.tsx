@@ -34,13 +34,17 @@ export const SelectedResourcesSection: React.FC<SelectedResourcesSectionProps> =
             </p>
           </div>
 
-          <button
-            onClick={() => onNavigate('/resources')}
+          <a
+            href="/resources"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('/resources');
+            }}
             className="text-xs font-bold text-[#214E78] hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
           >
             <span>View All Guides &amp; Checklists</span>
             <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          </a>
         </div>
 
         {/* Guides Grid */}
@@ -83,13 +87,17 @@ export const SelectedResourcesSection: React.FC<SelectedResourcesSectionProps> =
               </div>
 
               <div className="pt-4 mt-4 border-t border-[#D8DEE5]">
-                <button
-                  onClick={() => onNavigate(`/resources/${guide.slug}`)}
+                <a
+                  href={`/resources/${guide.slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNavigate(`/resources/${guide.slug}`);
+                  }}
                   className="w-full py-2 px-3 bg-[#F5F6F7] hover:bg-[#214E78] text-[#30363D] hover:text-white border border-[#D8DEE5] rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>Read Full Guide</span>
                   <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                </a>
               </div>
             </article>
           ))}

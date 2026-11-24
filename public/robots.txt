@@ -1,6 +1,11 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /creators/apply
+Disallow: /creators/success
+Disallow: /api/
 
 # Sitemaps
-Sitemap: https://unikorn360.com/sitemap.xml
+Sitemap: https://www.unikorn360.com/sitemap.xml

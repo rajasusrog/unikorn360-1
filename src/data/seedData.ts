@@ -2314,9 +2314,12 @@ export const LEGACY_URL_REDIRECTS: Record<string, string> = {
   'grow': '/services/business-setup-documentation',
   'influence': '/services/marketing-creator-campaigns',
   'automate': '/services/ai-automation-business-systems',
+  'research': '/services/research-business-strategy',
+  'setup': '/services/business-setup-documentation',
   'intelligence': '/services/research-business-strategy',
   'business-support': '/services/business-setup-documentation',
   'consulting-education': '/services/research-business-strategy',
+  '/creator-network': '/creators',
 
   // Legacy Division Paths
   '/services/build': '/services/websites-software',
@@ -2324,6 +2327,8 @@ export const LEGACY_URL_REDIRECTS: Record<string, string> = {
   '/services/grow': '/services/business-setup-documentation',
   '/services/influence': '/services/marketing-creator-campaigns',
   '/services/automate': '/services/ai-automation-business-systems',
+  '/services/research': '/services/research-business-strategy',
+  '/services/setup': '/services/business-setup-documentation',
   '/services/intelligence': '/services/research-business-strategy',
   '/services/business-support': '/services/business-setup-documentation',
   '/services/consulting-education': '/services/research-business-strategy',
@@ -2449,3 +2454,69 @@ export const LEGACY_URL_REDIRECTS: Record<string, string> = {
   'verify-audit': '/services/research-business-strategy/business-performance-analysis',
   '/services/consulting-education/business-diagnostic-audit': '/services/research-business-strategy/business-performance-analysis'
 };
+
+// ====================================================================
+// 5. LOCAL SEED FALLBACK HELPERS (Used only when Supabase is unconfigured)
+// ====================================================================
+export function getSeedDivisionsWithCounts(): ServiceDivision[] {
+  const counts = new Map<string, number>();
+  for (const svc of SEED_SERVICES) {
+    counts.set(svc.division_id, (counts.get(svc.division_id) || 0) + 1);
+  }
+  return SEED_DIVISIONS
+    .filter((d) => d.status === 'published')
+    .sort((a, b) => a.display_order - b.display_order)
+    .map((d) => ({
+      ...d,
+      published_service_count: counts.get(d.id) || 0
+    }));
+}
+
+export function getSeedDivisionBySlug(
+  slug: string
+): { division: ServiceDivision; services: ServiceCatalogItem[] } | null {
+  const normalizedSlug = slug.toLowerCase().trim();
+  const division = SEED_DIVISIONS.find(
+    (d) => d.slug === normalizedSlug && d.status === 'published'
+  );
+  if (!division) return null;
+
+  const services = SEED_SERVICES
+    .filter((s) => s.division_id === division.id)
+    .sort((a, b) => a.display_order - b.display_order);
+
+  return {
+    division: {
+      ...division,
+      published_service_count: services.length
+    },
+    services
+  };
+}
+
+export function getSeedServiceByDivisionAndSlug(
+  divisionSlug: string,
+  serviceSlug: string
+): {
+  service: ServiceCatalogItem;
+  division: ServiceDivision;
+  relatedServices: ServiceCatalogItem[];
+} | null {
+  const divResult = getSeedDivisionBySlug(divisionSlug);
+  if (!divResult) return null;
+
+  const normalizedServiceSlug = serviceSlug.toLowerCase().trim();
+  const service = divResult.services.find((s) => s.slug === normalizedServiceSlug);
+  if (!service) return null;
+
+  const relatedServices = divResult.services
+    .filter((s) => s.id !== service.id)
+    .slice(0, 3);
+
+  return {
+    service,
+    division: divResult.division,
+    relatedServices
+  };
+}
+

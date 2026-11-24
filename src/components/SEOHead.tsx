@@ -1,28 +1,38 @@
 import React, { useEffect } from 'react';
+import { CANONICAL_ORIGIN, DEFAULT_OG_IMAGE } from '../lib/seo';
 
 export interface SEOHeadProps {
   title: string;
   description: string;
   canonicalPath?: string;
   canonicalUrl?: string;
+  robots?: string;
+  ogType?: 'website' | 'article';
+  ogImage?: string;
   schema?: Record<string, any> | Array<Record<string, any>>;
   structuredData?: Record<string, any> | Array<Record<string, any>>;
 }
+
+const DEFAULT_ROBOTS =
+  'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
 
 export const SEOHead: React.FC<SEOHeadProps> = ({
   title = 'UNIKORN360',
   description = '',
   canonicalPath,
   canonicalUrl: canonicalUrlProp,
+  robots = DEFAULT_ROBOTS,
+  ogType = 'website',
+  ogImage = DEFAULT_OG_IMAGE,
   schema,
   structuredData
 }) => {
   useEffect(() => {
     const safeTitle = title || 'UNIKORN360';
     const safeDescription = description || '';
-    const baseUrl = 'https://www.unikorn360.com';
+    const baseUrl = CANONICAL_ORIGIN;
 
-    let resolvedCanonicalUrl = baseUrl;
+    let resolvedCanonicalUrl = `${baseUrl}/`;
     if (typeof canonicalUrlProp === 'string' && canonicalUrlProp.trim().length > 0) {
       const trimmed = canonicalUrlProp.trim();
       resolvedCanonicalUrl = trimmed.startsWith('http')
@@ -38,17 +48,39 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       resolvedCanonicalUrl = `${baseUrl}${resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`}`;
     }
 
+    const resolvedOgImage =
+      typeof ogImage === 'string' && ogImage.trim().length > 0
+        ? ogImage.trim().startsWith('http')
+          ? ogImage.trim()
+          : `${baseUrl}${ogImage.trim().startsWith('/') ? ogImage.trim() : `/${ogImage.trim()}`}`
+        : DEFAULT_OG_IMAGE;
+
+    const updateOrCreateMetaByName = (name: string, content: string) => {
+      let meta = document.querySelector(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', name);
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', content);
+    };
+
+    const updateOrCreateMetaByProp = (property: string, content: string) => {
+      let meta = document.querySelector(`meta[property="${property}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('property', property);
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', content);
+    };
+
     // 1. Update Title
     document.title = safeTitle;
 
-    // 2. Update Meta Description
-    let metaDesc = document.querySelector('meta[name="description"]');
-    if (!metaDesc) {
-      metaDesc = document.createElement('meta');
-      metaDesc.setAttribute('name', 'description');
-      document.head.appendChild(metaDesc);
-    }
-    metaDesc.setAttribute('content', safeDescription);
+    // 2. Update Meta Description & Robots
+    updateOrCreateMetaByName('description', safeDescription);
+    updateOrCreateMetaByName('robots', robots || DEFAULT_ROBOTS);
 
     // 3. Update Canonical Link
     let canonicalLink = document.querySelector('link[rel="canonical"]');
@@ -60,33 +92,16 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     canonicalLink.setAttribute('href', resolvedCanonicalUrl);
 
     // 4. Update OpenGraph Tags
-    const updateOrCreateMeta = (property: string, content: string) => {
-      let meta = document.querySelector(`meta[property="${property}"]`);
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('property', property);
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', content);
-    };
-
-    updateOrCreateMeta('og:title', safeTitle);
-    updateOrCreateMeta('og:description', safeDescription);
-    updateOrCreateMeta('og:url', resolvedCanonicalUrl);
+    updateOrCreateMetaByProp('og:title', safeTitle);
+    updateOrCreateMetaByProp('og:description', safeDescription);
+    updateOrCreateMetaByProp('og:type', ogType);
+    updateOrCreateMetaByProp('og:url', resolvedCanonicalUrl);
+    updateOrCreateMetaByProp('og:image', resolvedOgImage);
 
     // 5. Update Twitter Meta
-    const updateTwitterMeta = (name: string, content: string) => {
-      let meta = document.querySelector(`meta[name="${name}"]`);
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', name);
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', content);
-    };
-
-    updateTwitterMeta('twitter:title', safeTitle);
-    updateTwitterMeta('twitter:description', safeDescription);
+    updateOrCreateMetaByName('twitter:title', safeTitle);
+    updateOrCreateMetaByName('twitter:description', safeDescription);
+    updateOrCreateMetaByName('twitter:image', resolvedOgImage);
 
     // 6. Inject Schema JSON-LD if provided
     const activeSchema = schema || structuredData;
@@ -109,7 +124,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         existing.remove();
       }
     };
-  }, [title, description, canonicalPath, canonicalUrlProp, schema, structuredData]);
+  }, [title, description, canonicalPath, canonicalUrlProp, robots, ogType, ogImage, schema, structuredData]);
 
   return null;
 };
