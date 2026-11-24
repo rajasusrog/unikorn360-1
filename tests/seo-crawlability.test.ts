@@ -5,6 +5,7 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { app } from '../server.js';
+import { onRequest as cloudflareMiddleware, PagesAssetsBinding } from '../functions/_middleware.js';
 import { UNIKORN_FOUR_PRODUCTS } from '../src/data/productsData.js';
 import { RESOURCE_GUIDES } from '../src/data/resourcesData.js';
 import { SEED_DIVISIONS, SEED_SERVICES } from '../src/data/seedData.js';
@@ -258,6 +259,8 @@ async function runSuite() {
         const notFoundHtml = fs.readFileSync(path.join(distDir, '404.html'), 'utf-8');
         assert.ok(notFoundHtml.includes('content="noindex, nofollow"'));
         assert.ok(notFoundHtml.includes('Page Not Found'));
+        assert.ok(!notFoundHtml.includes('rel="canonical"'), '404.html must omit canonical link');
+        assert.ok(!notFoundHtml.includes('__404__'), '404.html must not contain synthetic __404__ path');
 
         for (const utilPath of ['/admin', '/admin/login', '/creators/apply', '/creators/success']) {
           const htmlFile = path.join(distDir, utilPath.replace(/^\/+/, ''), 'index.html');
@@ -281,6 +284,7 @@ async function runSuite() {
           const out = ssrModule.render(invalidPath);
           assert.strictEqual(out.statusCode, 404, `Expected SSR 404 for ${invalidPath}`);
           assert.strictEqual(out.meta.robots, 'noindex, nofollow');
+          assert.strictEqual(out.meta.canonicalUrl, '');
         }
       }),
 
@@ -297,6 +301,103 @@ async function runSuite() {
         assert.ok(headers.includes('X-Content-Type-Options: nosniff'));
         assert.ok(headers.includes('/admin'));
         assert.ok(headers.includes('X-Robots-Tag: noindex, nofollow'));
+      }),
+
+      record('9. Cloudflare Pages _middleware.ts enforces apex 301, legacy 301, direct 200 (zero 308), and 404', async () => {
+        const mockAssets: PagesAssetsBinding = {
+          async fetch(input: Request | URL | string) {
+            const reqUrl = typeof input === 'string' ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+            const rel = reqUrl.pathname;
+            if (rel === '/robots.txt' || rel === '/sitemap.xml' || rel === '/llms.txt') {
+              const file = path.join(distDir, rel.slice(1));
+              return new Response(fs.readFileSync(file, 'utf-8'), {
+                status: 200,
+                headers: { 'Content-Type': rel.endsWith('.xml') ? 'application/xml; charset=utf-8' : 'text/plain; charset=utf-8' }
+              });
+            }
+            if (rel === '/404' || rel === '/404.html') {
+              return new Response(fs.readFileSync(path.join(distDir, '404.html'), 'utf-8'), {
+                status: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8' }
+              });
+            }
+            if (rel === '/') {
+              return new Response(fs.readFileSync(path.join(distDir, 'index.html'), 'utf-8'), {
+                status: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8' }
+              });
+            }
+            // Simulate Cloudflare Pages returning 308 when trailing slash is omitted on folder index.html
+            if (!rel.endsWith('/')) {
+              return new Response(null, {
+                status: 308,
+                headers: { Location: `${rel}/` }
+              });
+            }
+            const clean = rel.replace(/^\/+|\/+$/g, '');
+            const htmlFile = path.join(distDir, clean, 'index.html');
+            if (fs.existsSync(htmlFile)) {
+              return new Response(fs.readFileSync(htmlFile, 'utf-8'), {
+                status: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8' }
+              });
+            }
+            return new Response('Not Found', { status: 404 });
+          }
+        };
+
+        const runEdge = async (targetUrl: string, method = 'GET') => {
+          const req = new Request(targetUrl, { method });
+          return cloudflareMiddleware({
+            request: req,
+            env: { ASSETS: mockAssets },
+            next: () => mockAssets.fetch(req)
+          });
+        };
+
+        // Apex -> www 301
+        const apexRes = await runEdge('https://unikorn360.com/services?utm=audit');
+        assert.strictEqual(apexRes.status, 301);
+        assert.strictEqual(apexRes.headers.get('location'), 'https://www.unikorn360.com/services?utm=audit');
+
+        // Legacy slug 301
+        const legacyRes = await runEdge('https://www.unikorn360.com/build?ref=nav');
+        assert.strictEqual(legacyRes.status, 301);
+        assert.strictEqual(legacyRes.headers.get('location'), 'https://www.unikorn360.com/services/websites-software?ref=nav');
+
+        // Trailing slash strip 301
+        const slashRes = await runEdge('https://www.unikorn360.com/services/');
+        assert.strictEqual(slashRes.status, 301);
+        assert.strictEqual(slashRes.headers.get('location'), 'https://www.unikorn360.com/services');
+
+        // Canonical routes return 200 directly (no 308 bounce!)
+        for (const p of ['/', '/services', '/services/websites-software', '/services/websites-software/website-development']) {
+          const res = await runEdge(`https://www.unikorn360.com${p}`);
+          assert.strictEqual(res.status, 200, `Expected direct 200 for ${p}, got ${res.status}`);
+          const body = await res.text();
+          assert.ok(body.includes('<h1'), `Missing <h1> on ${p}`);
+        }
+
+        // robots.txt & sitemap.xml pass through cleanly
+        const robotsRes = await runEdge('https://www.unikorn360.com/robots.txt');
+        assert.strictEqual(robotsRes.status, 200);
+        assert.ok((await robotsRes.text()).includes('Sitemap: https://www.unikorn360.com/sitemap.xml'));
+
+        const sitemapRes = await runEdge('https://www.unikorn360.com/sitemap.xml');
+        assert.strictEqual(sitemapRes.status, 200);
+        assert.ok((await sitemapRes.text()).includes('<urlset'));
+
+        // Utility route sets X-Robots-Tag: noindex, nofollow
+        const adminRes = await runEdge('https://www.unikorn360.com/admin');
+        assert.strictEqual(adminRes.status, 200);
+        assert.strictEqual(adminRes.headers.get('x-robots-tag'), 'noindex, nofollow');
+
+        // Unknown route returns genuine 404 + noindex
+        const notFoundRes = await runEdge('https://www.unikorn360.com/definitely-not-found');
+        assert.strictEqual(notFoundRes.status, 404);
+        assert.strictEqual(notFoundRes.headers.get('x-robots-tag'), 'noindex, nofollow');
+        const nfBody = await notFoundRes.text();
+        assert.ok(nfBody.includes('Page Not Found'));
       })
     ];
 

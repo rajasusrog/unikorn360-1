@@ -28,7 +28,7 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({
       <SEOHead
         title="Page Not Found | UNIKORN360 Business Intelligence"
         description="The requested page could not be found on UNIKORN360 Business Intelligence. Explore our services, software products, solutions, and resources."
-        canonicalPath={requestedPath || '/'}
+        omitCanonical
         robots="noindex, nofollow"
       />
 
@@ -43,11 +43,17 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({
         </h1>
 
         <p className="mt-4 text-sm sm:text-base text-[#505B66] leading-relaxed max-w-xl mx-auto">
-          The URL{' '}
-          <code className="px-2 py-0.5 bg-[#F5F6F7] border border-[#D8DEE5] rounded text-xs font-mono text-[#214E78] break-all">
-            {requestedPath}
-          </code>{' '}
-          does not match any active page on UNIKORN360 Business Intelligence.
+          {requestedPath && requestedPath !== '/' && requestedPath !== '/__404__' ? (
+            <>
+              The URL{' '}
+              <code className="px-2 py-0.5 bg-[#F5F6F7] border border-[#D8DEE5] rounded text-xs font-mono text-[#214E78] break-all">
+                {requestedPath}
+              </code>{' '}
+              does not match any active page on UNIKORN360 Business Intelligence.
+            </>
+          ) : (
+            <>The requested URL does not match any active page on UNIKORN360 Business Intelligence.</>
+          )}
         </p>
 
         {/* Primary Action */}
@@ -67,7 +73,13 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({
           {onOpenReviewModal && (
             <button
               type="button"
-              onClick={() => onOpenReviewModal(`Assistance finding page: ${requestedPath}`)}
+              onClick={() =>
+                onOpenReviewModal(
+                  requestedPath && requestedPath !== '/__404__'
+                    ? `Assistance finding page: ${requestedPath}`
+                    : 'Assistance finding a page on UNIKORN360'
+                )
+              }
               className="px-6 py-3 bg-[#F5F6F7] hover:bg-[#E9EDF0] text-[#30363D] border border-[#D8DEE5] text-xs font-bold uppercase tracking-wider rounded transition-colors inline-flex items-center gap-2 cursor-pointer"
             >
               <MessageSquare className="w-4 h-4 text-[#214E78]" />

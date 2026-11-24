@@ -6,6 +6,7 @@ export interface SEOHeadProps {
   description: string;
   canonicalPath?: string;
   canonicalUrl?: string;
+  omitCanonical?: boolean;
   robots?: string;
   ogType?: 'website' | 'article';
   ogImage?: string;
@@ -21,6 +22,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   description = '',
   canonicalPath,
   canonicalUrl: canonicalUrlProp,
+  omitCanonical = false,
   robots = DEFAULT_ROBOTS,
   ogType = 'website',
   ogImage = DEFAULT_OG_IMAGE,
@@ -82,20 +84,30 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     updateOrCreateMetaByName('description', safeDescription);
     updateOrCreateMetaByName('robots', robots || DEFAULT_ROBOTS);
 
-    // 3. Update Canonical Link
+    // 3. Update or Remove Canonical Link
     let canonicalLink = document.querySelector('link[rel="canonical"]');
-    if (!canonicalLink) {
-      canonicalLink = document.createElement('link');
-      canonicalLink.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonicalLink);
+    if (omitCanonical) {
+      if (canonicalLink) {
+        canonicalLink.remove();
+      }
+      const existingOgUrl = document.querySelector('meta[property="og:url"]');
+      if (existingOgUrl) {
+        existingOgUrl.remove();
+      }
+    } else {
+      if (!canonicalLink) {
+        canonicalLink = document.createElement('link');
+        canonicalLink.setAttribute('rel', 'canonical');
+        document.head.appendChild(canonicalLink);
+      }
+      canonicalLink.setAttribute('href', resolvedCanonicalUrl);
+      updateOrCreateMetaByProp('og:url', resolvedCanonicalUrl);
     }
-    canonicalLink.setAttribute('href', resolvedCanonicalUrl);
 
     // 4. Update OpenGraph Tags
     updateOrCreateMetaByProp('og:title', safeTitle);
     updateOrCreateMetaByProp('og:description', safeDescription);
     updateOrCreateMetaByProp('og:type', ogType);
-    updateOrCreateMetaByProp('og:url', resolvedCanonicalUrl);
     updateOrCreateMetaByProp('og:image', resolvedOgImage);
 
     // 5. Update Twitter Meta
@@ -124,7 +136,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         existing.remove();
       }
     };
-  }, [title, description, canonicalPath, canonicalUrlProp, robots, ogType, ogImage, schema, structuredData]);
+  }, [title, description, canonicalPath, canonicalUrlProp, omitCanonical, robots, ogType, ogImage, schema, structuredData]);
 
   return null;
 };

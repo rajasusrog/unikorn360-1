@@ -732,7 +732,7 @@ export function resolvePublicRouteMeta(
     title: 'Page Not Found | UNIKORN360 Business Intelligence',
     description:
       'The requested page could not be found on UNIKORN360 Business Intelligence. Explore our services, software products, solutions, and resources.',
-    canonicalUrl: `${CANONICAL_ORIGIN}${pathname}`,
+    canonicalUrl: '',
     robots: NOINDEX_ROBOTS,
     ogType: 'website',
     ogImage: DEFAULT_OG_IMAGE,
@@ -767,13 +767,25 @@ function escapeJsonForScript(obj: any): string {
 export function buildSsrHeadMarkup(meta: RouteSeoMetadata): string {
   const lines: string[] = [
     `<title>${escapeHtmlAttr(meta.title)}</title>`,
-    `    <meta name="description" content="${escapeHtmlAttr(meta.description)}" />`,
-    `    <link rel="canonical" href="${escapeHtmlAttr(meta.canonicalUrl)}" />`,
+    `    <meta name="description" content="${escapeHtmlAttr(meta.description)}" />`
+  ];
+
+  if (meta.canonicalUrl) {
+    lines.push(`    <link rel="canonical" href="${escapeHtmlAttr(meta.canonicalUrl)}" />`);
+  }
+
+  lines.push(
     `    <meta name="robots" content="${escapeHtmlAttr(meta.robots)}" />`,
     `    <meta property="og:title" content="${escapeHtmlAttr(meta.title)}" />`,
     `    <meta property="og:description" content="${escapeHtmlAttr(meta.description)}" />`,
-    `    <meta property="og:type" content="${meta.ogType}" />`,
-    `    <meta property="og:url" content="${escapeHtmlAttr(meta.canonicalUrl)}" />`,
+    `    <meta property="og:type" content="${meta.ogType}" />`
+  );
+
+  if (meta.canonicalUrl) {
+    lines.push(`    <meta property="og:url" content="${escapeHtmlAttr(meta.canonicalUrl)}" />`);
+  }
+
+  lines.push(
     `    <meta property="og:site_name" content="Unikorn360 Business Intelligence" />`,
     `    <meta property="og:locale" content="en_IN" />`,
     `    <meta property="og:image" content="${escapeHtmlAttr(meta.ogImage)}" />`,
@@ -781,7 +793,7 @@ export function buildSsrHeadMarkup(meta: RouteSeoMetadata): string {
     `    <meta name="twitter:title" content="${escapeHtmlAttr(meta.title)}" />`,
     `    <meta name="twitter:description" content="${escapeHtmlAttr(meta.description)}" />`,
     `    <meta name="twitter:image" content="${escapeHtmlAttr(meta.ogImage)}" />`
-  ];
+  );
 
   if (meta.schema) {
     lines.push(
