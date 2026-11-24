@@ -128,11 +128,20 @@ export interface ServicesServiceOptions {
   fetchImpl?: typeof fetch;
 }
 
+export interface PublishedCatalogData {
+  divisions: ServiceDivision[];
+  services: ServiceCatalogItem[];
+  relations: ServiceRelation[];
+  totalPublishedServices: number;
+}
+
 /**
  * Connected Supabase Service Catalogue & Session Layer.
  *
  * - Performs all reads and writes for `service_divisions`, `service_catalog`,
- *   and `service_relations` directly against Supabase (PostgreSQL + RLS).
+ *   and `service_relations` directly against Supabase (PostgreSQL + RLS),
+ *   or via `/api/catalog/published` for public published-only reads when
+ *   browser Supabase keys are absent.
  * - Uses database UUIDs for record IDs and slugs for URLs.
  * - Never falls back to localStorage or static seed arrays on read or write.
  * - Never resets or reseeds records when record counts change.
@@ -186,6 +195,82 @@ export class ResilientServicesService {
       );
     }
     return this.dbClient;
+  }
+
+  private canUsePublicCatalogEndpoint(includeDrafts: boolean): boolean {
+    return (
+      !includeDrafts &&
+      (!this.dbClient || typeof this.dbClient.from !== 'function') &&
+      typeof window !== 'undefined'
+    );
+  }
+
+  private async fetchPublishedCatalogFromEndpoint(): Promise<PublishedCatalogData> {
+    const res = await this.fetchImpl('/api/catalog/published', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(
+        payload?.error || `Failed to load published service catalogue (HTTP ${res.status}).`
+      );
+    }
+
+    const rawDivs = Array.isArray(payload?.divisions) ? (payload.divisions as ServiceDivision[]) : [];
+    const rawSvcs = Array.isArray(payload?.services) ? (payload.services as ServiceCatalogItem[]) : [];
+    const rawRels = Array.isArray(payload?.relations) ? (payload.relations as ServiceRelation[]) : [];
+
+    // Defense-in-depth: strictly allow published records only
+    const publishedDivisions = rawDivs
+      .filter((d) => d.status === 'published')
+      .sort((a, b) => a.display_order - b.display_order);
+    const publishedDivIds = new Set(publishedDivisions.map((d) => d.id));
+
+    const publishedServices = rawSvcs
+      .filter((s) => s.status === 'published' && publishedDivIds.has(s.division_id))
+      .sort((a, b) => a.display_order - b.display_order);
+
+    const publishedServiceIds = new Set(publishedServices.map((s) => s.id));
+    const countByDiv = new Map<string, number>();
+    for (const s of publishedServices) {
+      countByDiv.set(s.division_id, (countByDiv.get(s.division_id) || 0) + 1);
+    }
+
+    const divisions = publishedDivisions.map((div) => ({
+      ...div,
+      published_service_count: countByDiv.get(div.id) || 0
+    }));
+
+    const relations = rawRels.filter(
+      (r) => publishedServiceIds.has(r.service_id) && publishedServiceIds.has(r.related_service_id)
+    );
+
+    return {
+      divisions,
+      services: publishedServices,
+      relations,
+      totalPublishedServices: publishedServices.length
+    };
+  }
+
+  public async getPublishedCatalog(): Promise<PublishedCatalogData> {
+    if (this.canUsePublicCatalogEndpoint(false)) {
+      return this.fetchPublishedCatalogFromEndpoint();
+    }
+
+    const [divisions, services] = await Promise.all([
+      this.getDivisions({ includeDrafts: false }),
+      this.getAllPublishedServices()
+    ]);
+
+    return {
+      divisions,
+      services,
+      relations: [],
+      totalPublishedServices: services.length
+    };
   }
 
   private async requireCatalogAdmin(): Promise<{
@@ -426,6 +511,11 @@ export class ResilientServicesService {
       await this.requireCatalogAdmin();
     }
 
+    if (this.canUsePublicCatalogEndpoint(includeDrafts)) {
+      const snapshot = await this.fetchPublishedCatalogFromEndpoint();
+      return snapshot.divisions;
+    }
+
     const db = this.getRequiredDb();
     let divQuery = db
       .from('service_divisions')
@@ -475,6 +565,20 @@ export class ResilientServicesService {
     const includeDrafts = options?.includeDrafts ?? false;
     if (includeDrafts) {
       await this.requireCatalogAdmin();
+    }
+
+    if (this.canUsePublicCatalogEndpoint(includeDrafts)) {
+      const snapshot = await this.fetchPublishedCatalogFromEndpoint();
+      const division = snapshot.divisions.find((d) => d.slug === normalizedSlug);
+      if (!division) return null;
+      const services = snapshot.services.filter((s) => s.division_id === division.id);
+      return {
+        division: {
+          ...division,
+          published_service_count: services.length
+        },
+        services
+      };
     }
 
     const db = this.getRequiredDb();
@@ -542,6 +646,39 @@ export class ResilientServicesService {
     const includeDrafts = options?.includeDrafts ?? false;
     if (includeDrafts) {
       await this.requireCatalogAdmin();
+    }
+
+    if (this.canUsePublicCatalogEndpoint(includeDrafts)) {
+      const snapshot = await this.fetchPublishedCatalogFromEndpoint();
+      const division = snapshot.divisions.find((d) => d.slug === divisionSlug.toLowerCase().trim());
+      if (!division) return null;
+      const divisionServices = snapshot.services.filter((s) => s.division_id === division.id);
+      const normalizedServiceSlug = serviceSlug.toLowerCase().trim();
+      const service = divisionServices.find((s) => s.slug === normalizedServiceSlug);
+      if (!service) return null;
+
+      const byId = new Map<string, ServiceCatalogItem>(snapshot.services.map((s) => [s.id, s]));
+      const relatedServices: ServiceCatalogItem[] = [];
+      for (const rel of snapshot.relations.filter((r) => r.service_id === service.id)) {
+        const match = byId.get(rel.related_service_id);
+        if (match && match.id !== service.id) {
+          relatedServices.push(match);
+        }
+      }
+      if (relatedServices.length < 3) {
+        for (const sibling of divisionServices) {
+          if (sibling.id !== service.id && !relatedServices.some((r) => r.id === sibling.id)) {
+            relatedServices.push(sibling);
+            if (relatedServices.length >= 3) break;
+          }
+        }
+      }
+
+      return {
+        service,
+        division,
+        relatedServices
+      };
     }
 
     const divResult = await this.getDivisionBySlug(divisionSlug, options);
@@ -631,6 +768,11 @@ export class ResilientServicesService {
   }
 
   public async getAllPublishedServices(): Promise<ServiceCatalogItem[]> {
+    if (this.canUsePublicCatalogEndpoint(false)) {
+      const snapshot = await this.fetchPublishedCatalogFromEndpoint();
+      return snapshot.services;
+    }
+
     const db = this.getRequiredDb();
 
     const [divRes, svcRes] = await Promise.all([

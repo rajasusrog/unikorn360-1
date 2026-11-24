@@ -81,38 +81,38 @@ export const PRODUCT_DESIGNS_BY_SLUG: Record<ProductSlug, ProductDesignAsset> = 
   invoicepro360: {
     slug: 'invoicepro360',
     src: '/assets/products/invoicepro360-proposed-ui.webp',
-    alt: 'InvoicePro360 Proposed Interface — Invoice Editor & Live Preview Workspace',
+    alt: 'InvoicePro360 Design Preview — Invoice Editor & Live Preview Workspace',
     width: 1672,
     height: 940,
-    badgeLabel: 'Proposed interface',
-    detailCaption: 'Proposed interface — design preview.'
+    badgeLabel: 'Design preview',
+    detailCaption: 'Design preview — illustrative workspace interface.'
   },
   deeds360: {
     slug: 'deeds360',
     src: '/assets/products/deeds360-proposed-ui.webp',
-    alt: 'Deeds360 Proposed Interface — Bilingual Property Deed Drafting Workspace',
+    alt: 'Deeds360 Design Preview — Bilingual Property Deed Drafting Workspace',
     width: 1672,
     height: 941,
-    badgeLabel: 'Proposed interface',
-    detailCaption: 'Proposed interface — design preview.'
+    badgeLabel: 'Design preview',
+    detailCaption: 'Design preview — illustrative workspace interface.'
   },
   property360: {
     slug: 'property360',
     src: '/assets/products/property360-proposed-ui.webp',
-    alt: 'Property360 Proposed Interface — Case Review & Land Revenue Dossier Workspace',
+    alt: 'Property360 Design Preview — Case Review & Land Revenue Dossier Workspace',
     width: 1672,
     height: 940,
-    badgeLabel: 'Proposed interface',
-    detailCaption: 'Proposed interface — design preview.'
+    badgeLabel: 'Design preview',
+    detailCaption: 'Design preview — illustrative workspace interface.'
   },
   advocate360: {
     slug: 'advocate360',
     src: '/assets/products/advocate360-proposed-ui.webp',
-    alt: 'Advocate360 Proposed Interface — Daily Legal Workspace & Today Dashboard',
+    alt: 'Advocate360 Design Preview — Daily Legal Workspace & Today Dashboard',
     width: 1672,
     height: 941,
-    badgeLabel: 'Proposed interface',
-    detailCaption: 'Proposed interface — design preview.'
+    badgeLabel: 'Design preview',
+    detailCaption: 'Design preview — illustrative workspace interface.'
   }
 };
 

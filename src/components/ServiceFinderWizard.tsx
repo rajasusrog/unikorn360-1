@@ -151,33 +151,33 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
   const recommendation = step === 4 ? getRecommendation() : null;
 
   return (
-    <section className="py-16 lg:py-20 bg-white border-b border-[#D8DEE5]" id="service-finder">
+    <section className="py-16 lg:py-20 bg-white border-t border-[#E4DFD5]" id="service-finder">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#F5F6F7] border border-[#D8DEE5] rounded-full text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.15em] mb-2">
-            <Compass className="w-3.5 h-3.5 text-[#214E78]" />
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#C49A36] uppercase tracking-wider mb-2">
+            <Compass className="w-3.5 h-3.5 text-[#0B1426]" />
             <span>Interactive Service Finder</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#30363D] tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#0B1426] tracking-tight">
             Find the Right System or Service for Your Business
           </h2>
-          <p className="mt-2 text-xs sm:text-sm text-[#505B66]">
+          <p className="mt-2 text-xs sm:text-sm text-[#526176]">
             Answer 3 quick questions about your business, software requirements, and current bottlenecks to see tailored recommendations.
           </p>
 
           {/* Progress Indicator */}
           <div className="flex items-center justify-center gap-2 mt-6">
             {[1, 2, 3, 4].map((i) => (
-              <div 
-                key={i} 
+              <div
+                key={i}
                 className={`h-1.5 rounded-full transition-all ${
-                  step === i 
-                    ? 'w-10 bg-[#214E78]' 
-                    : step > i 
-                    ? 'w-5 bg-[#A57C35]' 
-                    : 'w-4 bg-[#D8DEE5]'
+                  step === i
+                    ? 'w-10 bg-[#0B1426]'
+                    : step > i
+                    ? 'w-5 bg-[#C49A36]'
+                    : 'w-4 bg-[#E4DFD5]'
                 }`}
               />
             ))}
@@ -185,17 +185,17 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
         </div>
 
         {/* Wizard Card Container */}
-        <div className="bg-[#F5F6F7] border border-[#D8DEE5] rounded-lg p-6 sm:p-8 shadow-sm">
-          
+        <div className="bg-[#F6F5F1] border border-[#E4DFD5] rounded-xl p-6 sm:p-8 shadow-xs">
+
           {/* STEP 1: Primary Capability / Area */}
           {step === 1 && (
             <div className="space-y-4">
-              <div className="border-b border-[#D8DEE5] pb-3 flex items-center justify-between">
+              <div className="border-b border-[#E4DFD5] pb-3 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#C49A36]">
                     Step 1 of 3
                   </span>
-                  <h3 className="text-base sm:text-lg font-bold text-[#30363D]">
+                  <h3 className="text-base sm:text-lg font-bold text-[#0B1426]">
                     What primary system or capability do you want to build or improve?
                   </h3>
                 </div>
@@ -206,18 +206,19 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                   const Icon = item.icon;
                   return (
                     <button
+                      type="button"
                       key={item.id}
                       onClick={() => handleSelectArea(item.id)}
-                      className="p-3.5 text-left bg-white border border-[#D8DEE5] hover:border-[#214E78] rounded transition-all group cursor-pointer flex items-start gap-3 shadow-2xs hover:shadow-xs"
+                      className="p-3.5 text-left bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-all group cursor-pointer flex items-start gap-3 shadow-2xs hover:shadow-xs"
                     >
-                      <div className="p-2 bg-[#F5F6F7] border border-[#D8DEE5] text-[#214E78] rounded group-hover:bg-[#214E78] group-hover:text-white transition-colors shrink-0">
+                      <div className="p-2 bg-[#F6F5F1] border border-[#E4DFD5] text-[#0B1426] rounded-lg group-hover:bg-[#0B1426] group-hover:text-white transition-colors shrink-0">
                         <Icon className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
+                        <p className="text-xs font-bold text-[#0B1426]">
                           {item.label}
                         </p>
-                        <p className="text-[11px] text-[#505B66] mt-0.5 leading-snug">
+                        <p className="text-xs text-[#526176] mt-0.5 leading-snug">
                           {item.desc}
                         </p>
                       </div>
@@ -231,18 +232,19 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
           {/* STEP 2: Business Type */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="border-b border-[#D8DEE5] pb-3 flex items-center justify-between">
+              <div className="border-b border-[#E4DFD5] pb-3 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#C49A36]">
                     Step 2 of 3
                   </span>
-                  <h3 className="text-base sm:text-lg font-bold text-[#30363D]">
+                  <h3 className="text-base sm:text-lg font-bold text-[#0B1426]">
                     What industry / sector does your business operate in?
                   </h3>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setStep(1)}
-                  className="text-xs text-[#214E78] hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-semibold text-[#0B1426] hover:text-[#C49A36] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   ← Back
                 </button>
@@ -251,14 +253,15 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 {BUSINESS_TYPES.map((b) => (
                   <button
+                    type="button"
                     key={b.id}
                     onClick={() => handleSelectBusinessType(b.id)}
-                    className="p-3.5 text-left bg-white border border-[#D8DEE5] hover:border-[#214E78] rounded transition-all group cursor-pointer shadow-2xs hover:shadow-xs"
+                    className="p-3.5 text-left bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-all group cursor-pointer shadow-2xs hover:shadow-xs"
                   >
-                    <p className="text-xs font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
+                    <p className="text-xs font-bold text-[#0B1426]">
                       {b.label}
                     </p>
-                    <p className="text-[11px] text-[#505B66] mt-0.5 leading-snug">
+                    <p className="text-xs text-[#526176] mt-0.5 leading-snug">
                       {b.desc}
                     </p>
                   </button>
@@ -270,18 +273,19 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
           {/* STEP 3: Operational Bottleneck */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="border-b border-[#D8DEE5] pb-3 flex items-center justify-between">
+              <div className="border-b border-[#E4DFD5] pb-3 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#C49A36]">
                     Step 3 of 3
                   </span>
-                  <h3 className="text-base sm:text-lg font-bold text-[#30363D]">
+                  <h3 className="text-base sm:text-lg font-bold text-[#0B1426]">
                     What is your biggest operational bottleneck right now?
                   </h3>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setStep(2)}
-                  className="text-xs text-[#214E78] hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-semibold text-[#0B1426] hover:text-[#C49A36] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   ← Back
                 </button>
@@ -290,14 +294,15 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 {BOTTLENECKS.map((btn) => (
                   <button
+                    type="button"
                     key={btn.id}
                     onClick={() => handleSelectBottleneck(btn.id)}
-                    className="p-3.5 text-left bg-white border border-[#D8DEE5] hover:border-[#214E78] rounded transition-all group cursor-pointer shadow-2xs hover:shadow-xs"
+                    className="p-3.5 text-left bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-all group cursor-pointer shadow-2xs hover:shadow-xs"
                   >
-                    <p className="text-xs font-bold text-[#30363D] group-hover:text-[#214E78] transition-colors">
+                    <p className="text-xs font-bold text-[#0B1426]">
                       {btn.label}
                     </p>
-                    <p className="text-[11px] text-[#505B66] mt-0.5 leading-snug">
+                    <p className="text-xs text-[#526176] mt-0.5 leading-snug">
                       {btn.desc}
                     </p>
                   </button>
@@ -309,61 +314,64 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
           {/* STEP 4: Results & Recommendations */}
           {step === 4 && recommendation && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-[#D8DEE5] pb-3">
+              <div className="flex items-center justify-between border-b border-[#E4DFD5] pb-3">
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#A57C35] block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#C49A36] block">
                     Recommended Architecture
                   </span>
-                  <h3 className="text-lg font-bold text-[#30363D]">
+                  <h3 className="text-lg font-bold text-[#0B1426]">
                     {recommendation.pathwayTitle}
                   </h3>
                 </div>
                 <button
+                  type="button"
                   onClick={handleReset}
-                  className="text-xs text-[#505B66] hover:text-[#214E78] flex items-center gap-1 cursor-pointer bg-white px-2.5 py-1 rounded border border-[#D8DEE5]"
+                  className="text-xs text-[#526176] hover:text-[#0B1426] flex items-center gap-1 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-[#E4DFD5]"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Start Over</span>
                 </button>
               </div>
 
-              <div className="p-4 bg-white border border-[#D8DEE5] rounded">
-                <p className="text-xs text-[#505B66] leading-relaxed">
+              <div className="p-4 bg-white border border-[#E4DFD5] rounded-lg">
+                <p className="text-xs text-[#263449] leading-relaxed">
                   {recommendation.summaryRationale}
                 </p>
               </div>
 
               <div>
-                <h4 className="text-xs font-bold text-[#30363D] uppercase tracking-wider mb-3">
-                  Recommended Services &amp; Systems:
+                <h4 className="text-xs font-bold text-[#0B1426] uppercase tracking-wider mb-3">
+                  Recommended Services &amp; Systems
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {recommendation.matchedServices.map((service) => (
-                    <div 
-                      key={service.id} 
-                      className="p-4 bg-white border border-[#D8DEE5] rounded space-y-2 hover:border-[#214E78] transition-colors"
+                    <div
+                      key={service.id}
+                      className="p-4 bg-white border border-[#E4DFD5] rounded-lg space-y-2 hover:border-[#0B1426] transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <h5 className="text-xs font-bold text-[#30363D]">
+                        <h5 className="text-xs font-bold text-[#0B1426]">
                           {service.title}
                         </h5>
-                        <span className="text-[9px] font-mono font-bold uppercase text-[#214E78] px-1.5 py-0.5 bg-[#E9EDF0] rounded shrink-0">
+                        <span className="text-[10px] font-semibold uppercase text-[#0B1426] px-2 py-0.5 bg-[#EFECE5] rounded shrink-0">
                           {service.serviceType === 'custom-development' ? 'Custom Dev' : service.serviceType === 'consulting' ? 'Consulting' : 'Support'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[#505B66] line-clamp-2">
+                      <p className="text-xs text-[#526176] line-clamp-2">
                         {service.subtitle}
                       </p>
-                      <div className="pt-2 flex items-center justify-between text-xs border-t border-[#D8DEE5]">
+                      <div className="pt-2 flex items-center justify-between text-xs border-t border-[#E4DFD5]">
                         <button
+                          type="button"
                           onClick={() => onSelectService(service)}
-                          className="text-[#214E78] hover:underline font-semibold text-[11px]"
+                          className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-semibold text-xs cursor-pointer"
                         >
                           View Scope →
                         </button>
                         <button
+                          type="button"
                           onClick={() => onOpenQuoteModal(service)}
-                          className="px-3 py-1 bg-[#214E78] hover:bg-[#173858] text-white text-[10px] font-bold uppercase tracking-wider rounded"
+                          className="px-3 py-1.5 bg-[#0B1426] hover:bg-[#172744] text-white text-xs font-semibold rounded-lg cursor-pointer"
                         >
                           Get Quote
                         </button>
@@ -374,18 +382,19 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
               </div>
 
               {/* Action Banner */}
-              <div className="p-5 bg-white border border-[#D8DEE5] rounded flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="p-5 bg-white border border-[#E4DFD5] rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <h4 className="text-xs font-bold text-[#30363D]">
+                  <h4 className="text-xs font-bold text-[#0B1426]">
                     Ready to evaluate your exact specifications?
                   </h4>
-                  <p className="text-[11px] text-[#505B66]">
+                  <p className="text-xs text-[#526176]">
                     Book a no-cost initial assessment meeting to discuss timelines and written quotation.
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => onOpenReviewModal(`Finder Result: ${recommendation.pathwayTitle}`)}
-                  className="w-full sm:w-auto px-6 py-2.5 bg-[#214E78] hover:bg-[#173858] text-white text-xs font-bold uppercase tracking-wider rounded flex items-center justify-center gap-2 shadow-sm"
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#0B1426] hover:bg-[#172744] text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>Discuss This Project</span>

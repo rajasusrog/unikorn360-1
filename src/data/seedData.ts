@@ -2251,7 +2251,7 @@ export const SEED_PRODUCTS: ProductItem[] = [
     name: 'Deeds360',
     tagline: 'Property Deed Drafting & Registration Readiness',
     description:
-      'Bilingual (English and Tamil) property deed drafting, scanned parent-deed OCR extraction, draft comparison, and Tamil Nadu STAR 2.0 readiness workspace.',
+      'Bilingual (English and Tamil) property deed drafting, scanned parent-deed OCR extraction, draft comparison, and registration preparation workspace.',
     status: 'available',
     target_audience:
       'Document writers, property registration practitioners, and legal teams preparing Tamil Nadu registration deeds.',

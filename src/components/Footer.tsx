@@ -1,14 +1,13 @@
 import React from 'react';
-import { 
-  Shield, 
-  Phone, 
-  Mail, 
-  MapPin, 
-  ArrowRight, 
-  MessageSquare, 
+import {
+  Phone,
+  Mail,
+  MapPin,
+  MessageSquare,
   CheckCircle2
 } from 'lucide-react';
-import { BUSINESS_INFO, MAIN_CATEGORY_KEYS, CATEGORY_INFO } from '../data/servicesData';
+import { BUSINESS_INFO } from '../data/servicesData';
+import { usePublishedCatalog } from '../hooks/usePublishedCatalog';
 
 interface FooterProps {
   onNavigate?: (path: string) => void;
@@ -17,14 +16,24 @@ interface FooterProps {
   onSelectCategory?: (category: string) => void;
 }
 
+const FALLBACK_DIVISIONS = [
+  { slug: 'websites-software', name: 'Websites & Software' },
+  { slug: 'security-maintenance', name: 'Security & Maintenance' },
+  { slug: 'marketing-creator-campaigns', name: 'Marketing & Creator Campaigns' },
+  { slug: 'ai-automation-business-systems', name: 'AI, Automation & Business Systems' },
+  { slug: 'research-business-strategy', name: 'Research & Business Strategy' },
+  { slug: 'business-setup-documentation', name: 'Business Setup & Documentation' }
+];
+
 export const Footer: React.FC<FooterProps> = ({
   onNavigate = (path: string) => {
     if (typeof window !== 'undefined') window.location.pathname = path;
   },
   onOpenReviewModal,
-  onScrollToSection,
-  onSelectCategory
+  onScrollToSection
 }) => {
+  const { divisions, totalPublishedServices, status: catalogStatus } = usePublishedCatalog();
+
   const handleNav = (path: string, sectionId?: string) => {
     if (sectionId && typeof window !== 'undefined' && window.location.pathname === '/') {
       onScrollToSection(sectionId);
@@ -33,137 +42,121 @@ export const Footer: React.FC<FooterProps> = ({
     }
   };
 
+  const divisionLinks = divisions.length > 0 ? divisions : FALLBACK_DIVISIONS;
+  const directoryLabel =
+    catalogStatus === 'ready'
+      ? `Services Directory (${totalPublishedServices}) →`
+      : 'Services Directory →';
+
   return (
-    <footer className="bg-[#E9EDF0] text-[#505B66] border-t border-[#D8DEE5] pt-16 pb-20 lg:pb-16 relative">
+    <footer className="bg-[#EFECE5] text-[#263449] border-t border-[#E4DFD5] pt-16 pb-24 lg:pb-16 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-14 border-b border-[#D8DEE5]">
-          
-          {/* Col 1 & 2: Brand & Positioning */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white border border-[#D8DEE5] rounded-xl flex items-center justify-center p-1 shadow-sm shrink-0 overflow-hidden">
-                <img 
-                  src="/assets/aistudio/ChatGPT_Image_Oct_30__2026__06_57_30_AM_a8896c5c.png" 
-                  alt="UNIKORN360 Logo" 
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-14 border-b border-[#E4DFD5]">
+
+          {/* Col 1 & 2: Square BI Logo & Contact Details */}
+          <div className="lg:col-span-2 space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-24 h-24 sm:w-28 sm:h-28 bg-white border border-[#E4DFD5] rounded-xl flex items-center justify-center p-1.5 shadow-xs shrink-0 overflow-hidden">
+                <img
+                  src="/assets/brand/unikorn360-bi-square-v1.png"
+                  alt="UNIKORN360 Business Intelligence — Intelligent Systems. Real-World Impact."
                   className="w-full h-full object-contain"
                 />
               </div>
-              <div>
-                <span className="text-2xl sm:text-3xl font-serif font-bold tracking-wider text-[#30363D]">
-                  UNIKORN<span className="text-[#A57C35]">360</span>
+              <div className="pt-1">
+                <span className="text-xl font-bold tracking-tight text-[#0B1426] block">
+                  UNIKORN360 Business Intelligence
                 </span>
-                <p className="text-[11px] sm:text-xs uppercase tracking-[0.15em] text-[#505B66] font-semibold mt-0.5">
-                  Business Intelligence &amp; Technology Partner
+                <p className="text-xs text-[#526176] leading-relaxed mt-2 max-w-sm">
+                  Custom websites, workflow software, business intelligence dashboards, and statutory business setup for growing companies.
                 </p>
               </div>
             </div>
 
-            <p className="text-xs text-[#505B66] leading-relaxed max-w-md">
-              Websites, software, cybersecurity, marketing, creator campaigns, AI automation and business intelligence—built around your goals. Solutions for businesses, founders, teams and creators with remote consultations available.
-            </p>
-
-            <div className="pt-2 space-y-2 text-xs text-[#505B66]">
+            <div className="pt-1 space-y-2.5 text-xs text-[#263449]">
               <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-[#214E78] shrink-0 mt-0.5" />
+                <MapPin className="w-4 h-4 text-[#0B1426] shrink-0 mt-0.5" />
                 <span>
-                  <strong>Registered Office:</strong> {BUSINESS_INFO.address.full}
+                  <strong className="text-[#0B1426]">Registered Office:</strong> {BUSINESS_INFO.address.full}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-[#214E78] shrink-0" />
+                <Phone className="w-4 h-4 text-[#0B1426] shrink-0" />
                 <span>
-                  <strong>Helpline / WhatsApp:</strong>{' '}
-                  <a href={`tel:${BUSINESS_INFO.phoneRaw}`} className="text-[#214E78] hover:underline font-semibold">
+                  <strong className="text-[#0B1426]">Phone / WhatsApp:</strong>{' '}
+                  <a href={`tel:${BUSINESS_INFO.phoneRaw}`} className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-semibold">
                     {BUSINESS_INFO.phone}
                   </a>{' '}
-                  (Founder: {BUSINESS_INFO.founder})
+                  <span className="text-[#526176]">({BUSINESS_INFO.founder})</span>
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-[#214E78] shrink-0" />
+                <Mail className="w-4 h-4 text-[#0B1426] shrink-0" />
                 <span>
-                  <strong>Email:</strong>{' '}
-                  <a href={`mailto:${BUSINESS_INFO.email}`} className="text-[#214E78] hover:underline">
+                  <strong className="text-[#0B1426]">Email:</strong>{' '}
+                  <a href={`mailto:${BUSINESS_INFO.email}`} className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-medium">
                     {BUSINESS_INFO.email}
                   </a>
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-[11px] font-mono text-[#30363D]">
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#214E78] shrink-0" />
-                <span>GSTIN: {BUSINESS_INFO.gstin}</span>
+              <div className="flex items-center gap-2 text-xs text-[#263449]">
+                <CheckCircle2 className="w-4 h-4 text-[#C49A36] shrink-0" />
+                <span>GSTIN: <strong className="text-[#0B1426]">{BUSINESS_INFO.gstin}</strong></span>
               </div>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-1">
               <button
+                type="button"
                 onClick={() => onOpenReviewModal('Footer CTA Discussion')}
-                className="px-5 py-2.5 bg-[#214E78] hover:bg-[#173858] text-white font-bold text-[11px] uppercase tracking-[0.15em] rounded transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                className="px-5 py-2.5 bg-[#0B1426] hover:bg-[#172744] text-white font-semibold text-xs rounded-lg transition-colors inline-flex items-center gap-2 cursor-pointer shadow-xs"
               >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Discuss Your Project</span>
+                <MessageSquare className="w-4 h-4" />
+                <span>Discuss your project</span>
               </button>
             </div>
           </div>
 
-          {/* Col 3: The 6 Divisions */}
+          {/* Col 3: Services & Divisions */}
           <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-bold uppercase tracking-[0.15em] text-[#30363D]">
-              The 6 Divisions
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#0B1426]">
+              Services
             </h4>
-            <ul className="space-y-1.5 text-xs text-[#505B66]">
-              <li>
-                <a href="/services/websites-software" onClick={(e) => { e.preventDefault(); handleNav('/services/websites-software'); }} className="hover:text-[#214E78] transition-colors">
-                  Websites &amp; Software
-                </a>
-              </li>
-              <li>
-                <a href="/services/security-maintenance" onClick={(e) => { e.preventDefault(); handleNav('/services/security-maintenance'); }} className="hover:text-[#214E78] transition-colors">
-                  Security &amp; Maintenance
-                </a>
-              </li>
-              <li>
-                <a href="/services/marketing-creator-campaigns" onClick={(e) => { e.preventDefault(); handleNav('/services/marketing-creator-campaigns'); }} className="hover:text-[#214E78] transition-colors">
-                  Marketing &amp; Creator Campaigns
-                </a>
-              </li>
-              <li>
-                <a href="/services/ai-automation-business-systems" onClick={(e) => { e.preventDefault(); handleNav('/services/ai-automation-business-systems'); }} className="hover:text-[#214E78] transition-colors">
-                  AI Automation &amp; Systems
-                </a>
-              </li>
-              <li>
-                <a href="/services/research-business-strategy" onClick={(e) => { e.preventDefault(); handleNav('/services/research-business-strategy'); }} className="hover:text-[#214E78] transition-colors">
-                  Research &amp; Business Strategy
-                </a>
-              </li>
-              <li>
-                <a href="/services/business-setup-documentation" onClick={(e) => { e.preventDefault(); handleNav('/services/business-setup-documentation'); }} className="hover:text-[#214E78] transition-colors">
-                  Business Setup &amp; Documentation
-                </a>
-              </li>
-              <li className="pt-1.5 border-t border-[#D8DEE5]">
+            <ul className="space-y-2 text-xs text-[#526176]">
+              {divisionLinks.map((div) => (
+                <li key={div.slug}>
+                  <a
+                    href={`/services/${div.slug}`}
+                    onClick={(e) => { e.preventDefault(); handleNav(`/services/${div.slug}`); }}
+                    className="hover:text-[#0B1426] transition-colors"
+                  >
+                    {div.name}
+                  </a>
+                </li>
+              ))}
+              <li className="pt-2 border-t border-[#E4DFD5]">
                 <a
                   href="/services"
                   onClick={(e) => { e.preventDefault(); handleNav('/services'); }}
-                  className="text-[#214E78] hover:underline font-bold block"
+                  className="text-[#0B1426] hover:text-[#C49A36] font-semibold block"
                 >
-                  Full Services Directory (37) →
+                  {directoryLabel}
                 </a>
               </li>
             </ul>
           </div>
 
-          {/* Col 4: Solutions & Lifecycle */}
+          {/* Col 4: Solutions & Guides */}
           <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-bold uppercase tracking-[0.15em] text-[#30363D]">
-              Solutions &amp; Models
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#0B1426]">
+              Solutions &amp; Guides
             </h4>
-            <ul className="space-y-2 text-xs text-[#505B66]">
+            <ul className="space-y-2 text-xs text-[#526176]">
               <li>
                 <a
                   href="/solutions/start-a-business"
                   onClick={(e) => { e.preventDefault(); handleNav('/solutions/start-a-business'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  className="hover:text-[#0B1426] transition-colors"
                 >
                   Start a Business
                 </a>
@@ -172,7 +165,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/solutions/run-and-stay-compliant"
                   onClick={(e) => { e.preventDefault(); handleNav('/solutions/run-and-stay-compliant'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  className="hover:text-[#0B1426] transition-colors"
                 >
                   Run &amp; Stay Compliant
                 </a>
@@ -181,16 +174,16 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/solutions/get-business-funding"
                   onClick={(e) => { e.preventDefault(); handleNav('/solutions/get-business-funding'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  className="hover:text-[#0B1426] transition-colors"
                 >
-                  Get Business Funding &amp; Loans
+                  Business Funding &amp; DPRs
                 </a>
               </li>
               <li>
                 <a
                   href="/solutions/digitise-your-business"
                   onClick={(e) => { e.preventDefault(); handleNav('/solutions/digitise-your-business'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  className="hover:text-[#0B1426] transition-colors"
                 >
                   Digitise Your Business
                 </a>
@@ -199,76 +192,34 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/solutions/automate-your-business"
                   onClick={(e) => { e.preventDefault(); handleNav('/solutions/automate-your-business'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  className="hover:text-[#0B1426] transition-colors"
                 >
-                  Automate Workflows &amp; Ops
+                  Automate Operations
                 </a>
               </li>
-              <li>
+              <li className="pt-2 border-t border-[#E4DFD5]">
                 <a
-                  href="/solutions/expand-your-business"
-                  onClick={(e) => { e.preventDefault(); handleNav('/solutions/expand-your-business'); }}
-                  className="hover:text-[#214E78] transition-colors"
+                  href="/resources"
+                  onClick={(e) => { e.preventDefault(); handleNav('/resources'); }}
+                  className="text-[#0B1426] hover:text-[#C49A36] font-semibold block"
                 >
-                  Expand Your Business
+                  Resources &amp; Guides →
                 </a>
-              </li>
-              <li className="pt-2 border-t border-[#D8DEE5]">
-                <span className="text-[10px] text-[#505B66] uppercase tracking-wider block mb-1">
-                  Support Tiers:
-                </span>
-                <span className="text-xs font-semibold text-[#30363D]">VERIFY • PROTECT • GUARDIAN</span>
               </li>
             </ul>
           </div>
 
-          {/* Col 5: Knowledge Base & Company */}
+          {/* Col 5: Products & Company */}
           <div className="space-y-3">
-            <h4 className="text-[11px] font-mono font-bold uppercase tracking-[0.15em] text-[#30363D]">
-              Resources &amp; Company
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#0B1426]">
+              Products &amp; Company
             </h4>
-            <ul className="space-y-2 text-xs text-[#505B66]">
+            <ul className="space-y-2 text-xs text-[#526176]">
               <li>
-                <a
-                  href="/resources/msme-business-automation-roadmap"
-                  onClick={(e) => { e.preventDefault(); handleNav('/resources/msme-business-automation-roadmap'); }}
-                  className="hover:text-[#214E78] transition-colors"
-                >
-                  Business Automation Roadmap
-                </a>
-              </li>
-              <li>
-                <a
-                  href="/resources/dpr-preparation-guide-msme-bank-loans"
-                  onClick={(e) => { e.preventDefault(); handleNav('/resources/dpr-preparation-guide-msme-bank-loans'); }}
-                  className="hover:text-[#214E78] transition-colors"
-                >
-                  Bank-Ready DPR Guide
-                </a>
-              </li>
-              <li>
-                <a
-                  href="/resources/gst-compliance-checklist-tamil-nadu"
-                  onClick={(e) => { e.preventDefault(); handleNav('/resources/gst-compliance-checklist-tamil-nadu'); }}
-                  className="hover:text-[#214E78] transition-colors"
-                >
-                  GST Compliance Checklist
-                </a>
-              </li>
-              <li>
-                <a
-                  href="/resources/msme-government-subsidy-schemes-tamil-nadu"
-                  onClick={(e) => { e.preventDefault(); handleNav('/resources/msme-government-subsidy-schemes-tamil-nadu'); }}
-                  className="hover:text-[#214E78] transition-colors"
-                >
-                  Tamil Nadu MSME Subsidies
-                </a>
-              </li>
-              <li className="pt-2 border-t border-[#D8DEE5]">
                 <a
                   href="/products"
                   onClick={(e) => { e.preventDefault(); handleNav('/products'); }}
-                  className="hover:text-[#214E78] transition-colors block font-bold text-[#30363D]"
+                  className="hover:text-[#0B1426] font-semibold text-[#0B1426] block"
                 >
                   All Products →
                 </a>
@@ -277,7 +228,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/products/invoicepro360"
                   onClick={(e) => { e.preventDefault(); handleNav('/products/invoicepro360'); }}
-                  className="hover:text-[#214E78] transition-colors block"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
                   InvoicePro360
                 </a>
@@ -286,7 +237,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/products/deeds360"
                   onClick={(e) => { e.preventDefault(); handleNav('/products/deeds360'); }}
-                  className="hover:text-[#214E78] transition-colors block"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
                   Deeds360
                 </a>
@@ -295,7 +246,7 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/products/property360"
                   onClick={(e) => { e.preventDefault(); handleNav('/products/property360'); }}
-                  className="hover:text-[#214E78] transition-colors block"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
                   Property360
                 </a>
@@ -304,43 +255,43 @@ export const Footer: React.FC<FooterProps> = ({
                 <a
                   href="/products/advocate360"
                   onClick={(e) => { e.preventDefault(); handleNav('/products/advocate360'); }}
-                  className="hover:text-[#214E78] transition-colors block"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
                   Advocate360
                 </a>
               </li>
-              <li className="pt-2 border-t border-[#D8DEE5]">
+              <li className="pt-2 border-t border-[#E4DFD5]">
                 <a
                   href="/creators"
                   onClick={(e) => { e.preventDefault(); handleNav('/creators'); }}
-                  className="hover:text-[#A57C35] transition-colors block font-semibold text-[#A57C35]"
+                  className="hover:text-[#0B1426] font-semibold text-[#0B1426] block"
                 >
-                  Join Creator Network (Tamil Creators)
+                  Creators Network
                 </a>
               </li>
               <li>
                 <a
                   href="/about"
                   onClick={(e) => { e.preventDefault(); handleNav('/about'); }}
-                  className="hover:text-[#214E78] transition-colors block font-medium"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
-                  About Unikorn360
+                  About
                 </a>
               </li>
               <li>
                 <a
                   href="/contact"
                   onClick={(e) => { e.preventDefault(); handleNav('/contact'); }}
-                  className="hover:text-[#214E78] transition-colors block font-medium"
+                  className="hover:text-[#0B1426] transition-colors block"
                 >
-                  Contact Advisory Desk
+                  Contact
                 </a>
               </li>
               <li>
                 <a
                   href="/admin"
                   onClick={(e) => { e.preventDefault(); handleNav('/admin'); }}
-                  className="text-[10px] text-[#505B66]/60 hover:text-[#505B66] transition-colors block"
+                  className="text-[11px] text-[#526176] hover:text-[#0B1426] transition-colors block"
                 >
                   Admin Control Desk
                 </a>
@@ -351,15 +302,13 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#505B66]">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#526176]">
           <p>
-            © {new Date().getFullYear()} {BUSINESS_INFO.brand}. Founder: {BUSINESS_INFO.founder}. Registered Office: Vaniyambadi, Tamil Nadu.
+            © {new Date().getFullYear()} {BUSINESS_INFO.brand}. Founder: {BUSINESS_INFO.founder}. Vaniyambadi, Tamil Nadu.
           </p>
-          <div className="flex items-center gap-4 text-[11px]">
-            <span>Pre-Scoped Written Quotation Terms</span>
-            <span>•</span>
-            <span>No Hidden Charges</span>
-            <span>•</span>
+          <div className="flex flex-wrap items-center gap-4 text-xs">
+            <span>Written Scope &amp; Quotations</span>
+            <span>·</span>
             <span>GSTIN: {BUSINESS_INFO.gstin}</span>
           </div>
         </div>

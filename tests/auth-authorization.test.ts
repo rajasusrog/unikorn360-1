@@ -2335,6 +2335,34 @@ async function runTests() {
           }
         }
 
+        // C2. service_divisions, service_catalog, service_relations REST endpoints
+        if (
+          method === 'GET' &&
+          (pathname === '/rest/v1/service_divisions' ||
+            pathname === '/rest/v1/service_catalog' ||
+            pathname === '/rest/v1/service_relations')
+        ) {
+          const tableName = pathname.replace('/rest/v1/', '');
+          const statusParam = urlObj.searchParams.get('status');
+          const statusEq = statusParam && statusParam.startsWith('eq.') ? statusParam.slice(3) : null;
+          try {
+            const rowsRes = await runSerialDb(() =>
+              statusEq
+                ? db.query<any>(
+                    `SELECT * FROM ${tableName} WHERE status = $1 ORDER BY display_order ASC`,
+                    [statusEq]
+                  )
+                : db.query<any>(`SELECT * FROM ${tableName} ORDER BY display_order ASC`)
+            );
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(rowsRes.rows));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // D. Storage API
         if (pathname.startsWith('/storage/v1/bucket')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2813,6 +2841,166 @@ async function runTests() {
             passed: passed71,
             expected: 'HTTP 201 Created with application id & reference, row persisted in DB',
             actual: `HTTP ${applyRes71.status}, success=${applyBody71.success}, id=${applyBody71.id}, dbRows=${dbApp71Check.rows.length}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 72: GET /api/catalog/published fails closed with 503 when DB is unavailable
+          // -------------------------------------------------------------
+          setSupabaseAdmin(null);
+          const catUnavailRes = await fetch(`${baseUrl}/api/catalog/published`);
+          const catUnavailBody = await catUnavailRes.json();
+          const catUnavailCache = catUnavailRes.headers.get('cache-control') || '';
+
+          const passed72 =
+            catUnavailRes.status === 503 &&
+            catUnavailBody.code === 'CATALOGUE_UNAVAILABLE' &&
+            catUnavailCache.includes('no-store');
+
+          results.push({
+            scenarioNumber: 72,
+            category: 'Config & Fail-Closed',
+            name: 'GET /api/catalog/published fails closed with HTTP 503 CATALOGUE_UNAVAILABLE and Cache-Control no-store when DB unavailable',
+            passed: passed72,
+            expected: 'HTTP 503 code=CATALOGUE_UNAVAILABLE, Cache-Control includes no-store',
+            actual: `HTTP ${catUnavailRes.status} code=${catUnavailBody.code} cache=${catUnavailCache}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 73: GET /api/catalog/published exposes strictly published divisions/services and excludes draft/archived & orphaned rows
+          // -------------------------------------------------------------
+          const pubDivId = '11111111-1111-4111-8111-111111111101';
+          const draftDivId = '11111111-1111-4111-8111-111111111102';
+          const archDivId = '11111111-1111-4111-8111-111111111103';
+
+          const pubSvc1Id = '22222222-2222-4222-8222-222222222201';
+          const pubSvc2Id = '22222222-2222-4222-8222-222222222202';
+          const draftSvcId = '22222222-2222-4222-8222-222222222203';
+          const archSvcId = '22222222-2222-4222-8222-222222222204';
+          const orphanPubSvcId = '22222222-2222-4222-8222-222222222205';
+
+          await db.query(`DELETE FROM service_relations`);
+          await db.query(`DELETE FROM service_catalog`);
+          await db.query(`DELETE FROM service_divisions`);
+
+          await db.query(
+            `INSERT INTO service_divisions (id, name, slug, short_description, status, display_order)
+             VALUES
+               ($1, 'Published Division', 'published-division', 'Live division', 'published', 1),
+               ($2, 'Draft Division', 'draft-division', 'Private draft division', 'draft', 2),
+               ($3, 'Archived Division', 'archived-division', 'Archived division', 'archived', 3)`,
+            [pubDivId, draftDivId, archDivId]
+          );
+
+          await db.query(
+            `INSERT INTO service_catalog (id, division_id, service_name, slug, short_description, status, display_order)
+             VALUES
+               ($1, $4, 'Live Service Alpha', 'live-service-alpha', 'Published service 1', 'published', 1),
+               ($2, $4, 'Live Service Beta', 'live-service-beta', 'Published service 2', 'published', 2),
+               ($3, $4, 'Secret Draft Service', 'secret-draft-service', 'Should remain hidden', 'draft', 3),
+               ($5, $4, 'Retired Archived Service', 'retired-archived-service', 'Archived service', 'archived', 4),
+               ($6, $7, 'Orphaned Published Service', 'orphaned-published-service', 'Parent division is draft', 'published', 5)`,
+            [pubSvc1Id, pubSvc2Id, draftSvcId, pubDivId, archSvcId, orphanPubSvcId, draftDivId]
+          );
+
+          await db.query(
+            `INSERT INTO service_relations (service_id, related_service_id, relation_type, display_order)
+             VALUES
+               ($1, $2, 'recommended', 1),
+               ($1, $3, 'bundle', 2)`,
+            [pubSvc1Id, pubSvc2Id, draftSvcId]
+          );
+
+          setSupabaseAdmin(bridgeAdminClient);
+          const catOkRes = await fetch(`${baseUrl}/api/catalog/published`);
+          const catOkBody = await catOkRes.json();
+          const catOkCache = catOkRes.headers.get('cache-control') || '';
+          setSupabaseAdmin(null);
+
+          const returnedDivSlugs = (catOkBody.divisions || []).map((d: any) => d.slug);
+          const returnedSvcSlugs = (catOkBody.services || []).map((s: any) => s.slug);
+          const returnedRels = catOkBody.relations || [];
+
+          const passed73 =
+            catOkRes.status === 200 &&
+            catOkCache.includes('no-store') &&
+            returnedDivSlugs.length === 1 &&
+            returnedDivSlugs[0] === 'published-division' &&
+            catOkBody.divisions[0]?.published_service_count === 2 &&
+            returnedSvcSlugs.length === 2 &&
+            returnedSvcSlugs.includes('live-service-alpha') &&
+            returnedSvcSlugs.includes('live-service-beta') &&
+            !returnedSvcSlugs.includes('secret-draft-service') &&
+            !returnedSvcSlugs.includes('retired-archived-service') &&
+            !returnedSvcSlugs.includes('orphaned-published-service') &&
+            catOkBody.totalPublishedServices === 2 &&
+            returnedRels.length === 1 &&
+            returnedRels[0]?.related_service_id === pubSvc2Id;
+
+          results.push({
+            scenarioNumber: 73,
+            category: 'Config & Fail-Closed',
+            name: 'GET /api/catalog/published serves strictly published divisions/services, hides drafts/archived/orphan rows, and aligns counts',
+            passed: passed73,
+            expected: 'HTTP 200, 1 published division (count=2), 2 published services, 1 safe relation, no draft/archived/orphan',
+            actual: `HTTP ${catOkRes.status}, divs=${JSON.stringify(returnedDivSlugs)}, svcs=${JSON.stringify(returnedSvcSlugs)}, total=${catOkBody.totalPublishedServices}, rels=${returnedRels.length}`
+          });
+
+          // -------------------------------------------------------------
+          // Scenario 74: ResilientServicesService propagates 503 failure in browser fallback and loads live published rows when healthy
+          // -------------------------------------------------------------
+          const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+          const prevWindow = (globalThis as any).window;
+          (globalThis as any).window = { localStorage: { removeItem: () => {} } };
+
+          let thrownOnUnavailable = false;
+          let errorMsgOnUnavailable = '';
+          let browserCatalogCount = -1;
+
+          try {
+            const clientFetcher = (input: RequestInfo | URL, init?: RequestInit) => {
+              const rawUrl = typeof input === 'string' ? input : input.toString();
+              const resolvedUrl = rawUrl.startsWith('/') ? `${baseUrl}${rawUrl}` : rawUrl;
+              return fetch(resolvedUrl, init);
+            };
+
+            const publicFallbackService = new ResilientServicesService({
+              authClient: null,
+              dbClient: null,
+              fetchImpl: clientFetcher
+            });
+
+            // 74a: With supabaseAdmin=null, must throw (never silently return [] or seed fallback)
+            setSupabaseAdmin(null);
+            try {
+              await publicFallbackService.getPublishedCatalog();
+            } catch (err: any) {
+              thrownOnUnavailable = true;
+              errorMsgOnUnavailable = err?.message || String(err);
+            }
+
+            // 74b: With supabaseAdmin=bridgeAdminClient, must return the 2 published services
+            setSupabaseAdmin(bridgeAdminClient);
+            const liveCatalog = await publicFallbackService.getPublishedCatalog();
+            browserCatalogCount = liveCatalog.totalPublishedServices;
+            setSupabaseAdmin(null);
+          } finally {
+            setSupabaseAdmin(null);
+            if (hadWindow) {
+              (globalThis as any).window = prevWindow;
+            } else {
+              delete (globalThis as any).window;
+            }
+          }
+
+          const passed74 = thrownOnUnavailable && browserCatalogCount === 2;
+
+          results.push({
+            scenarioNumber: 74,
+            category: 'Config & Fail-Closed',
+            name: 'ResilientServicesService throws on /api/catalog/published 503 failure (no silent 0/seed fallback) and returns published rows when healthy',
+            passed: passed74,
+            expected: 'thrownOnUnavailable=true, browserCatalogCount=2',
+            actual: `thrown=${thrownOnUnavailable} (${errorMsgOnUnavailable}), browserCatalogCount=${browserCatalogCount}`
           });
         }
       } finally {

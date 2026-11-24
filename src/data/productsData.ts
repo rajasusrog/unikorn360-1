@@ -269,7 +269,7 @@ export const UNIKORN_FOUR_PRODUCTS: UnikornProduct[] = [
     appUrl: 'https://deeds360.unikorn360.com/',
     categoryLabel: 'Property Deed Drafting & Registration Readiness',
     shortDescription:
-      'Bilingual (English and Tamil) property deed drafting, scanned parent-deed OCR extraction, draft comparison, and Tamil Nadu STAR 2.0 readiness workspace.',
+      'Bilingual (English and Tamil) property deed drafting, scanned parent-deed OCR extraction, draft comparison, and registration preparation workspace.',
     fullDescription:
       'Deeds360 (DeedOS360) is a UNIKORN360 property documentation and deed-drafting application engineered for Tamil Nadu registration workflows. It combines guided client intake with OCR extraction from scanned parent deeds, side-by-side comparison between parent deeds and new drafts, schedule and survey-number cross-verification, stamp duty and registration fee estimation, and English–Tamil legal deed translation.',
     intendedUsers: [

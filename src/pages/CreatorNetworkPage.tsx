@@ -5,13 +5,13 @@ import {
   ArrowRight, 
   Users, 
   ShieldCheck, 
-  FileText,
-  DollarSign
+  DollarSign,
+  AlertCircle
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { WhatsAppSubmitButton } from '../components/WhatsAppSubmitButton';
-import { BUSINESS_INFO } from '../data/servicesData';
+import { WhatsAppMessagePreview } from '../components/WhatsAppMessagePreview';
 
 interface CreatorNetworkPageProps {
   onNavigate: (path: string) => void;
@@ -30,17 +30,22 @@ export const CreatorNetworkPage: React.FC<CreatorNetworkPageProps> = ({
   const [audienceLocation, setAudienceLocation] = useState('');
   const [followers, setFollowers] = useState('10k - 50k');
   const [phone, setPhone] = useState('');
-  const [isPreparing, setIsPreparing] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [preparedMessage, setPreparedMessage] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!name.trim() || !phone.trim() || !handle.trim()) {
-      alert('Please fill in your name, channel handle, and WhatsApp number.');
+      setFormError('Please fill in your name, channel handle, and WhatsApp number.');
       return;
     }
 
-    setIsPreparing(true);
+    const digitsOnly = phone.replace(/\D/g, '');
+    if (digitsOnly.length < 8) {
+      setFormError('Please enter a valid WhatsApp contact number.');
+      return;
+    }
 
     const messageLines = [
       `*UNIKORN360 — CREATOR NETWORK APPLICATION*`,
@@ -57,17 +62,7 @@ export const CreatorNetworkPage: React.FC<CreatorNetworkPageProps> = ({
       `I would like to register with Unikorn360 for brand collaboration campaigns.`
     ];
 
-    const encoded = encodeURIComponent(messageLines.join('\n'));
-    const url = `https://wa.me/${BUSINESS_INFO.whatsappRaw}?text=${encoded}`;
-
-    if (typeof window !== 'undefined') {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
-
-    setTimeout(() => {
-      setIsPreparing(false);
-      setSubmitted(true);
-    }, 1200);
+    setPreparedMessage(messageLines.join('\n'));
   };
 
   return (
@@ -136,7 +131,24 @@ export const CreatorNetworkPage: React.FC<CreatorNetworkPageProps> = ({
               Complete your profile below. When a matching brand campaign arises for your niche or audience, our team contacts you directly with clear commercial briefs.
             </p>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            {preparedMessage ? (
+              <WhatsAppMessagePreview
+                message={preparedMessage}
+                serviceLabel="Creator Network Application"
+                packageLabel={`${platform} (${followers})`}
+                onEdit={() => setPreparedMessage(null)}
+              />
+            ) : (
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              {formError && (
+                <div
+                  role="alert"
+                  className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-[#505B66] block mb-1">
@@ -264,20 +276,14 @@ export const CreatorNetworkPage: React.FC<CreatorNetworkPageProps> = ({
 
               <div className="pt-2">
                 <WhatsAppSubmitButton
-                  onClick={handleSubmit}
-                  isPreparing={isPreparing}
-                  label="Submit Application via WhatsApp"
-                  preparedLabel="Application Prepared · Opening WhatsApp..."
+                  type="submit"
+                  label="Review WhatsApp Message"
+                  subtext="Prepares your creator profile below so you can review and send in WhatsApp."
                   className="w-full justify-center"
                 />
               </div>
-
-              {submitted && (
-                <p className="text-[10px] text-[#505B66] text-center italic mt-1">
-                  * Application formatted. Please tap <strong>Send</strong> in WhatsApp.
-                </p>
-              )}
             </form>
+            )}
           </div>
 
           {/* Right Column: Why Join */}

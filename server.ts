@@ -3329,6 +3329,84 @@ app.patch('/api/admin/services/:id/status', requireAdminAuth, requireRole(['supe
 });
 
 // ====================================================================
+// 11B. PUBLIC PUBLISHED SERVICE CATALOGUE READ ENDPOINT
+// ====================================================================
+app.get('/api/catalog/published', async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const dbClient = supabasePublic || supabaseAdmin;
+    if (!dbClient) {
+      return res.status(503).json({
+        error: 'The service catalogue database connection is currently unavailable.',
+        code: 'CATALOGUE_UNAVAILABLE'
+      });
+    }
+
+    const [divRes, svcRes, relRes] = await Promise.all([
+      dbClient
+        .from('service_divisions')
+        .select('*')
+        .eq('status', 'published')
+        .order('display_order', { ascending: true }),
+      dbClient
+        .from('service_catalog')
+        .select('*')
+        .eq('status', 'published')
+        .order('display_order', { ascending: true }),
+      dbClient
+        .from('service_relations')
+        .select('*')
+        .order('display_order', { ascending: true })
+    ]);
+
+    if (divRes.error || svcRes.error) {
+      return res.status(502).json({
+        error: divRes.error?.message || svcRes.error?.message || 'Failed to load published service catalogue.',
+        code: 'CATALOGUE_FETCH_FAILED'
+      });
+    }
+
+    const publishedDivisions = ((divRes.data || []) as any[])
+      .filter((d) => d.status === 'published')
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+    const publishedDivisionIds = new Set(publishedDivisions.map((d) => d.id));
+
+    const publishedServices = ((svcRes.data || []) as any[])
+      .filter((s) => s.status === 'published' && publishedDivisionIds.has(s.division_id))
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+    const publishedServiceIds = new Set(publishedServices.map((s) => s.id));
+    const countByDivision = new Map<string, number>();
+    for (const svc of publishedServices) {
+      countByDivision.set(svc.division_id, (countByDivision.get(svc.division_id) || 0) + 1);
+    }
+
+    const enrichedDivisions = publishedDivisions.map((div) => ({
+      ...div,
+      published_service_count: countByDivision.get(div.id) || 0
+    }));
+
+    const safeRelations = (!relRes.error && Array.isArray(relRes.data) ? relRes.data : []).filter(
+      (r: any) => publishedServiceIds.has(r.service_id) && publishedServiceIds.has(r.related_service_id)
+    );
+
+    return res.status(200).json({
+      divisions: enrichedDivisions,
+      services: publishedServices,
+      relations: safeRelations,
+      totalPublishedServices: publishedServices.length
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/catalog/published:', err);
+    return res.status(500).json({
+      error: 'Unable to load the published service catalogue.',
+      code: 'CATALOGUE_ERROR'
+    });
+  }
+});
+
+// ====================================================================
 // 12. DYNAMIC XML SITEMAP ENDPOINT (/sitemap.xml)
 // ====================================================================
 app.get('/sitemap.xml', async (_req: Request, res: Response) => {

@@ -54,24 +54,24 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={imageAlt || 'Full Screen Design Preview'}
-      className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 lg:p-8 animate-fadeIn"
+      className="fixed inset-0 z-50 bg-[#0B1426]/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 lg:p-8 animate-fadeIn"
       onClick={onClose}
     >
       <div
-        className="relative max-w-5xl w-full bg-[#0B192C] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        className="relative max-w-5xl w-full bg-[#0B1426] border border-white/15 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Lightbox Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#09182B]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#0B1426]">
           <div className="flex items-center gap-3">
             {badgeLabel && (
-              <span className="px-2.5 py-0.5 bg-[#A57C35] text-white text-[10px] font-bold uppercase tracking-wider rounded">
+              <span className="px-2.5 py-0.5 bg-[#C49A36] text-[#0B1426] text-[10px] font-bold uppercase tracking-wider rounded">
                 {badgeLabel}
               </span>
             )}
-            <span className="text-xs text-slate-300 font-mono flex items-center gap-1.5">
-              <ZoomIn className="w-3.5 h-3.5 text-[#A57C35]" />
-              <span>Full Design Preview</span>
+            <span className="text-xs text-slate-200 flex items-center gap-1.5">
+              <ZoomIn className="w-3.5 h-3.5 text-[#C49A36]" />
+              <span>Design Preview</span>
             </span>
           </div>
 
@@ -80,14 +80,14 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close design preview"
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#A57C35]"
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Lightbox Image Container */}
-        <div className="flex-1 p-4 sm:p-6 overflow-auto flex items-center justify-center bg-[#050C16]">
+        <div className="flex-1 p-4 sm:p-6 overflow-auto flex items-center justify-center bg-[#060B16]">
           <img
             src={imageSrc}
             alt={imageAlt}
@@ -97,7 +97,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
 
         {/* Lightbox Caption */}
         {caption && (
-          <div className="px-6 py-3 bg-[#09182B] border-t border-white/10 text-center text-xs text-slate-300">
+          <div className="px-6 py-3 bg-[#0B1426] border-t border-white/10 text-center text-xs text-slate-200">
             {caption}
           </div>
         )}
