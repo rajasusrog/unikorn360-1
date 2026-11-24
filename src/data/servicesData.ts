@@ -9,7 +9,7 @@ export const BUSINESS_INFO = {
   whatsappRaw: '919884824360',
   email: 'contact.unikorn360@gmail.com',
   website: 'https://www.unikorn360.com',
-  gstin: '33ANBPR6486P1CJ',
+  gstin: '33ANBPR6486P2Z7',
   address: {
     line1: '1st Floor, Shop No. 3, VK Complex',
     line2: 'P.J.N. Road, Kamarajapuram',

@@ -243,7 +243,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                             e.preventDefault();
                             onNavigate(`/services/${div.slug}`);
                           }}
-                          className="w-full aspect-[16/9] bg-[#09182B] rounded-lg overflow-hidden mb-4 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
+                          className="w-full aspect-[16/9] bg-[#FFFEFB] rounded-lg overflow-hidden mb-4 border border-[#D8DEE5] flex items-center justify-center cursor-pointer group-hover:border-[#214E78] transition-colors"
                         >
                           <img
                             src={banner.src}

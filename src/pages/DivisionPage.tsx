@@ -183,7 +183,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
             const banner = getDivisionBanner(division.slug);
             if (!banner) return null;
             return (
-              <div className="mt-6 max-w-[1200px] mx-auto bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-sm">
+              <div className="mt-6 max-w-[1200px] mx-auto bg-[#FFFEFB] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-sm">
                 <img
                   src={banner.src}
                   alt={banner.alt}

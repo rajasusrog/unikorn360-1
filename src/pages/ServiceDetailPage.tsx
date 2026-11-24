@@ -304,7 +304,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
             const displaySrc = service.hero_image_url || (banner ? banner.src : null);
             if (!displaySrc) return null;
             return (
-              <div className="mt-6 max-w-[1200px] bg-[#09182B] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-xs">
+              <div className="mt-6 max-w-[1200px] bg-[#FFFEFB] border border-[#D8DEE5] rounded-xl overflow-hidden shadow-xs">
                 <img
                   src={displaySrc}
                   alt={service.service_name || (banner ? banner.alt : division.name)}

@@ -25,50 +25,50 @@ export interface ProductDesignAsset {
 export const DIVISION_BANNERS_BY_SLUG: Record<string, DivisionBannerAsset> = {
   'websites-software': {
     slug: 'websites-software',
-    src: '/assets/divisions/websites-software.webp',
-    alt: 'UNIKORN360 Websites & Software Division Showcase — High-Speed Web & Custom Software',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/Websites___Software_Business_Banner_1f957045.png',
+    alt: 'UNIKORN360 Websites & Software — Websites, E-commerce, Custom Apps, API Integrations',
+    width: 1671,
+    height: 941,
     title: 'Websites & Software'
   },
   'security-maintenance': {
     slug: 'security-maintenance',
-    src: '/assets/divisions/security-maintenance.webp',
-    alt: 'UNIKORN360 Security & Maintenance Division Showcase — Application Security & Maintenance',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/UNIKORN360_Security___Maintenance_4e04af48.png',
+    alt: 'UNIKORN360 Security & Maintenance — Application Reviews, API Security, Database Checks, Ongoing Maintenance',
+    width: 1672,
+    height: 941,
     title: 'Security & Maintenance'
   },
   'marketing-creator-campaigns': {
     slug: 'marketing-creator-campaigns',
-    src: '/assets/divisions/marketing-creator-campaigns.webp',
-    alt: 'UNIKORN360 Marketing & Creator Campaigns Division Showcase — Performance Marketing & Creator Campaigns',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/Unikorn360_Creator_Campaigns_8215efbc.png',
+    alt: 'UNIKORN360 Marketing & Creator Campaigns — SEO, Paid Ads, Social Content, UGC, Creator Collaborations',
+    width: 1672,
+    height: 941,
     title: 'Marketing & Creator Campaigns'
   },
   'ai-automation-business-systems': {
     slug: 'ai-automation-business-systems',
-    src: '/assets/divisions/ai-automation-business-systems.webp',
-    alt: 'UNIKORN360 AI, Automation & Business Systems Division Showcase — Automated Workflows & Systems',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/UNIKORN360_Workflow_Intelligence_Infographic_923e96aa.png',
+    alt: 'UNIKORN360 AI, Automation & Business Systems — AI Assistants, CRM, Connected Workflows with Human Oversight',
+    width: 1671,
+    height: 941,
     title: 'AI, Automation & Business Systems'
   },
   'research-business-strategy': {
     slug: 'research-business-strategy',
-    src: '/assets/divisions/research-business-strategy.webp',
-    alt: 'UNIKORN360 Research & Business Strategy Division Showcase — Market Research & Feasibility',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/Research___Business_Strategy_Dashboard_9b5f0bd0.png',
+    alt: 'UNIKORN360 Research & Business Strategy — Market Research, Competitor Analysis, Feasibility, Business Planning',
+    width: 1672,
+    height: 941,
     title: 'Research & Business Strategy'
   },
   'business-setup-documentation': {
     slug: 'business-setup-documentation',
-    src: '/assets/divisions/business-setup-documentation.webp',
-    alt: 'UNIKORN360 Business Setup & Documentation Division Showcase — DPRs, MSME, & Licensing',
-    width: 1920,
-    height: 1080,
+    src: '/assets/aistudio/Business_Setup___Documentation_4c96fd6d.png',
+    alt: 'UNIKORN360 Business Setup & Documentation — Registration Assistance, DPR Preparation, Filing Coordination, Document Support',
+    width: 1672,
+    height: 941,
     title: 'Business Setup & Documentation'
   }
 };

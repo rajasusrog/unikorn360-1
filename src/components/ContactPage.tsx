@@ -83,7 +83,7 @@ Please let me know how we can connect.`;
         '@type': 'Person',
         name: 'S. Rajkumar'
       },
-      taxID: '33ANBPR6486P1CJ',
+      taxID: BUSINESS_INFO.gstin,
       telephone: '+919884824360',
       email: 'contact.unikorn360@gmail.com',
       address: {

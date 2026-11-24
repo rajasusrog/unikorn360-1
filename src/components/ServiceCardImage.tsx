@@ -43,14 +43,14 @@ export const ServiceCardImage: React.FC<ServiceCardImageProps> = ({
 
   return (
     <div
-      className={`w-full aspect-video bg-[#0B1426] overflow-hidden flex items-center justify-center ${className}`}
+      className={`w-full aspect-video bg-[#FFFEFB] overflow-hidden flex items-center justify-center ${className}`}
     >
       {!failed && imgSrc ? (
         <img
           src={imgSrc}
           alt={alt}
-          width={banner?.width || 1920}
-          height={banner?.height || 1080}
+          width={banner?.width || 1672}
+          height={banner?.height || 941}
           loading={loading}
           referrerPolicy="no-referrer"
           onError={handleError}

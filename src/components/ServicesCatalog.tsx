@@ -81,7 +81,7 @@ export const ServicesCatalog: React.FC<ServicesCatalogProps> = ({
                 <div>
                   {/* Matching Banner Image with Natural ~16:9 Aspect Ratio */}
                   {banner && (
-                    <div className="w-full bg-[#09182B] aspect-[16/9] overflow-hidden flex items-center justify-center border-b border-[#D8DEE5]">
+                    <div className="w-full bg-[#FFFEFB] aspect-[16/9] overflow-hidden flex items-center justify-center border-b border-[#D8DEE5]">
                       <img
                         src={banner.src}
                         alt={banner.alt || div.name}

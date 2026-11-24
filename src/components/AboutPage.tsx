@@ -32,7 +32,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onNavigate, onOpenReviewMo
         '@type': 'Person',
         name: 'S. Rajkumar'
       },
-      taxID: '33ANBPR6486P1CJ',
+      taxID: BUSINESS_INFO.gstin,
       telephone: '+919884824360',
       email: 'contact.unikorn360@gmail.com',
       url: 'https://www.unikorn360.com',
