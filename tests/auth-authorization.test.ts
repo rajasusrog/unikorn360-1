@@ -17,6 +17,7 @@ import {
   getOrLoadUploadSession,
   setSupabaseAdmin
 } from '../server.js';
+import { onRequestGet as cfAuthMeGet } from '../functions/api/admin/auth/me.js';
 import {
   ResilientServicesService,
   SupabaseAuthLikeClient
@@ -722,6 +723,15 @@ async function runTests() {
             }
             return { data: { session: null }, error: { message: 'Invalid login credentials' } };
           },
+          signInWithOAuth: async ({ provider, options }) => ({
+            data: {
+              provider,
+              url: options?.redirectTo
+                ? `https://accounts.google.com/o/oauth2/v2/auth?redirect_to=${encodeURIComponent(options.redirectTo)}`
+                : null
+            },
+            error: null
+          }),
           signOut: async () => {
             signOutCallCount += 1;
             if (simulateSignOutError) {
@@ -3010,6 +3020,280 @@ async function runTests() {
         try { if (proc2.pid) process.kill(-proc2.pid, 'SIGKILL'); } catch {}
         dbBridge.close();
         await db.close();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 75: Google OAuth Admin Login Lifecycle & Authorization Matrix
+    //  Tests:
+    //   - Superadmin Google OAuth redirectTo (/admin/login) & /api/admin/auth/me UUID verification
+    //   - Admin Google OAuth verification
+    //   - Ordinary Google user rejection (403 + auto signOut + no auto-provisioning)
+    //   - Non-member Google user with admin email rejected (403 + auto signOut; never trusts email)
+    //   - Page refresh session restoration & persistence after OAuth
+    //   - Sign out clears session
+    //   - Existing password login fallback preserved
+    // -------------------------------------------------------------
+    {
+      let activeToken: string | null = null;
+      let signOutCalls = 0;
+      let capturedProvider = '';
+      let capturedRedirectTo = '';
+      const listeners: Array<(event: string, session: { access_token?: string } | null) => void> = [];
+
+      const oauthMockClient: SupabaseAuthLikeClient = {
+        auth: {
+          getSession: async () => ({
+            data: { session: activeToken ? { access_token: activeToken } : null },
+            error: null
+          }),
+          signInWithPassword: async ({ email }) => {
+            if (email === USERS.superadmin.email) {
+              activeToken = TOKENS.superadmin;
+              return { data: { session: { access_token: activeToken } }, error: null };
+            }
+            return { data: { session: null }, error: { message: 'Invalid login credentials' } };
+          },
+          signInWithOAuth: async ({ provider, options }) => {
+            capturedProvider = provider;
+            capturedRedirectTo = options?.redirectTo || '';
+            return {
+              data: {
+                provider,
+                url: `https://mock-supabase.auth/authorize?provider=${provider}&redirect_to=${encodeURIComponent(capturedRedirectTo)}`
+              },
+              error: null
+            };
+          },
+          signOut: async () => {
+            signOutCalls += 1;
+            activeToken = null;
+            return { error: null };
+          },
+          onAuthStateChange: (cb) => {
+            listeners.push(cb);
+            return {
+              data: {
+                subscription: {
+                  unsubscribe: () => {
+                    const idx = listeners.indexOf(cb);
+                    if (idx >= 0) listeners.splice(idx, 1);
+                  }
+                }
+              }
+            };
+          }
+        }
+      };
+
+      const routedFetch: typeof fetch = (input, init) => {
+        const urlStr = typeof input === 'string' ? input : input.toString();
+        const target = urlStr.startsWith('http') ? urlStr : `${baseUrl}${urlStr}`;
+        return fetch(target, init);
+      };
+
+      const oauthService = new ResilientServicesService({
+        authClient: oauthMockClient,
+        fetchImpl: routedFetch
+      });
+
+      const initialAdminCount = memoryAdminUsers.length;
+
+      // 75a. Start Google OAuth targeting /admin/login
+      const oauthStart = await oauthService.signInWithGoogleOAuth('https://www.unikorn360.com');
+      const stepStartOk =
+        oauthStart.status === 'redirecting' &&
+        capturedProvider === 'google' &&
+        capturedRedirectTo === 'https://www.unikorn360.com/admin/login';
+
+      // 75b. Simulate Supabase redirect back with existing superadmin Google session + auth listener
+      let listenerRole = '';
+      const unsub = oauthService.onAdminAuthStateChange((res) => {
+        listenerRole = `${res.status}:${res.session?.role || ''}`;
+      });
+      activeToken = TOKENS.superadmin;
+      for (const cb of listeners) {
+        await cb('SIGNED_IN', { access_token: TOKENS.superadmin });
+      }
+      await new Promise((r) => setTimeout(r, 20));
+      const superadminVerify = await oauthService.verifyAdminSession();
+      const stepSuperadminOk =
+        listenerRole === 'authenticated:superadmin' &&
+        superadminVerify.status === 'authenticated' &&
+        superadminVerify.session?.role === 'superadmin' &&
+        superadminVerify.session?.user.id === USERS.superadmin.id;
+
+      // 75c. Simulate page refresh persistence check after OAuth
+      const refreshVerify = await oauthService.verifyAdminSession();
+      const stepRefreshOk =
+        refreshVerify.status === 'authenticated' &&
+        refreshVerify.session?.user.email === USERS.superadmin.email;
+
+      // 75d. Simulate existing admin Google OAuth session
+      activeToken = TOKENS.admin;
+      const adminVerify = await oauthService.verifyAdminSession();
+      const stepAdminOk =
+        adminVerify.status === 'authenticated' &&
+        adminVerify.session?.role === 'admin';
+
+      // 75e. Sign out clears session completely
+      const signOutRes = await oauthService.logoutAdmin();
+      const afterSignOutCheck = await oauthService.verifyAdminSession();
+      const stepSignOutOk =
+        signOutRes.success &&
+        activeToken === null &&
+        afterSignOutCheck.status === 'unauthenticated';
+
+      // 75f. Ordinary Google user rejected (403 forbidden + forced signOut + zero auto-provisioning)
+      const beforeOrdSignOuts = signOutCalls;
+      activeToken = TOKENS.ordinaryUser;
+      const ordReject = await oauthService.verifyAdminSession();
+      const stepOrdRejected =
+        ordReject.status === 'forbidden' &&
+        activeToken === null &&
+        signOutCalls > beforeOrdSignOuts;
+
+      // 75g. Non-member Google user with admin-like email rejected (never trust email alone)
+      const beforeImposterSignOuts = signOutCalls;
+      activeToken = TOKENS.unauthorizedAdminEmail;
+      const imposterReject = await oauthService.verifyAdminSession();
+      const stepImposterRejected =
+        imposterReject.status === 'forbidden' &&
+        activeToken === null &&
+        signOutCalls > beforeImposterSignOuts &&
+        memoryAdminUsers.length === initialAdminCount;
+
+      // 75h. Existing password authentication fallback still works
+      const passwordFallback = await oauthService.signInAdmin(USERS.superadmin.email, 'valid-pass');
+      const stepPasswordOk =
+        passwordFallback.status === 'authenticated' &&
+        passwordFallback.session?.role === 'superadmin';
+
+      unsub();
+
+      const passed75 =
+        stepStartOk &&
+        stepSuperadminOk &&
+        stepRefreshOk &&
+        stepAdminOk &&
+        stepSignOutOk &&
+        stepOrdRejected &&
+        stepImposterRejected &&
+        stepPasswordOk;
+
+      results.push({
+        scenarioNumber: 75,
+        category: 'Mocked SDK Session + API',
+        name: 'Google OAuth Admin Login (superadmin, admin, refresh persistence, sign out, ordinary & non-member email rejection, password fallback)',
+        passed: passed75,
+        expected: 'All 8 Google OAuth & fallback sub-checks true',
+        actual: `start=${stepStartOk}, superadmin=${stepSuperadminOk}, refresh=${stepRefreshOk}, admin=${stepAdminOk}, signOut=${stepSignOutOk}, ordReject=${stepOrdRejected}, imposterReject=${stepImposterRejected}, pwdFallback=${stepPasswordOk}`
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Scenario 76: Cloudflare Pages /api/admin/auth/me Parity, URL Callback Handling & No Frontend Secrets
+    // -------------------------------------------------------------
+    {
+      const originalFetch = globalThis.fetch;
+      let sawUuidMembershipQuery = false;
+      let mutatedMembership = false;
+
+      (globalThis as any).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method || 'GET').toUpperCase();
+        if (url.includes('/rest/v1/creator_admin_users') && method !== 'GET') {
+          mutatedMembership = true;
+        }
+        if (url.endsWith('/auth/v1/user')) {
+          const auth = new Headers(init?.headers).get('Authorization');
+          if (auth === 'Bearer valid-google-jwt') {
+            return new Response(
+              JSON.stringify({ id: '11111111-1111-4111-8111-111111111111', email: 'superadmin@unikorn360.com' }),
+              { status: 200 }
+            );
+          }
+          if (auth === 'Bearer outsider-google-jwt') {
+            return new Response(
+              JSON.stringify({ id: '99999999-9999-4999-8999-999999999999', email: 'admin@unikorn360.com' }),
+              { status: 200 }
+            );
+          }
+          return new Response(JSON.stringify({ error: 'Invalid JWT' }), { status: 401 });
+        }
+        if (url.includes('/rest/v1/creator_admin_users')) {
+          sawUuidMembershipQuery = url.includes('authenticated_user_id=eq.');
+          if (url.includes('11111111-1111-4111-8111-111111111111')) {
+            return new Response(JSON.stringify([{ role: 'superadmin' }]), { status: 200 });
+          }
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      };
+
+      const cfEnv = {
+        SUPABASE_URL: 'https://mock-project.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_mock_key',
+        SUPABASE_SECRET_KEY: 'sb_secret_mock_key'
+      };
+
+      try {
+        const unauthCf = await cfAuthMeGet({
+          request: new Request('https://www.unikorn360.com/api/admin/auth/me'),
+          env: cfEnv
+        });
+        const superCf = await cfAuthMeGet({
+          request: new Request('https://www.unikorn360.com/api/admin/auth/me', {
+            headers: { Authorization: 'Bearer valid-google-jwt' }
+          }),
+          env: cfEnv
+        });
+        const superCfJson = (await superCf.json()) as any;
+        const outsiderCf = await cfAuthMeGet({
+          request: new Request('https://www.unikorn360.com/api/admin/auth/me', {
+            headers: { Authorization: 'Bearer outsider-google-jwt' }
+          }),
+          env: cfEnv
+        });
+
+        const supabaseTs = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/supabase.ts'), 'utf8');
+        const loginPageTsx = fs.readFileSync(
+          path.resolve(process.cwd(), 'src/pages/admin/AdminLoginPage.tsx'),
+          'utf8'
+        );
+
+        const detectsUrl = supabaseTs.includes('detectSessionInUrl: true');
+        const noFrontendSecret =
+          !supabaseTs.includes('GOCSPX-') &&
+          !loginPageTsx.includes('GOCSPX-') &&
+          !loginPageTsx.includes('CLIENT_SECRET');
+        const hasRequiredUiCopy =
+          loginPageTsx.includes('Continue with Google') &&
+          />\s*OR\s*</.test(loginPageTsx) &&
+          !loginPageTsx.includes('ADMIN_LOGIN_EMAIL');
+
+        const passed76 =
+          unauthCf.status === 401 &&
+          superCf.status === 200 &&
+          superCfJson.role === 'superadmin' &&
+          superCf.headers.get('Cache-Control') === 'no-store' &&
+          outsiderCf.status === 403 &&
+          sawUuidMembershipQuery &&
+          !mutatedMembership &&
+          detectsUrl &&
+          noFrontendSecret &&
+          hasRequiredUiCopy;
+
+        results.push({
+          scenarioNumber: 76,
+          category: 'Config & Fail-Closed',
+          name: 'Cloudflare Pages /api/admin/auth/me verifies UUID membership without mutation, detectSessionInUrl enabled, and zero Google Client Secrets in frontend',
+          passed: passed76,
+          expected: 'unauth=401, superadmin=200, outsider=403, uuidQuery=true, noMutation=true, detectSessionInUrl=true, noSecret=true',
+          actual: `unauth=${unauthCf.status}, superadmin=${superCf.status} (${superCfJson.role}), outsider=${outsiderCf.status}, uuidQuery=${sawUuidMembershipQuery}, mutated=${mutatedMembership}, detectSessionInUrl=${detectsUrl}, noSecret=${noFrontendSecret}, uiCopy=${hasRequiredUiCopy}`
+        });
+      } finally {
+        globalThis.fetch = originalFetch;
       }
     }
 

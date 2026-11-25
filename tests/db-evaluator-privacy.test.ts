@@ -1830,6 +1830,15 @@ export async function runDatabaseVerificationSuite(startScenarioNumber: number):
             data: { session: token ? { access_token: token } : null, user },
             error: null
           }),
+          signInWithOAuth: async ({ provider, options }) => ({
+            data: {
+              provider,
+              url: options?.redirectTo
+                ? `https://accounts.google.com/o/oauth2/v2/auth?redirect_to=${encodeURIComponent(options.redirectTo)}`
+                : null
+            },
+            error: null
+          }),
           signOut: async () => ({ error: null }),
           onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
         }

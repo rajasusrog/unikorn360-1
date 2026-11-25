@@ -94,6 +94,17 @@ export interface SupabaseAuthLikeClient {
       data: { session: { access_token?: string } | null; user?: any } | null;
       error: { message?: string } | null;
     }>;
+    signInWithOAuth: (credentials: {
+      provider: 'google';
+      options?: {
+        redirectTo?: string;
+        queryParams?: Record<string, string>;
+        skipBrowserRedirect?: boolean;
+      };
+    }) => Promise<{
+      data: { provider?: string; url?: string | null } | null;
+      error: { message?: string } | null;
+    }>;
     signOut: (options?: { scope?: 'global' | 'local' | 'others' }) => Promise<{
       error: { message?: string } | null;
     }>;
@@ -119,6 +130,12 @@ export interface AdminSessionCheckResult {
   user?: { id: string; email: string };
   role?: 'superadmin' | 'admin' | 'evaluator';
   accessToken?: string;
+  error?: string;
+}
+
+export interface GoogleOAuthStartResult {
+  status: 'redirecting' | 'unconfigured' | 'error';
+  url?: string;
   error?: string;
 }
 
@@ -344,6 +361,48 @@ export class ResilientServicesService {
       return {
         status: 'error',
         error: err?.message || 'Network error while attempting administrator sign-in.'
+      };
+    }
+  }
+
+  public async signInWithGoogleOAuth(redirectOrigin?: string): Promise<GoogleOAuthStartResult> {
+    purgeObsoleteAuthStorageKeys();
+    if (!this.authClient) {
+      return {
+        status: 'unconfigured',
+        error: 'Supabase Authentication is not configured in this environment.'
+      };
+    }
+
+    const origin = (
+      redirectOrigin ||
+      (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '')
+    )
+      .trim()
+      .replace(/\/$/, '');
+    const redirectTo = origin ? `${origin}/admin/login` : undefined;
+
+    try {
+      const { data, error } = await this.authClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: redirectTo ? { redirectTo } : undefined
+      });
+
+      if (error) {
+        return {
+          status: 'error',
+          error: error.message || 'Unable to start Google authentication.'
+        };
+      }
+
+      return {
+        status: 'redirecting',
+        url: data?.url || undefined
+      };
+    } catch (err: any) {
+      return {
+        status: 'error',
+        error: err?.message || 'Network error while initiating Google sign-in.'
       };
     }
   }
