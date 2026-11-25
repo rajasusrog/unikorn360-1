@@ -1,11 +1,14 @@
 import {
+  CentralBusinessKnowledgeResponse,
   ReceptionistChatRequest,
   ReceptionistChatResponse,
   ReceptionistEnquiryRecord,
   ReceptionistEnquirySubmissionRequest,
   ReceptionistLeadStatus
 } from '../types/receptionist';
+import type { ServiceCatalogItem, ServiceDivision } from '../types/database';
 import {
+  assembleCentralBusinessKnowledge,
   generateDemoReceptionistReply,
   inferReceptionistMetadataFromConversation,
   sanitizePlainText
@@ -190,6 +193,106 @@ export async function handleReceptionistChat(
     suggestHumanHandover: inferred.suggestHumanHandover,
     model: sanitizePlainText(data.model, 80) || 'gemini-3.8-flash'
   };
+}
+
+// ====================================================================
+// CENTRAL BUSINESS KNOWLEDGE ENGINE FETCHER (SUPABASE + SEED FALLBACK)
+// ====================================================================
+const KNOWLEDGE_DIVISION_COLUMNS = [
+  'id',
+  'name',
+  'slug',
+  'short_description',
+  'full_description',
+  'seo_title',
+  'seo_description',
+  'status',
+  'display_order',
+  'icon_name',
+  'created_at',
+  'updated_at'
+].join(',');
+
+const KNOWLEDGE_SERVICE_COLUMNS = [
+  'id',
+  'division_id',
+  'service_name',
+  'slug',
+  'short_description',
+  'full_description',
+  'problems_solved',
+  'target_customers',
+  'benefits',
+  'deliverables',
+  'packages',
+  'faqs',
+  'service_type',
+  'status',
+  'display_order',
+  'published_at',
+  'created_at',
+  'updated_at'
+].join(',');
+
+export async function fetchCentralBusinessKnowledge(
+  env: ReceptionistRuntimeEnv,
+  fetchImpl: typeof fetch = fetch
+): Promise<CentralBusinessKnowledgeResponse> {
+  const cfg = resolveWorkerSupabaseConfig(env);
+  const readKey = cfg.publishableKey || cfg.privilegedKey;
+
+  if (!cfg.isAuthConfigured || !readKey) {
+    return assembleCentralBusinessKnowledge({ catalogSource: 'canonical_seed' });
+  }
+
+  try {
+    const headers = {
+      apikey: readKey,
+      Authorization: `Bearer ${readKey}`
+    };
+
+    const [divRes, svcRes] = await Promise.all([
+      fetchImpl(
+        `${cfg.url}/rest/v1/service_divisions?select=${KNOWLEDGE_DIVISION_COLUMNS}&status=eq.published&order=display_order.asc`,
+        { method: 'GET', headers }
+      ),
+      fetchImpl(
+        `${cfg.url}/rest/v1/service_catalog?select=${KNOWLEDGE_SERVICE_COLUMNS}&status=eq.published&order=display_order.asc`,
+        { method: 'GET', headers }
+      )
+    ]);
+
+    if (!divRes.ok || !svcRes.ok) {
+      return assembleCentralBusinessKnowledge({ catalogSource: 'canonical_seed' });
+    }
+
+    const divRows = (await divRes.json().catch(() => null)) as ServiceDivision[] | null;
+    const svcRows = (await svcRes.json().catch(() => null)) as ServiceCatalogItem[] | null;
+
+    if (
+      !Array.isArray(divRows) ||
+      !Array.isArray(svcRows) ||
+      divRows.length === 0 ||
+      svcRows.length === 0
+    ) {
+      return assembleCentralBusinessKnowledge({ catalogSource: 'canonical_seed' });
+    }
+
+    const assembled = assembleCentralBusinessKnowledge({
+      divisions: divRows,
+      services: svcRows,
+      catalogSource: 'supabase_published'
+    });
+
+    if (assembled.divisions.length === 0 || assembled.services.length === 0) {
+      return assembleCentralBusinessKnowledge({ catalogSource: 'canonical_seed' });
+    }
+
+    return assembled;
+  } catch (err) {
+    console.warn('Central knowledge Supabase fetch fell back to canonical seed:', err);
+    return assembleCentralBusinessKnowledge({ catalogSource: 'canonical_seed' });
+  }
 }
 
 // ====================================================================

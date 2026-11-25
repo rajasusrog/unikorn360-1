@@ -1,3 +1,15 @@
+import type {
+  BillingPeriod,
+  PriceType,
+  ServiceFaq
+} from './database';
+import type {
+  ConfirmedProductPricingTier,
+  ProductFaqItem,
+  ProductSlug,
+  VerifiedProductFeature
+} from '../data/productsData';
+
 export type ReceptionistMode = 'live' | 'demo';
 
 export type ReceptionistLanguage = 'en' | 'ta' | 'tanglish' | 'hi';
@@ -149,3 +161,153 @@ export const LEAD_STATUS_OPTIONS: Array<{
   { value: 'won', label: 'Won', toneClass: 'text-[#15803D]' },
   { value: 'closed', label: 'Closed', toneClass: 'text-[#526176]' }
 ];
+
+// ====================================================================
+// CENTRAL BUSINESS KNOWLEDGE ENGINE TYPES (GET /api/receptionist/knowledge)
+// ====================================================================
+export interface CentralKnowledgeCompany {
+  brand: string;
+  shortBrand: string;
+  founder: string;
+  gstin: string;
+  website: string;
+  email: string;
+  phone: string;
+  whatsappDisplay: string;
+  whatsappNumber: string;
+  whatsappUrl: string;
+  address: {
+    line1: string;
+    line2: string;
+    city: string;
+    district: string;
+    state: string;
+    pincode: string;
+    full: string;
+  };
+}
+
+export interface CentralKnowledgeDivision {
+  id: string;
+  slug: string;
+  name: string;
+  displayOrder: number;
+  shortDescription: string;
+  fullDescription: string;
+  path: string;
+  url: string;
+  publishedServiceCount: number;
+}
+
+export interface CentralKnowledgeApprovedPackage {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: string;
+  billingPeriod: BillingPeriod;
+  priceType: PriceType;
+  inclusions: string[];
+  limits: string[];
+  exclusions: string[];
+  setupCharges: string | null;
+  taxTreatment: string;
+  isPopular: boolean;
+}
+
+export interface CentralKnowledgeService {
+  id: string;
+  divisionId: string;
+  divisionSlug: string;
+  divisionName: string;
+  slug: string;
+  name: string;
+  displayOrder: number;
+  shortDescription: string;
+  fullDescription: string;
+  serviceType: 'custom-development' | 'consulting' | 'managed-support';
+  problemsSolved: string[];
+  targetCustomers: string[];
+  benefits: string[];
+  deliverables: string[];
+  faqs: ServiceFaq[];
+  approvedPackages: CentralKnowledgeApprovedPackage[];
+  path: string;
+  url: string;
+}
+
+export interface CentralKnowledgeProduct {
+  id: string;
+  slug: ProductSlug;
+  name: string;
+  categoryLabel: string;
+  shortDescription: string;
+  fullDescription: string;
+  intendedUsers: string[];
+  verifiedFeatures: VerifiedProductFeature[];
+  faqs: ProductFaqItem[];
+  relatedProductSlugs: ProductSlug[];
+  publicPath: string;
+  canonicalUrl: string;
+  appUrl: string;
+  confirmedPricing: ConfirmedProductPricingTier[] | null;
+}
+
+export interface CentralKnowledgeEngagementModel {
+  id: string;
+  name: string;
+  tagline: string;
+  subtitle: string;
+  description: string;
+  deliverables: string[];
+  bestFor: string;
+}
+
+export interface CentralKnowledgeCommercialPolicies {
+  pricingPolicy: string;
+  unapprovedPricingRule: string;
+  timelinePolicy: string;
+  taxNote: string;
+  supportedLanguages: ReceptionistLanguage[];
+  engagementModels: CentralKnowledgeEngagementModel[];
+  humanHandover: {
+    whatsappDisplay: string;
+    whatsappUrl: string;
+    defaultMessage: string;
+    email: string;
+  };
+}
+
+export interface CentralKnowledgePublicLinkItem {
+  label: string;
+  path: string;
+  url: string;
+}
+
+export interface CentralKnowledgePublicLinks {
+  websiteOrigin: string;
+  whatsappHandoverUrl: string;
+  corePages: CentralKnowledgePublicLinkItem[];
+  divisions: CentralKnowledgePublicLinkItem[];
+  services: CentralKnowledgePublicLinkItem[];
+  products: Array<CentralKnowledgePublicLinkItem & { appUrl: string }>;
+}
+
+export interface CentralBusinessKnowledgeResponse {
+  ok: true;
+  schemaVersion: '1.0';
+  sourceDataVersion: string;
+  catalogSource: 'supabase_published' | 'canonical_seed';
+  counts: {
+    divisions: number;
+    services: number;
+    products: number;
+  };
+  company: CentralKnowledgeCompany;
+  divisions: CentralKnowledgeDivision[];
+  services: CentralKnowledgeService[];
+  products: CentralKnowledgeProduct[];
+  publicLinks: CentralKnowledgePublicLinks;
+  commercialPolicies: CentralKnowledgeCommercialPolicies;
+  updatedAt: string;
+}

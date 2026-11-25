@@ -23,6 +23,7 @@ import {
 import {
   buildInMemoryEnquiryRecord,
   computeEnquiryStats,
+  fetchCentralBusinessKnowledge,
   handleReceptionistChat,
   insertEnquiryIntoSupabaseRest,
   listEnquiriesFromSupabaseRest,
@@ -3470,6 +3471,7 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
 // ====================================================================
 const receptionistChatLimiter = createSlidingWindowRateLimiter(20, 60_000);
 const receptionistEnquiryLimiter = createSlidingWindowRateLimiter(6, 5 * 60_000);
+const receptionistKnowledgeLimiter = createSlidingWindowRateLimiter(60, 60_000);
 const previewReceptionistEnquiries: ReceptionistEnquiryRecord[] = [];
 
 function getRequestClientIp(req: Request): string {
@@ -3479,6 +3481,47 @@ function getRequestClientIp(req: Request): string {
   }
   return req.ip || req.socket?.remoteAddress || 'unknown';
 }
+
+app.options('/api/receptionist/knowledge', (_req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  return res.status(204).send();
+});
+
+app.get('/api/receptionist/knowledge', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  const ip = getRequestClientIp(req);
+  const rate = receptionistKnowledgeLimiter(`knowledge:${ip}`);
+  if (!rate.allowed) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    return res.status(429).json({
+      ok: false,
+      error: `Too many knowledge requests. Please wait ${rate.retryAfterSeconds} seconds and try again.`,
+      code: 'RATE_LIMITED',
+      retryAfterSeconds: rate.retryAfterSeconds
+    });
+  }
+
+  try {
+    const knowledge = await fetchCentralBusinessKnowledge(process.env);
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+    return res.status(200).json(knowledge);
+  } catch (err) {
+    console.error('Error in GET /api/receptionist/knowledge:', err);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(500).json({
+      ok: false,
+      error: 'Unable to load UNIKORN360 central business knowledge right now.',
+      code: 'KNOWLEDGE_UNAVAILABLE'
+    });
+  }
+});
 
 app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
   const ip = getRequestClientIp(req);

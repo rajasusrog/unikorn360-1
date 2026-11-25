@@ -1,7 +1,17 @@
-import { BUSINESS_INFO } from '../data/servicesData';
+import { BUSINESS_INFO, ENGAGEMENT_MODELS } from '../data/servicesData';
 import { SEED_DIVISIONS, SEED_SERVICES } from '../data/seedData';
 import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
+import type {
+  ServiceCatalogItem,
+  ServiceDivision,
+  ServicePackage
+} from '../types/database';
 import {
+  CentralBusinessKnowledgeResponse,
+  CentralKnowledgeApprovedPackage,
+  CentralKnowledgeDivision,
+  CentralKnowledgeProduct,
+  CentralKnowledgeService,
   ReceptionistChatRequest,
   ReceptionistChatResponse,
   ReceptionistEnquiryDraft,
@@ -181,33 +191,328 @@ export function sanitizeRecommendedLinks(rawLinks: unknown): RecommendedLink[] {
   return verified;
 }
 
+export const CENTRAL_KNOWLEDGE_SCHEMA_VERSION = '1.0' as const;
+export const CENTRAL_KNOWLEDGE_DATA_VERSION = 'unikorn360-knowledge-2026-11';
+
+const CANONICAL_CORE_PAGES: Array<{ label: string; path: string }> = [
+  { label: 'Home', path: '/' },
+  { label: 'All Services Directory', path: '/services' },
+  { label: 'UNIKORN360 Software Products', path: '/products' },
+  { label: 'Industry Solutions', path: '/solutions' },
+  { label: 'UNIKORN360 Creators', path: '/creators' },
+  { label: 'Business Resources', path: '/resources' },
+  { label: 'About UNIKORN360', path: '/about' },
+  { label: 'Contact UNIKORN360', path: '/contact' }
+];
+
+function sanitizeStringList(raw: unknown, maxItems = 25, maxLen = 400): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const clean = item.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
+    if (clean) {
+      out.push(clean.slice(0, maxLen));
+    }
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+/**
+ * Excludes all draft/pending packages and null/unapproved prices.
+ * Only packages explicitly approved with a valid numeric price are surfaced.
+ */
+export function sanitizeApprovedPackages(
+  rawPackages: ServicePackage[] | unknown
+): CentralKnowledgeApprovedPackage[] {
+  if (!Array.isArray(rawPackages)) return [];
+  const approved: CentralKnowledgeApprovedPackage[] = [];
+
+  for (const pkg of rawPackages) {
+    if (!pkg || typeof pkg !== 'object') continue;
+    const item = pkg as ServicePackage;
+    if (item.approval_status !== 'approved') continue;
+    if (typeof item.price !== 'number' || !Number.isFinite(item.price) || item.price <= 0) {
+      continue;
+    }
+
+    approved.push({
+      id: String(item.id || '').trim(),
+      name: String(item.name || '').trim(),
+      description: String(item.description || '').trim(),
+      price: item.price,
+      currency: String(item.currency || 'INR').trim(),
+      billingPeriod: item.billing_period,
+      priceType: item.price_type,
+      inclusions: sanitizeStringList(item.inclusions),
+      limits: sanitizeStringList(item.limits),
+      exclusions: sanitizeStringList(item.exclusions),
+      setupCharges: item.setup_charges ? String(item.setup_charges).trim() : null,
+      taxTreatment: String(item.tax_treatment || 'Subject to applicable GST (18%)').trim(),
+      isPopular: Boolean(item.is_popular)
+    });
+  }
+
+  return approved;
+}
+
+export interface AssembleCentralKnowledgeOptions {
+  divisions?: ServiceDivision[];
+  services?: ServiceCatalogItem[];
+  catalogSource?: 'supabase_published' | 'canonical_seed';
+  updatedAt?: string;
+}
+
+/**
+ * Single authoritative builder for the Central Business Knowledge API,
+ * website AI Receptionist context, and future Inbox360 WhatsApp integrations.
+ * Strictly applies publication filters, excludes draft packages / unapproved prices,
+ * and omits all credentials, customer records, and internal notes.
+ */
+export function assembleCentralBusinessKnowledge(
+  options: AssembleCentralKnowledgeOptions = {}
+): CentralBusinessKnowledgeResponse {
+  const websiteOrigin = BUSINESS_INFO.website.replace(/\/+$/, '');
+  const useLiveCatalog =
+    options.catalogSource === 'supabase_published' || Array.isArray(options.services);
+
+  const rawDivisions =
+    Array.isArray(options.divisions) && options.divisions.length > 0
+      ? options.divisions
+      : SEED_DIVISIONS;
+
+  const publishedDivisions = rawDivisions
+    .filter((d) => d && d.status === 'published')
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+  const divisionById = new Map<string, ServiceDivision>(
+    publishedDivisions.map((d) => [d.id, d])
+  );
+
+  const rawServices = useLiveCatalog ? options.services || [] : SEED_SERVICES;
+  const filteredServices = rawServices
+    .filter((s) => {
+      if (!s || !divisionById.has(s.division_id)) return false;
+      if (useLiveCatalog) {
+        return s.status === 'published';
+      }
+      // Canonical seed fallback includes primary canonical services while rejecting archived rows
+      return s.status !== 'archived';
+    })
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+  const countByDivisionId = new Map<string, number>();
+  for (const svc of filteredServices) {
+    countByDivisionId.set(svc.division_id, (countByDivisionId.get(svc.division_id) || 0) + 1);
+  }
+
+  const divisions: CentralKnowledgeDivision[] = publishedDivisions.map((div) => {
+    const divPath = `/services/${div.slug}`;
+    return {
+      id: div.id,
+      slug: div.slug,
+      name: div.name,
+      displayOrder: div.display_order,
+      shortDescription: div.short_description,
+      fullDescription: div.full_description,
+      path: divPath,
+      url: `${websiteOrigin}${divPath}`,
+      publishedServiceCount: countByDivisionId.get(div.id) || 0
+    };
+  });
+
+  const services: CentralKnowledgeService[] = filteredServices.map((svc) => {
+    const parent = divisionById.get(svc.division_id)!;
+    const svcPath = `/services/${parent.slug}/${svc.slug}`;
+    return {
+      id: svc.id,
+      divisionId: svc.division_id,
+      divisionSlug: parent.slug,
+      divisionName: parent.name,
+      slug: svc.slug,
+      name: svc.service_name,
+      displayOrder: svc.display_order,
+      shortDescription: svc.short_description,
+      fullDescription: svc.full_description,
+      serviceType: svc.service_type || 'custom-development',
+      problemsSolved: sanitizeStringList(svc.problems_solved),
+      targetCustomers: sanitizeStringList(svc.target_customers),
+      benefits: sanitizeStringList(svc.benefits),
+      deliverables: sanitizeStringList(svc.deliverables),
+      faqs: Array.isArray(svc.faqs)
+        ? svc.faqs
+            .filter((f) => f && typeof f.question === 'string' && typeof f.answer === 'string')
+            .map((f) => ({
+              question: f.question.trim(),
+              answer: f.answer.trim()
+            }))
+        : [],
+      approvedPackages: sanitizeApprovedPackages(svc.packages),
+      path: svcPath,
+      url: `${websiteOrigin}${svcPath}`
+    };
+  });
+
+  const products: CentralKnowledgeProduct[] = UNIKORN_FOUR_PRODUCTS.map((prod) => ({
+    id: prod.id,
+    slug: prod.slug,
+    name: prod.name,
+    categoryLabel: prod.categoryLabel,
+    shortDescription: prod.shortDescription,
+    fullDescription: prod.fullDescription,
+    intendedUsers: [...prod.intendedUsers],
+    verifiedFeatures: prod.verifiedFeatures.map((f) => ({
+      title: f.title,
+      description: f.description
+    })),
+    faqs: prod.faqs.map((faq) => ({ ...faq })),
+    relatedProductSlugs: [...prod.relatedProductSlugs],
+    publicPath: prod.path,
+    canonicalUrl: prod.canonicalUrl,
+    appUrl: prod.appUrl,
+    confirmedPricing: prod.confirmedPricing
+      ? prod.confirmedPricing.map((tier) => ({
+          ...tier,
+          inclusions: [...tier.inclusions]
+        }))
+      : null
+  }));
+
+  const timestampCandidates = [
+    ...publishedDivisions.map((d) => d.updated_at || d.created_at),
+    ...filteredServices.map((s) => s.updated_at || s.created_at)
+  ]
+    .filter((v): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v)))
+    .sort();
+
+  const resolvedUpdatedAt =
+    options.updatedAt ||
+    (timestampCandidates.length > 0
+      ? timestampCandidates[timestampCandidates.length - 1]
+      : new Date().toISOString());
+
+  const catalogSource: 'supabase_published' | 'canonical_seed' = useLiveCatalog
+    ? 'supabase_published'
+    : 'canonical_seed';
+
+  return {
+    ok: true,
+    schemaVersion: CENTRAL_KNOWLEDGE_SCHEMA_VERSION,
+    sourceDataVersion: `${CENTRAL_KNOWLEDGE_DATA_VERSION}:${catalogSource}:${divisions.length}d-${services.length}s-${products.length}p`,
+    catalogSource,
+    counts: {
+      divisions: divisions.length,
+      services: services.length,
+      products: products.length
+    },
+    company: {
+      brand: BUSINESS_INFO.brand,
+      shortBrand: BUSINESS_INFO.shortBrand,
+      founder: BUSINESS_INFO.founder,
+      gstin: BUSINESS_INFO.gstin,
+      website: websiteOrigin,
+      email: BUSINESS_INFO.email,
+      phone: BUSINESS_INFO.phone,
+      whatsappDisplay: RECEPTIONIST_WHATSAPP_DISPLAY,
+      whatsappNumber: RECEPTIONIST_WHATSAPP_NUMBER,
+      whatsappUrl: buildReceptionistWhatsAppUrl(),
+      address: { ...BUSINESS_INFO.address }
+    },
+    divisions,
+    services,
+    products,
+    publicLinks: {
+      websiteOrigin,
+      whatsappHandoverUrl: buildReceptionistWhatsAppUrl(),
+      corePages: CANONICAL_CORE_PAGES.map((p) => ({
+        label: p.label,
+        path: p.path,
+        url: `${websiteOrigin}${p.path === '/' ? '' : p.path}`
+      })),
+      divisions: divisions.map((d) => ({
+        label: d.name,
+        path: d.path,
+        url: d.url
+      })),
+      services: services.map((s) => ({
+        label: s.name,
+        path: s.path,
+        url: s.url
+      })),
+      products: products.map((p) => ({
+        label: p.name,
+        path: p.publicPath,
+        url: p.canonicalUrl,
+        appUrl: p.appUrl
+      }))
+    },
+    commercialPolicies: {
+      pricingPolicy:
+        'All custom projects, software deployments, and enterprise retainers are scoped after requirement review with an itemized written commercial proposal.',
+      unapprovedPricingRule:
+        'Never quote unapproved pricing, estimated discounts, or unpublished package fees. Draft commercial packages are excluded until formally approved.',
+      timelinePolicy:
+        'Delivery timelines depend on final scope sign-off, client content readiness, and integration dependencies; exact schedules are confirmed in writing.',
+      taxNote: 'Applicable Indian GST (18%) applies on commercial invoices as per statutory norms.',
+      supportedLanguages: ['en', 'ta', 'tanglish', 'hi'],
+      engagementModels: ENGAGEMENT_MODELS.map((m) => ({
+        id: m.id,
+        name: m.name,
+        tagline: m.tagline,
+        subtitle: m.subtitle,
+        description: m.description,
+        deliverables: [...m.deliverables],
+        bestFor: m.bestFor
+      })),
+      humanHandover: {
+        whatsappDisplay: RECEPTIONIST_WHATSAPP_DISPLAY,
+        whatsappUrl: buildReceptionistWhatsAppUrl(),
+        defaultMessage: RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE,
+        email: BUSINESS_INFO.email
+      }
+    },
+    updatedAt: resolvedUpdatedAt
+  };
+}
+
 /**
  * Compact, verified knowledge base grounded strictly in UNIKORN360's published site data.
+ * Built directly from the central knowledge engine to keep prompt context, Demo Mode,
+ * and GET /api/receptionist/knowledge synchronized.
  */
 export function buildUnikornKnowledgeContext(): string {
-  const divisionsSummary = SEED_DIVISIONS.map((div) => {
-    const divServices = SEED_SERVICES.filter((s) => s.division_id === div.id)
-      .map((s) => `  - ${s.service_name} (path: /services/${div.slug}/${s.slug}): ${s.short_description}`)
-      .join('\n');
-    return `Division: ${div.name} (path: /services/${div.slug})\nOverview: ${div.short_description}\nPublished Services:\n${divServices}`;
-  }).join('\n\n');
+  const kb = assembleCentralBusinessKnowledge();
 
-  const productsSummary = UNIKORN_FOUR_PRODUCTS.map(
-    (p) =>
-      `- ${p.name} (${p.categoryLabel}) — Page: ${p.path} | Live App: ${p.appUrl}\n  Summary: ${p.shortDescription}\n  Intended Users: ${p.intendedUsers.join(', ')}\n  Key Capabilities: ${p.verifiedFeatures.map((f) => f.title).join('; ')}`
-  ).join('\n');
+  const divisionsSummary = kb.divisions
+    .map((div) => {
+      const divServices = kb.services
+        .filter((s) => s.divisionId === div.id)
+        .map((s) => `  - ${s.name} (path: ${s.path}): ${s.shortDescription}`)
+        .join('\n');
+      return `Division: ${div.name} (path: ${div.path})\nOverview: ${div.shortDescription}\nPublished Services:\n${divServices}`;
+    })
+    .join('\n\n');
+
+  const productsSummary = kb.products
+    .map(
+      (p) =>
+        `- ${p.name} (${p.categoryLabel}) — Page: ${p.publicPath} | Live App: ${p.appUrl}\n  Summary: ${p.shortDescription}\n  Intended Users: ${p.intendedUsers.join(', ')}\n  Key Capabilities: ${p.verifiedFeatures.map((f) => f.title).join('; ')}`
+    )
+    .join('\n');
 
   return `
 COMPANY PROFILE (PUBLISHED FACTS ONLY):
-- Brand: ${BUSINESS_INFO.brand} (${BUSINESS_INFO.shortBrand})
-- Founder: ${BUSINESS_INFO.founder}
-- Official Website: ${BUSINESS_INFO.website}
-- Official Phone & WhatsApp: ${RECEPTIONIST_WHATSAPP_DISPLAY} (${RECEPTIONIST_WHATSAPP_BASE_URL})
-- Official Email: ${BUSINESS_INFO.email}
-- GSTIN: ${BUSINESS_INFO.gstin}
-- Registered Office: ${BUSINESS_INFO.address.full}
+- Brand: ${kb.company.brand} (${kb.company.shortBrand})
+- Founder: ${kb.company.founder}
+- Official Website: ${kb.company.website}
+- Official Phone & WhatsApp: ${kb.company.whatsappDisplay} (${RECEPTIONIST_WHATSAPP_BASE_URL})
+- Official Email: ${kb.company.email}
+- GSTIN: ${kb.company.gstin}
+- Registered Office: ${kb.company.address.full}
+- Commercial Policy: ${kb.commercialPolicies.pricingPolicy}
 
-STANDALONE SOFTWARE PRODUCTS (4 PRODUCTS — Page: /products):
+STANDALONE SOFTWARE PRODUCTS (${kb.products.length} PRODUCTS — Page: /products):
 ${productsSummary}
 
 SIX SERVICE DIVISIONS & PUBLISHED CATALOGUE (Directory: /services):
