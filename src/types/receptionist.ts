@@ -124,6 +124,10 @@ export interface ReceptionistMessageMetadata {
   suggestHumanHandover?: boolean;
   currentPage?: string;
   detectedLanguage?: ReceptionistLanguage;
+  errorCode?: string;
+  errorMessage?: string;
+  failureStage?: 'turnstile' | 'upstream_ai' | 'empty_reply' | 'network' | 'persistence';
+  failedMessageId?: string;
 }
 
 export interface ReceptionistMessageRecord {
@@ -153,6 +157,7 @@ export interface ReceptionistConversationRecord {
   updated_at: string;
   last_message_at: string;
   message_count?: number;
+  failed_count?: number;
   last_message_preview?: string | null;
   enquiry_reference_code?: string | null;
 }

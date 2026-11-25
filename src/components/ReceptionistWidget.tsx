@@ -43,68 +43,16 @@ import {
   TurnstileVerificationError
 } from '../lib/turnstile';
 
+import {
+  ModeSessionPair,
+  generateSessionRandomId,
+  loadOrCreateIsolatedTabSessions,
+  resetActiveModeSession
+} from '../lib/receptionistSessionStorage';
+
 interface ReceptionistWidgetProps {
   currentPath: string;
   onNavigate: (path: string) => void;
-}
-
-const SESSION_STORAGE_KEY = 'unikorn360_rec_session_v1';
-
-interface StoredBrowserSession {
-  sessionId: string;
-  sessionToken: string;
-}
-
-function generateRandomId(prefix: string): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function createFreshBrowserSession(): StoredBrowserSession {
-  return {
-    sessionId: generateRandomId('rec'),
-    sessionToken: `${generateRandomId('sectok')}-${Math.random().toString(36).slice(2, 10)}`
-  };
-}
-
-function loadOrCreateBrowserSession(): StoredBrowserSession {
-  if (typeof window === 'undefined') {
-    return createFreshBrowserSession();
-  }
-  try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<StoredBrowserSession>;
-      if (
-        typeof parsed?.sessionId === 'string' &&
-        parsed.sessionId.length >= 8 &&
-        typeof parsed?.sessionToken === 'string' &&
-        parsed.sessionToken.length >= 16
-      ) {
-        return {
-          sessionId: parsed.sessionId,
-          sessionToken: parsed.sessionToken
-        };
-      }
-    }
-  } catch {
-    // Ignore storage read errors
-  }
-
-  const fresh = createFreshBrowserSession();
-  saveBrowserSession(fresh);
-  return fresh;
-}
-
-function saveBrowserSession(sess: StoredBrowserSession): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sess));
-  } catch {
-    // Ignore storage quota/privacy mode errors
-  }
 }
 
 function formatTime(iso: string): string {
@@ -137,11 +85,12 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   const [widgetState, setWidgetState] = useState<'closed' | 'minimised' | 'open'>('closed');
   const [teaserDismissed, setTeaserDismissed] = useState(false);
   const [mode, setMode] = useState<ReceptionistMode>('live');
-  const [browserSession, setBrowserSession] = useState<StoredBrowserSession>(() =>
-    loadOrCreateBrowserSession()
+  const [sessionsByMode, setSessionsByMode] = useState<ModeSessionPair>(() =>
+    loadOrCreateIsolatedTabSessions()
   );
-  const sessionId = browserSession.sessionId;
-  const sessionToken = browserSession.sessionToken;
+  const activeSession = sessionsByMode[mode];
+  const sessionId = activeSession.sessionId;
+  const sessionToken = activeSession.sessionToken;
 
   const [messagesByMode, setMessagesByMode] = useState<{
     live: ReceptionistChatMessage[];
@@ -202,14 +151,15 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
 
   useEffect(() => {
     if (currentPath.startsWith('/admin')) return;
-    const hydrationKey = `${sessionId}:${mode}`;
+    const targetSession = sessionsByMode[mode];
+    const hydrationKey = `${targetSession.sessionId}:${mode}`;
     if (hydratedKeysRef.current.has(hydrationKey)) return;
 
     let cancelled = false;
     receptionistService
       .hydrateSessionMessages({
-        sessionId,
-        sessionToken,
+        sessionId: targetSession.sessionId,
+        sessionToken: targetSession.sessionToken,
         sourceChannel: 'website',
         sourceMode: mode
       })
@@ -261,7 +211,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, sessionToken, mode, currentPath]);
+  }, [sessionsByMode, mode, currentPath]);
 
   useEffect(() => {
     if (widgetState === 'open') {
@@ -325,14 +275,13 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   };
 
   const handleResetConversation = () => {
-    const freshSession = createFreshBrowserSession();
-    saveBrowserSession(freshSession);
-    hydratedKeysRef.current.clear();
-    setBrowserSession(freshSession);
-    setMessagesByMode({
-      live: [createWelcomeMessage('live')],
-      demo: [createWelcomeMessage('demo')]
-    });
+    const oldSessionId = sessionsByMode[mode].sessionId;
+    hydratedKeysRef.current.delete(`${oldSessionId}:${mode}`);
+    setSessionsByMode((prev) => resetActiveModeSession(prev, mode));
+    setMessagesByMode((prev) => ({
+      ...prev,
+      [mode]: [createWelcomeMessage(mode)]
+    }));
     setInputValue('');
     setChatError(null);
     setDetectedLanguage('en');
@@ -343,7 +292,9 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     setFieldErrors({});
     setEnquirySubmitError('');
     setSubmittedReceipt(null);
-    turnstileControllerRef.current?.reset();
+    if (mode === 'live') {
+      turnstileControllerRef.current?.reset();
+    }
   };
 
   const handleModeSwitch = (nextMode: ReceptionistMode) => {
@@ -369,8 +320,9 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     if (!trimmed || isSending) return;
 
     const activeMode = options?.overrideMode || mode;
-    const clientMessageId = options?.retryClientMessageId || generateRandomId('usr');
-    const assistantMessageId = generateRandomId('ast');
+    const targetSession = sessionsByMode[activeMode];
+    const clientMessageId = options?.retryClientMessageId || generateSessionRandomId('usr');
+    const assistantMessageId = generateSessionRandomId('ast');
     const inferredLang = detectMessageLanguage(trimmed);
 
     setChatError(null);
@@ -439,8 +391,8 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       setInputValue('');
 
       const response = await receptionistService.sendMessage({
-        sessionId,
-        sessionToken,
+        sessionId: targetSession.sessionId,
+        sessionToken: targetSession.sessionToken,
         message: trimmed,
         history: historyForApi,
         mode: activeMode,
@@ -514,7 +466,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     if (action.isHumanHandover) {
       setShowHandoverCard(true);
       setShowQuickActions(false);
-      const handoverId = generateRandomId('handover');
+      const handoverId = generateSessionRandomId('handover');
       const handoverContent =
         'You can reach the UNIKORN360 team directly on WhatsApp (+91 98848 24360) using the Talk to UNIKORN360 button below, or leave your enquiry details here so our team can follow up with full context.';
       const handoverMsg: ReceptionistChatMessage = {
@@ -652,7 +604,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       });
       setShowEnquiryForm(false);
 
-      const receiptId = generateRandomId('receipt');
+      const receiptId = generateSessionRandomId('receipt');
       setMessagesByMode((prev) => ({
         ...prev,
         [mode]: [

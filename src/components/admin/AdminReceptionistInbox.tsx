@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
   RefreshCw,
@@ -109,6 +109,7 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
   const [editAssignee, setEditAssignee] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState('');
+  const activeConversationIdRef = useRef<string | null>(null);
 
   const canModify = currentRole === 'superadmin' || currentRole === 'admin';
 
@@ -142,7 +143,16 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
     return () => clearTimeout(timer);
   }, [loadConversations]);
 
+  const closeConversationDrawer = () => {
+    activeConversationIdRef.current = null;
+    setSelectedConversation(null);
+    setDrawerMessages([]);
+    setDrawerLoading(false);
+    setSaveBanner('');
+  };
+
   const openConversationDrawer = async (conv: ReceptionistConversationRecord) => {
+    activeConversationIdRef.current = conv.id;
     setSelectedConversation(conv);
     setEditStatus(conv.conversation_status);
     setEditAssignee(conv.assigned_employee || '');
@@ -151,16 +161,20 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
     setDrawerLoading(true);
     try {
       const detail = await receptionistService.getAdminConversationDetail(conv.id);
+      if (activeConversationIdRef.current !== conv.id) return;
       setSelectedConversation({
         ...conv,
         ...detail.conversation,
         enquiry_reference_code: conv.enquiry_reference_code || detail.conversation.enquiry_reference_code
       });
-      setDrawerMessages(detail.messages || []);
+      setDrawerMessages((detail.messages || []).filter((m) => m.conversation_id === conv.id));
     } catch (err: unknown) {
+      if (activeConversationIdRef.current !== conv.id) return;
       setError(err instanceof Error ? err.message : 'Failed to load conversation messages.');
     } finally {
-      setDrawerLoading(false);
+      if (activeConversationIdRef.current === conv.id) {
+        setDrawerLoading(false);
+      }
     }
   };
 
@@ -367,8 +381,11 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
                         <div className="font-semibold text-[#0B1426] truncate">
                           {conv.customer_identifier || 'Website Visitor'}
                         </div>
-                        <div className="text-[11px] text-[#526176] font-mono mt-0.5 truncate">
-                          {conv.session_id}
+                        <div
+                          className="text-[11px] text-[#526176] font-mono mt-0.5 truncate"
+                          title={`Conversation ID: ${conv.id} · Session ID: ${conv.session_id}`}
+                        >
+                          ID: {conv.id.slice(0, 8)} · {conv.session_id}
                           {conv.enquiry_reference_code ? ` · ${conv.enquiry_reference_code}` : ''}
                         </div>
                         {conv.last_message_preview && (
@@ -383,8 +400,22 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
                           {conv.source_channel}
                         </div>
                         <div className="text-[11px] text-[#526176] mt-0.5">
-                          {conv.source_mode === 'demo' ? 'Demo Mode' : 'Live AI'} ·{' '}
+                          <span
+                            className={
+                              conv.source_mode === 'demo'
+                                ? 'font-semibold text-[#9A6B00]'
+                                : 'font-semibold text-[#0B1426]'
+                            }
+                          >
+                            {conv.source_mode === 'demo' ? 'Demo Mode' : 'Live AI'}
+                          </span>
+                          {' · '}
                           <span className="font-mono">{conv.current_page || '/'}</span>
+                          {(conv.failed_count ?? 0) > 0 && (
+                            <span className="ml-1.5 font-semibold text-red-700">
+                              · {conv.failed_count} failed
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -440,7 +471,7 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
           role="dialog"
           aria-label={`Conversation ${selectedConversation.session_id}`}
           className="fixed inset-0 z-50 bg-[#0B1426]/45 flex justify-end"
-          onClick={() => setSelectedConversation(null)}
+          onClick={closeConversationDrawer}
         >
           <div
             className="w-full max-w-2xl bg-[#F6F5F1] h-full overflow-y-auto border-l border-[#E4DFD5] shadow-2xl flex flex-col"
@@ -451,8 +482,10 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
               <div>
                 <div className="text-xs text-[#526176] flex flex-wrap items-center gap-2 tabular-nums">
                   <span className="font-mono font-semibold text-[#0B1426]">
-                    {selectedConversation.session_id}
+                    {selectedConversation.id}
                   </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono">{selectedConversation.session_id}</span>
                   <span aria-hidden="true">·</span>
                   <span className="capitalize">{selectedConversation.source_channel}</span>
                   <span aria-hidden="true">·</span>
@@ -469,7 +502,7 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
 
               <button
                 type="button"
-                onClick={() => setSelectedConversation(null)}
+                onClick={closeConversationDrawer}
                 aria-label="Close conversation drawer"
                 className="p-2 text-[#526176] hover:text-[#0B1426] rounded-lg hover:bg-[#F6F5F1] cursor-pointer"
               >
@@ -613,11 +646,14 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
                     {drawerMessages.map((msg) => {
                       const isCustomer = msg.sender_type === 'customer';
                       const isSystem = msg.sender_type === 'system';
+                      const isFailed = msg.delivery_status === 'failed';
                       return (
                         <div
                           key={msg.id}
                           className={`rounded-lg p-3.5 text-xs leading-relaxed border ${
-                            isCustomer
+                            isFailed
+                              ? 'bg-red-50 text-red-900 border-red-200'
+                              : isCustomer
                               ? 'bg-[#0B1426] text-white border-[#0B1426]'
                               : isSystem
                               ? 'bg-[#FDF8EA] text-[#6B4E08] border-[#E8D59E]'
@@ -626,7 +662,9 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5 opacity-85 tabular-nums text-[11px]">
                             <span className="font-semibold inline-flex items-center gap-1.5">
-                              {isCustomer ? (
+                              {isFailed ? (
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
+                              ) : isCustomer ? (
                                 <User className="w-3.5 h-3.5" />
                               ) : isSystem ? (
                                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -636,11 +674,21 @@ export const AdminReceptionistInbox: React.FC<AdminReceptionistInboxProps> = ({ 
                               {getSenderBadgeLabel(msg.sender_type, selectedConversation.source_mode)}
                               {msg.ai_model ? ` · ${msg.ai_model}` : ''}
                             </span>
-                            <span>
+                            <span className={isFailed ? 'font-semibold text-red-800' : ''}>
                               {msg.delivery_status} · {formatDateTime(msg.created_at)}
                             </span>
                           </div>
                           <p className="whitespace-pre-line">{msg.message_content}</p>
+                          {(msg.message_metadata?.errorCode || msg.message_metadata?.failureStage) && (
+                            <div className="mt-2 pt-2 border-t border-red-200/80 text-[11px] font-mono text-red-800 flex flex-wrap gap-2">
+                              {msg.message_metadata.failureStage && (
+                                <span>Stage: {msg.message_metadata.failureStage}</span>
+                              )}
+                              {msg.message_metadata.errorCode && (
+                                <span>Code: {msg.message_metadata.errorCode}</span>
+                              )}
+                            </div>
+                          )}
                           {Array.isArray(msg.message_metadata?.recommendedLinks) &&
                             msg.message_metadata.recommendedLinks.length > 0 && (
                               <div className="mt-2 pt-2 border-t border-current/15 flex flex-wrap gap-1.5">

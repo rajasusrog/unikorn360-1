@@ -1095,6 +1095,14 @@ export function normalizeReceptionistChannel(
   return fallback;
 }
 
+const ALLOWED_FAILURE_STAGES = new Set([
+  'turnstile',
+  'upstream_ai',
+  'empty_reply',
+  'network',
+  'persistence'
+]);
+
 export function sanitizeConversationMetadata(raw: unknown): ReceptionistMessageMetadata {
   if (!raw || typeof raw !== 'object') return {};
   const obj = raw as Record<string, unknown>;
@@ -1130,7 +1138,81 @@ export function sanitizeConversationMetadata(raw: unknown): ReceptionistMessageM
     cleaned.detectedLanguage = normalizeReceptionistLanguage(obj.detectedLanguage);
   }
 
+  const errorCode = sanitizePlainText(obj.errorCode, 80);
+  if (errorCode) cleaned.errorCode = errorCode;
+
+  const errorMessage = sanitizePlainText(obj.errorMessage, 400);
+  if (errorMessage) cleaned.errorMessage = errorMessage;
+
+  if (typeof obj.failureStage === 'string' && ALLOWED_FAILURE_STAGES.has(obj.failureStage)) {
+    cleaned.failureStage = obj.failureStage as ReceptionistMessageMetadata['failureStage'];
+  }
+
+  const failedMessageId = sanitizePlainText(obj.failedMessageId, 128);
+  if (failedMessageId && SAFE_ID_REGEX.test(failedMessageId)) {
+    cleaned.failedMessageId = failedMessageId;
+  }
+
   return cleaned;
+}
+
+export function validateModeScopedSessionIsolation(
+  sessionId: string,
+  sourceMode: 'live' | 'demo',
+  sourceChannel: ReceptionistSourceChannel
+): string | null {
+  const lower = sessionId.toLowerCase();
+  if (
+    sourceChannel === 'website' &&
+    (lower.startsWith('rec-wa-') || lower.startsWith('wa:'))
+  ) {
+    return 'WhatsApp session IDs cannot be reused on the website channel.';
+  }
+  if (sourceChannel === 'whatsapp' && lower.startsWith('rec-web-')) {
+    return 'Website session IDs cannot be reused on the WhatsApp channel.';
+  }
+  if (
+    sourceMode === 'live' &&
+    (lower.startsWith('rec-web-demo-') || lower.startsWith('rec-demo-'))
+  ) {
+    return 'Demo Mode session IDs cannot be reused for Live AI conversations.';
+  }
+  if (
+    sourceMode === 'demo' &&
+    (lower.startsWith('rec-web-live-') || lower.startsWith('rec-live-'))
+  ) {
+    return 'Live AI session IDs cannot be reused for Demo Mode conversations.';
+  }
+  return null;
+}
+
+export function buildLiveAiFailurePersistInput(params: {
+  assistantMessageId: string;
+  errorCode: string;
+  errorMessage: string;
+  failureStage: NonNullable<ReceptionistMessageMetadata['failureStage']>;
+  currentPage?: string;
+  detectedLanguage?: ReceptionistLanguage;
+}): ReceptionistPersistMessageInput {
+  const safeCode = sanitizePlainText(params.errorCode, 80) || 'LIVE_AI_ERROR';
+  const safeError =
+    sanitizePlainText(params.errorMessage, 320) ||
+    'Live AI did not complete a response.';
+  return {
+    messageId: `fail_${params.assistantMessageId}`,
+    senderType: 'system',
+    messageContent: `Live AI response failed (${safeCode}): ${safeError}`,
+    messageMetadata: {
+      currentPage: sanitizePlainText(params.currentPage, 160) || '/',
+      detectedLanguage: normalizeReceptionistLanguage(params.detectedLanguage, 'en'),
+      errorCode: safeCode,
+      errorMessage: safeError,
+      failureStage: params.failureStage,
+      failedMessageId: params.assistantMessageId
+    },
+    aiModel: null,
+    deliveryStatus: 'failed'
+  };
 }
 
 export function validateChatRequestPayload(
@@ -1149,6 +1231,13 @@ export function validateChatRequestPayload(
   const rawMode = obj.sourceMode !== undefined ? obj.sourceMode : obj.mode;
   const mode = rawMode === 'demo' ? 'demo' : 'live';
   const sourceChannel = normalizeReceptionistChannel(obj.sourceChannel, 'website');
+  const isolationError = validateModeScopedSessionIsolation(sessionId, mode, sourceChannel);
+  if (isolationError) {
+    return {
+      ok: false,
+      error: isolationError
+    };
+  }
   const detectedLanguage =
     obj.detectedLanguage !== undefined ? normalizeReceptionistLanguage(obj.detectedLanguage) : undefined;
   const turnstileToken = sanitizePlainText(obj.turnstileToken, 2048) || undefined;
@@ -1393,6 +1482,10 @@ export function validatePersistMessagesPayload(
 
   const sourceChannel = normalizeReceptionistChannel(obj.sourceChannel, 'website');
   const sourceMode = obj.sourceMode === 'demo' ? 'demo' : 'live';
+  const isolationError = validateModeScopedSessionIsolation(sessionId, sourceMode, sourceChannel);
+  if (isolationError) {
+    return { ok: false, error: isolationError };
+  }
   const currentPage = sanitizePlainText(obj.currentPage, 160) || '/';
   const detectedLanguage = normalizeReceptionistLanguage(obj.detectedLanguage, 'en');
   const customerIdentifier = sanitizePlainText(obj.customerIdentifier, 160) || undefined;

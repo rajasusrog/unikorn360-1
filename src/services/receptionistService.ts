@@ -19,6 +19,7 @@ import {
 } from '../types/receptionist';
 
 import {
+  buildLiveAiFailurePersistInput,
   detectMessageLanguage,
   generateDemoReceptionistReply,
   inferReceptionistMetadataFromConversation,
@@ -85,22 +86,33 @@ export class ReceptionistClientError extends Error {
   }
 }
 
-async function tryPersistTurnSafe(
-  payload: ReceptionistPersistTurnRequest
+async function persistTurnWithRetry(
+  payload: ReceptionistPersistTurnRequest,
+  maxAttempts = 2
 ): Promise<ReceptionistPersistTurnResponse | null> {
-  try {
-    const res = await fetch(apiUrl('/api/receptionist/messages'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) return null;
-    return (await res.json().catch(() => null)) as ReceptionistPersistTurnResponse | null;
-  } catch {
-    return null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch(apiUrl('/api/receptionist/messages'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        return (await res.json().catch(() => null)) as ReceptionistPersistTurnResponse | null;
+      }
+      if (res.status >= 400 && res.status < 500) {
+        return null;
+      }
+    } catch {
+      // Transient network hiccup; retry once if attempts remain
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
   }
+  return null;
 }
 
 export const receptionistService = {
@@ -177,7 +189,7 @@ export const receptionistService = {
           demoResponse.extractedFields?.contactNumber ||
           undefined;
 
-        const saved = await tryPersistTurnSafe({
+        const saved = await persistTurnWithRetry({
           sessionId: payload.sessionId,
           sessionToken: payload.sessionToken,
           sourceChannel,
@@ -238,12 +250,25 @@ export const receptionistService = {
     }
 
     // Production origin (www.unikorn360.com / unikorn360.com): call Cloudflare Worker directly via fetch()
-    // and independently persist customer & assistant turns to same-origin /api/receptionist/messages.
+    // and independently persist customer & assistant (or failure) turns to same-origin /api/receptionist/messages.
     if (isProductionUnikornOrigin()) {
       let conversationId: string | undefined;
+      let customerSaved = false;
+
+      const customerMessageInput = {
+        messageId: customerMessageId,
+        senderType: 'customer' as const,
+        messageContent: payload.message,
+        messageMetadata: {
+          quickActionId: payload.quickActionId,
+          currentPage,
+          detectedLanguage: detectedLang
+        },
+        deliveryStatus: 'received' as const
+      };
 
       if (payload.sessionToken) {
-        const savedUser = await tryPersistTurnSafe({
+        const savedUser = await persistTurnWithRetry({
           sessionId: payload.sessionId,
           sessionToken: payload.sessionToken,
           sourceChannel,
@@ -251,22 +276,39 @@ export const receptionistService = {
           currentPage,
           detectedLanguage: detectedLang,
           customerIdentifier: payload.collectedDraft?.customerName || undefined,
-          messages: [
-            {
-              messageId: customerMessageId,
-              senderType: 'customer',
-              messageContent: payload.message,
-              messageMetadata: {
-                quickActionId: payload.quickActionId,
-                currentPage,
-                detectedLanguage: detectedLang
-              },
-              deliveryStatus: 'received'
-            }
-          ]
+          messages: [customerMessageInput]
         });
-        conversationId = savedUser?.conversationId;
+        if (savedUser) {
+          conversationId = savedUser.conversationId;
+          customerSaved = true;
+        }
       }
+
+      const persistFailureEvent = async (
+        errorCode: string,
+        errorMessage: string,
+        failureStage: 'network' | 'upstream_ai' | 'empty_reply'
+      ) => {
+        if (!payload.sessionToken) return;
+        const failureMsg = buildLiveAiFailurePersistInput({
+          assistantMessageId,
+          errorCode,
+          errorMessage,
+          failureStage,
+          currentPage,
+          detectedLanguage: detectedLang
+        });
+        await persistTurnWithRetry({
+          sessionId: payload.sessionId,
+          sessionToken: payload.sessionToken,
+          sourceChannel,
+          sourceMode: 'live',
+          currentPage,
+          detectedLanguage: detectedLang,
+          customerIdentifier: payload.collectedDraft?.customerName || undefined,
+          messages: customerSaved ? [failureMsg] : [customerMessageInput, failureMsg]
+        });
+      };
 
       const workerBody = {
         message: payload.message,
@@ -287,11 +329,10 @@ export const receptionistService = {
           body: JSON.stringify(workerBody)
         });
       } catch {
-        throw new ReceptionistClientError(
-          'Unable to reach UNIKORN360 Live AI right now. Please try again or reach us on WhatsApp.',
-          502,
-          'CLOUDFLARE_NETWORK_ERROR'
-        );
+        const msg =
+          'Unable to reach UNIKORN360 Live AI right now. Please try again or reach us on WhatsApp.';
+        await persistFailureEvent('CLOUDFLARE_NETWORK_ERROR', msg, 'network');
+        throw new ReceptionistClientError(msg, 502, 'CLOUDFLARE_NETWORK_ERROR');
       }
 
       const data = (await res.json().catch(() => null)) as {
@@ -303,21 +344,19 @@ export const receptionistService = {
       } | null;
 
       if (!res.ok || !data || data.ok !== true) {
-        throw new ReceptionistClientError(
+        const errCode = res.status === 429 ? 'CLOUDFLARE_RATE_LIMITED' : 'CLOUDFLARE_BACKEND_ERROR';
+        const errMsg =
           sanitizePlainText(data?.error, 300) ||
-            'The UNIKORN360 Live AI service is temporarily unavailable. Please try again shortly.',
-          res.status || 502,
-          res.status === 429 ? 'CLOUDFLARE_RATE_LIMITED' : 'CLOUDFLARE_BACKEND_ERROR'
-        );
+          'The UNIKORN360 Live AI service is temporarily unavailable. Please try again shortly.';
+        await persistFailureEvent(errCode, errMsg, 'upstream_ai');
+        throw new ReceptionistClientError(errMsg, res.status || 502, errCode);
       }
 
       const replyText = sanitizePlainText(data.reply || data.text, 4000);
       if (!replyText) {
-        throw new ReceptionistClientError(
-          'Live AI returned an empty reply. Please try again.',
-          502,
-          'CLOUDFLARE_EMPTY_REPLY'
-        );
+        const errMsg = 'Live AI returned an empty reply. Please try again.';
+        await persistFailureEvent('CLOUDFLARE_EMPTY_REPLY', errMsg, 'empty_reply');
+        throw new ReceptionistClientError(errMsg, 502, 'CLOUDFLARE_EMPTY_REPLY');
       }
 
       const inferred = inferReceptionistMetadataFromConversation(
@@ -336,7 +375,22 @@ export const receptionistService = {
           inferred.extractedFields?.contactNumber ||
           undefined;
 
-        const savedReply = await tryPersistTurnSafe({
+        const assistantMessageInput = {
+          messageId: assistantMessageId,
+          senderType: 'assistant' as const,
+          messageContent: replyText,
+          messageMetadata: {
+            recommendedLinks: inferred.recommendedLinks,
+            suggestEnquiryForm: inferred.suggestEnquiryForm,
+            suggestHumanHandover: inferred.suggestHumanHandover,
+            currentPage,
+            detectedLanguage: inferred.detectedLanguage
+          },
+          aiModel,
+          deliveryStatus: 'delivered' as const
+        };
+
+        const savedReply = await persistTurnWithRetry({
           sessionId: payload.sessionId,
           sessionToken: payload.sessionToken,
           sourceChannel,
@@ -344,22 +398,9 @@ export const receptionistService = {
           currentPage,
           detectedLanguage: inferred.detectedLanguage || detectedLang,
           customerIdentifier,
-          messages: [
-            {
-              messageId: assistantMessageId,
-              senderType: 'assistant',
-              messageContent: replyText,
-              messageMetadata: {
-                recommendedLinks: inferred.recommendedLinks,
-                suggestEnquiryForm: inferred.suggestEnquiryForm,
-                suggestHumanHandover: inferred.suggestHumanHandover,
-                currentPage,
-                detectedLanguage: inferred.detectedLanguage
-              },
-              aiModel,
-              deliveryStatus: 'delivered'
-            }
-          ]
+          messages: customerSaved
+            ? [assistantMessageInput]
+            : [customerMessageInput, assistantMessageInput]
         });
         if (savedReply) {
           persisted = true;

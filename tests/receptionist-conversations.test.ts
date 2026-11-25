@@ -13,6 +13,14 @@ import {
   persistConversationMessages
 } from '../src/lib/receptionistConversationStore';
 import {
+  loadOrCreateIsolatedTabSessions,
+  resetActiveModeSession,
+  StorageLike
+} from '../src/lib/receptionistSessionStorage';
+import { validateModeScopedSessionIsolation } from '../src/lib/receptionistKnowledge';
+import { CLOUDFLARE_RECEPTIONIST_CHAT_URL } from '../src/lib/receptionistServerCore';
+import { CLOUDFLARE_CHAT_ENDPOINT, receptionistService } from '../src/services/receptionistService';
+import {
   bootstrapSupabaseCompatiblePostgres,
   DETERMINISTIC_MIGRATION_ORDER,
   grantSupabaseTablePrivileges,
@@ -92,6 +100,12 @@ async function runDatabaseMigrationAndRlsTests() {
       'utf8'
     );
     await db.exec(convMigration);
+
+    const hardeningMigration = fs.readFileSync(
+      path.join(migrationsDir, '20261127_receptionist_session_isolation_hardening.sql'),
+      'utf8'
+    );
+    await db.exec(hardeningMigration);
 
     // Seed auth users & admin roles for RLS testing
     for (const u of Object.values(TEST_DB_USERS)) {
@@ -746,12 +760,366 @@ async function runHttpIntegrationTests() {
   }
 }
 
+async function runSessionIsolationAndFailurePersistenceTests() {
+  console.log('4) Running INBOX360 Scenarios A–I (Session Isolation, Multi-Tab, Live AI Persistence, Failure Recording, Retry Dedup, Refresh, Historical Preservation)...');
+  clearPreviewConversationStore();
+  registerTestUsers();
+
+  function createMemoryTabStorage(): StorageLike {
+    const store = new Map<string, string>();
+    return {
+      getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      }
+    };
+  }
+
+  // Simulated Browser Tabs (A, B, C, D)
+  const tabAStorage = createMemoryTabStorage();
+  const tabBStorage = createMemoryTabStorage();
+
+  const tabASessions = loadOrCreateIsolatedTabSessions(tabAStorage);
+  const tabBSessions = loadOrCreateIsolatedTabSessions(tabBStorage);
+
+  // (A) & (B): Demo and Live create distinct mode-prefixed session IDs
+  assert.ok(tabASessions.demo.sessionId.startsWith('rec-web-demo-'));
+  assert.ok(tabASessions.live.sessionId.startsWith('rec-web-live-'));
+  assert.notEqual(
+    tabASessions.demo.sessionId,
+    tabASessions.live.sessionId,
+    '(A/B) Demo and Live must never share a sessionId'
+  );
+  assert.notEqual(tabASessions.demo.sessionToken, tabASessions.live.sessionToken);
+
+  // (C): Two independent browser tabs never collide
+  assert.notEqual(tabASessions.live.sessionId, tabBSessions.live.sessionId, '(C) Concurrent tabs must have distinct Live sessionIds');
+  assert.notEqual(tabASessions.demo.sessionId, tabBSessions.demo.sessionId, '(C) Concurrent tabs must have distinct Demo sessionIds');
+
+  // (H): Page reload in Tab A restores the exact same session IDs & tokens
+  const tabAReloaded = loadOrCreateIsolatedTabSessions(tabAStorage);
+  assert.equal(tabAReloaded.live.sessionId, tabASessions.live.sessionId);
+  assert.equal(tabAReloaded.demo.sessionId, tabASessions.demo.sessionId);
+  assert.equal(tabAReloaded.live.sessionToken, tabASessions.live.sessionToken);
+
+  // (D): Resetting ONLY the active mode clears Live without altering Demo (and vice versa)
+  const tabAAfterResetLive = resetActiveModeSession(tabAReloaded, 'live', tabAStorage);
+  assert.notEqual(tabAAfterResetLive.live.sessionId, tabASessions.live.sessionId);
+  assert.equal(tabAAfterResetLive.demo.sessionId, tabASessions.demo.sessionId, 'Resetting Live must preserve Demo session');
+
+  // Mode/Channel cross-contamination rejection
+  assert.ok(
+    validateModeScopedSessionIsolation(tabASessions.demo.sessionId, 'live', 'website'),
+    '(D) Demo sessionId must be rejected on Live mode'
+  );
+  assert.ok(
+    validateModeScopedSessionIsolation(tabASessions.live.sessionId, 'demo', 'website'),
+    '(D) Live sessionId must be rejected on Demo mode'
+  );
+  assert.ok(
+    validateModeScopedSessionIsolation('rec-wa-live-12345', 'live', 'website'),
+    'WhatsApp sessionId must be isolated from website channel'
+  );
+  // Historical legacy IDs (e.g. rec-1de...) remain accepted to preserve historical data
+  assert.equal(
+    validateModeScopedSessionIsolation('rec-1de-legacy-0001', 'live', 'website'),
+    null,
+    '(I) Legacy historical sessionIds remain valid'
+  );
+
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const originalFetch = globalThis.fetch;
+  const originalWindow = (globalThis as any).window;
+
+  try {
+    // Seed a historical pre-existing record sharing legacy rec-1de... ID across live and demo (Scenario I)
+    const legacyLive = await persistConversationMessages(
+      {
+        sessionId: 'rec-1de-legacy-9999',
+        sessionToken: 'legacy_tok_live_1234567890',
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        currentPage: '/',
+        detectedLanguage: 'en',
+        messages: [
+          {
+            messageId: 'legacy-msg-1',
+            senderType: 'customer',
+            messageContent: 'Legacy Live customer message'
+          }
+        ]
+      },
+      process.env
+    );
+    const legacyDemo = await persistConversationMessages(
+      {
+        sessionId: 'rec-1de-legacy-9999',
+        sessionToken: 'legacy_tok_demo_1234567890',
+        sourceChannel: 'website',
+        sourceMode: 'demo',
+        currentPage: '/',
+        detectedLanguage: 'en',
+        messages: [
+          {
+            messageId: 'legacy-msg-2',
+            senderType: 'customer',
+            messageContent: 'Legacy Demo customer message'
+          }
+        ]
+      },
+      process.env
+    );
+    assert.notEqual(legacyLive.conversationId, legacyDemo.conversationId);
+
+    // (D) HTTP rejects Demo session ID sent to Live endpoint and vice versa
+    const crossModeChat = await originalFetch(`${baseUrl}/api/receptionist/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: tabAAfterResetLive.demo.sessionId,
+        sessionToken: tabAAfterResetLive.demo.sessionToken,
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        mode: 'live',
+        turnstileToken: 'tok-cross-mode-check',
+        message: 'Attempting cross mode reuse',
+        history: []
+      })
+    });
+    assert.equal(crossModeChat.status, 400, '(D) API must reject Demo sessionId reused in Live mode');
+
+    // Mock fetch for Live AI upstream calls (success & failure) while routing local HTTP calls normally
+    let nextWorkerOutcome: 'success' | 'fail_503' | 'empty_reply' = 'success';
+    let workerCallCount = 0;
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const targetUrl = String(input);
+      if (targetUrl === CLOUDFLARE_RECEPTIONIST_CHAT_URL || targetUrl === CLOUDFLARE_CHAT_ENDPOINT) {
+        workerCallCount += 1;
+        if (nextWorkerOutcome === 'fail_503') {
+          return new Response(JSON.stringify({ ok: false, error: 'Gemini upstream capacity exceeded' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (nextWorkerOutcome === 'empty_reply') {
+          return new Response(JSON.stringify({ ok: true, reply: '   ', model: 'gemini-3.8-flash' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            reply: `UNIKORN360 Live Gemini reply #${workerCallCount}: We build custom portals and GST software.`,
+            model: 'gemini-3.8-flash'
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (targetUrl.startsWith('/')) {
+        return originalFetch(`${baseUrl}${targetUrl}`, init);
+      }
+      return originalFetch(input, init);
+    };
+
+    // (A) Tab A Demo Mode multi-turn conversation (never calls Live Worker)
+    const workerBeforeDemo = workerCallCount;
+    const demoTurn1 = await receptionistService.sendMessage({
+      sessionId: tabAAfterResetLive.demo.sessionId,
+      sessionToken: tabAAfterResetLive.demo.sessionToken,
+      sourceChannel: 'website',
+      sourceMode: 'demo',
+      mode: 'demo',
+      currentPage: '/services',
+      clientMessageId: 'demo-u-1',
+      assistantMessageId: 'demo-a-1',
+      message: 'Tell me about website development',
+      history: []
+    });
+    assert.equal(demoTurn1.persisted, true);
+    assert.equal(demoTurn1.simulated, true);
+    assert.equal(workerCallCount, workerBeforeDemo, 'Demo Mode must NEVER call Cloudflare/Gemini Live AI');
+
+    // (E) Second turn in Tab A Demo reuses SAME session & conversation ID
+    const demoTurn2 = await receptionistService.sendMessage({
+      sessionId: tabAAfterResetLive.demo.sessionId,
+      sessionToken: tabAAfterResetLive.demo.sessionToken,
+      sourceChannel: 'website',
+      sourceMode: 'demo',
+      mode: 'demo',
+      currentPage: '/products',
+      clientMessageId: 'demo-u-2',
+      assistantMessageId: 'demo-a-2',
+      message: 'Show me InvoicePro360',
+      history: [{ role: 'user', content: 'Tell me about website development' }]
+    });
+    assert.equal(demoTurn2.conversationId, demoTurn1.conversationId, '(E) Multi-turn demo must stay on same conversationId');
+
+    // (B) & (F) Live AI success via /api/receptionist/chat stores BOTH customer & assistant against same conversationId
+    nextWorkerOutcome = 'success';
+    const liveChatRes1 = await originalFetch(`${baseUrl}/api/receptionist/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: tabAAfterResetLive.live.sessionId,
+        sessionToken: tabAAfterResetLive.live.sessionToken,
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        mode: 'live',
+        currentPage: '/products',
+        turnstileToken: 'fresh-turnstile-token-live-1',
+        clientMessageId: 'live-u-1',
+        assistantMessageId: 'live-a-1',
+        message: 'Can InvoicePro360 handle GST billing?',
+        history: []
+      })
+    });
+    assert.equal(liveChatRes1.status, 200);
+    const liveJson1 = (await liveChatRes1.json()) as any;
+    assert.equal(liveJson1.persisted, true);
+    assert.ok(liveJson1.conversationId);
+    assert.notEqual(liveJson1.conversationId, demoTurn1.conversationId);
+    assert.equal(liveJson1.model, 'gemini-3.8-flash');
+
+    // (F) Live AI failure (Gemini 503): must NOT fabricate assistant response AND must record failed system event
+    nextWorkerOutcome = 'fail_503';
+    const liveFailRes = await originalFetch(`${baseUrl}/api/receptionist/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: tabAAfterResetLive.live.sessionId,
+        sessionToken: tabAAfterResetLive.live.sessionToken,
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        mode: 'live',
+        currentPage: '/products',
+        turnstileToken: 'fresh-turnstile-token-live-2',
+        clientMessageId: 'live-u-fail-2',
+        assistantMessageId: 'live-a-fail-2',
+        message: 'Second turn while Gemini is down',
+        history: []
+      })
+    });
+    assert.equal(liveFailRes.status, 503, '(F) Must surface real Live AI upstream failure status');
+    const liveFailJson = (await liveFailRes.json()) as any;
+    assert.equal(liveFailJson.reply, undefined, '(F) Must NEVER fabricate an assistant reply on failure');
+    assert.equal(liveFailJson.conversationId, liveJson1.conversationId);
+
+    // Also verify production-origin direct Cloudflare client path records failure event cleanly on fail
+    (globalThis as any).window = { location: { hostname: 'www.unikorn360.com' } };
+    nextWorkerOutcome = 'empty_reply';
+    let prodThrewEmpty = false;
+    try {
+      await receptionistService.sendMessage({
+        sessionId: tabBSessions.live.sessionId,
+        sessionToken: tabBSessions.live.sessionToken,
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        mode: 'live',
+        currentPage: '/contact',
+        turnstileToken: 'fresh-turnstile-token-tabB-1',
+        clientMessageId: 'tabB-u-1',
+        assistantMessageId: 'tabB-a-1',
+        message: 'Tab B question when reply is empty',
+        history: []
+      });
+    } catch (err: any) {
+      prodThrewEmpty = err?.code === 'CLOUDFLARE_EMPTY_REPLY';
+    }
+    assert.ok(prodThrewEmpty, 'Production origin Live AI path must fail cleanly on empty Gemini reply');
+
+    // (G) Duplicate retry with identical messageId must not duplicate messages
+    nextWorkerOutcome = 'success';
+    const dupRetryRes = await originalFetch(`${baseUrl}/api/receptionist/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: tabAAfterResetLive.live.sessionId,
+        sessionToken: tabAAfterResetLive.live.sessionToken,
+        sourceChannel: 'website',
+        sourceMode: 'live',
+        mode: 'live',
+        currentPage: '/products',
+        turnstileToken: 'fresh-turnstile-token-live-dup',
+        clientMessageId: 'live-u-1',
+        assistantMessageId: 'live-a-1',
+        message: 'Can InvoicePro360 handle GST billing?',
+        history: []
+      })
+    });
+    assert.equal(dupRetryRes.status, 200);
+
+    // (H) Page refresh hydration retrieves exact Demo and Live conversations independently
+    const hydratedTabADemo = await originalFetch(
+      `${baseUrl}/api/receptionist/messages?sessionId=${encodeURIComponent(tabAAfterResetLive.demo.sessionId)}&sourceChannel=website&sourceMode=demo`,
+      { headers: { 'X-Receptionist-Session-Token': tabAAfterResetLive.demo.sessionToken } }
+    );
+    assert.equal(hydratedTabADemo.status, 200);
+    const hydratedDemoJson = (await hydratedTabADemo.json()) as any;
+    assert.equal(hydratedDemoJson.messages.length, 4, 'Tab A Demo should have 2 customer + 2 assistant turns');
+
+    // Verify Admin Conversation Detail for Tab A Live, Tab B Live, and preserved Legacy rows (F, G, I)
+    const adminListRes = await originalFetch(`${baseUrl}/api/admin/receptionist-conversations`, {
+      headers: { Authorization: `Bearer ${TEST_TOKENS.admin}` }
+    });
+    assert.equal(adminListRes.status, 200);
+    const adminListJson = (await adminListRes.json()) as any;
+    const convIds = new Set(adminListJson.conversations.map((c: any) => c.id));
+    assert.ok(convIds.has(legacyLive.conversationId), '(I) Legacy Live row preserved');
+    assert.ok(convIds.has(legacyDemo.conversationId), '(I) Legacy Demo row preserved');
+    assert.ok(convIds.has(demoTurn1.conversationId), 'Tab A Demo present in Admin Inbox');
+    assert.ok(convIds.has(liveJson1.conversationId), 'Tab A Live present in Admin Inbox');
+
+    const tabALiveDetailRes = await originalFetch(
+      `${baseUrl}/api/admin/receptionist-conversations/${liveJson1.conversationId}`,
+      { headers: { Authorization: `Bearer ${TEST_TOKENS.admin}` } }
+    );
+    assert.equal(tabALiveDetailRes.status, 200);
+    const tabALiveDetail = (await tabALiveDetailRes.json()) as any;
+    // Expected unique rows: live-u-1, live-a-1, live-u-fail-2, fail_live-a-fail-2 (4 total, no duplicate from retry)
+    assert.equal(
+      tabALiveDetail.messages.length,
+      4,
+      '(F/G) Tab A Live must hold customer+assistant turn + 1 failed attempt (customer+system failed) with zero duplicates'
+    );
+    const failedEvent = tabALiveDetail.messages.find((m: any) => m.delivery_status === 'failed');
+    assert.ok(failedEvent, '(F) Failed Live AI attempt must be recorded with delivery_status=failed');
+    assert.equal(failedEvent.sender_type, 'system');
+    assert.equal(failedEvent.message_metadata.errorCode, 'CLOUDFLARE_BACKEND_ERROR');
+    assert.equal(failedEvent.message_metadata.failureStage, 'upstream_ai');
+
+    const tabBLiveSummary = adminListJson.conversations.find(
+      (c: any) => c.session_id === tabBSessions.live.sessionId
+    );
+    assert.ok(tabBLiveSummary, 'Tab B Live must appear as separate conversation');
+    assert.equal(tabBLiveSummary.failed_count, 1, 'Tab B Live failed empty reply must show failed_count=1');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = originalWindow;
+    }
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
 async function main() {
   console.log('Running INBOX360 Stage 3 — Persistent Conversation CRM Verification Suite...\n');
   await runDatabaseMigrationAndRlsTests();
   await runSupabaseRestAdapterTest();
   await runHttpIntegrationTests();
-  console.log('\nALL STAGE 3 CONVERSATION CRM TESTS PASSED!');
+  await runSessionIsolationAndFailurePersistenceTests();
+  console.log('\nALL STAGE 3 & SESSION ISOLATION CONVERSATION CRM TESTS PASSED!');
 }
 
 main().catch((err) => {

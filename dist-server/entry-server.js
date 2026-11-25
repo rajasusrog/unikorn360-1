@@ -1,7 +1,7 @@
 import { jsxs, jsx, Fragment } from "react/jsx-runtime";
-import React, { useState, useRef, useEffect, useMemo, StrictMode } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback, StrictMode } from "react";
 import { renderToString } from "react-dom/server";
-import { CheckCircle2, Phone, ChevronDown, LifeBuoy, BarChart3, Workflow, Sparkles, ShieldCheck, Code2, Briefcase, ArrowRight, BookOpen, MessageSquare, X, Menu, Compass, Globe, AppWindow, Cpu, HelpCircle, RotateCcw, Layers, Check, Activity, AlertCircle, DollarSign, TrendingUp, Clock, Package, Calendar, ExternalLink, AlertTriangle, ChevronRight, Copy, ArrowLeft, Mail, MapPin, Info, Zap, Gauge, FileCheck, Factory, Building2, Rocket, Wrench, Footprints, Truck, Users, MessageCircle, Minus, ClipboardList, ChevronUp, ArrowUpRight, RefreshCw, PhoneCall, Send, Home, Search, FileText, ZoomIn, Maximize2, Video, Film, Camera, FileCheck2, Lock, User, Share2, Tag, FileVideo, UploadCloud, Image, Edit3, UserCheck, FileSpreadsheet, Award, Eye, Trash2, CreditCard, History, Download, Save, Plus, LogOut, ArrowUp, ArrowDown, Shield } from "lucide-react";
+import { CheckCircle2, Phone, ChevronDown, LifeBuoy, BarChart3, Workflow, Sparkles, ShieldCheck, Code2, Briefcase, ArrowRight, BookOpen, MessageSquare, X, Menu, Compass, Globe, AppWindow, Cpu, HelpCircle, RotateCcw, Layers, Check, Activity, AlertCircle, DollarSign, TrendingUp, Clock, Package, Calendar, ExternalLink, AlertTriangle, ChevronRight, Copy, ArrowLeft, Mail, MapPin, Info, Zap, Gauge, FileCheck, Factory, Building2, Rocket, Wrench, Footprints, Truck, Users, MessageCircle, Minus, ClipboardList, ChevronUp, ArrowUpRight, RefreshCw, PhoneCall, Send, Home, Search, FileText, ZoomIn, Maximize2, Video, Film, Camera, FileCheck2, Lock, User, Share2, Tag, FileVideo, UploadCloud, Image, Edit3, UserCheck, FileSpreadsheet, Award, Eye, Trash2, CreditCard, History, Download, Save, Plus, Bot, Inbox, LogOut, ArrowUp, ArrowDown, Loader2, Shield } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 const BUSINESS_INFO = {
   brand: "UNIKORN360 BUSINESS INTELLIGENCE",
@@ -4802,6 +4802,39 @@ class ResilientServicesService {
       return {
         status: "error",
         error: (err == null ? void 0 : err.message) || "Network error while attempting administrator sign-in."
+      };
+    }
+  }
+  async signInWithGoogleOAuth(redirectOrigin) {
+    var _a;
+    purgeObsoleteAuthStorageKeys();
+    if (!this.authClient) {
+      return {
+        status: "unconfigured",
+        error: "Supabase Authentication is not configured in this environment."
+      };
+    }
+    const origin = (redirectOrigin || (typeof window !== "undefined" && ((_a = window.location) == null ? void 0 : _a.origin) ? window.location.origin : "")).trim().replace(/\/$/, "");
+    const redirectTo = origin ? `${origin}/admin/login` : void 0;
+    try {
+      const { data, error } = await this.authClient.auth.signInWithOAuth({
+        provider: "google",
+        options: redirectTo ? { redirectTo } : void 0
+      });
+      if (error) {
+        return {
+          status: "error",
+          error: error.message || "Unable to start Google authentication."
+        };
+      }
+      return {
+        status: "redirecting",
+        url: (data == null ? void 0 : data.url) || void 0
+      };
+    } catch (err) {
+      return {
+        status: "error",
+        error: (err == null ? void 0 : err.message) || "Network error while initiating Google sign-in."
       };
     }
   }
@@ -9810,7 +9843,7 @@ const TIMELINE_OPTIONS = [
   "Flexible / Exploratory"
 ];
 const DIVISION_BY_ID = new Map(SEED_DIVISIONS.map((d) => [d.id, d]));
-(() => {
+const APPROVED_PUBLIC_LINKS = (() => {
   const map = /* @__PURE__ */ new Map();
   map.set("/services", { label: "All Services Directory", path: "/services" });
   map.set("/products", { label: "UNIKORN360 Software Products", path: "/products" });
@@ -9840,6 +9873,338 @@ const DIVISION_BY_ID = new Map(SEED_DIVISIONS.map((d) => [d.id, d]));
   }
   return map;
 })();
+function detectMessageLanguage(text) {
+  const trimmed = text.trim();
+  if (/[\u0B80-\u0BFF]/.test(trimmed)) return "ta";
+  if (/[\u0900-\u097F]/.test(trimmed)) return "hi";
+  const lower = ` ${trimmed.toLowerCase()} `;
+  const tanglishMarkers = [
+    " vanakkam ",
+    " venum ",
+    " vendum ",
+    " pannanum ",
+    " pannalama ",
+    " sollunga ",
+    " evlo ",
+    " evalavu ",
+    " eppadi ",
+    " irukka ",
+    " iruku ",
+    " irukku ",
+    " enaku ",
+    " enakku ",
+    " namma ",
+    " unga ",
+    " theriyuma ",
+    " kudunga ",
+    " kidaikuma ",
+    " pesa ",
+    " pesalama ",
+    " romba ",
+    " nandri "
+  ];
+  if (tanglishMarkers.some((m) => lower.includes(m))) {
+    return "tanglish";
+  }
+  const hinglishMarkers = [
+    " namaste ",
+    " chahiye ",
+    " kitna ",
+    " kaise ",
+    " bataye ",
+    " batao ",
+    " madad ",
+    " mera ",
+    " meri ",
+    " humko ",
+    " aapke ",
+    " baat karni ",
+    " kya hai "
+  ];
+  if (hinglishMarkers.some((m) => lower.includes(m))) {
+    return "hi";
+  }
+  return "en";
+}
+function extractBasicLeadFieldsFromText(text) {
+  const extracted = {};
+  const emailMatch = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (emailMatch) {
+    extracted.email = emailMatch[0].trim();
+  }
+  const phoneMatch = text.match(/(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\+?\d[\d\s-]{8,14}\d/);
+  if (phoneMatch) {
+    const cleaned = phoneMatch[0].trim();
+    if (cleaned.replace(/\D/g, "").length >= 10) {
+      extracted.contactNumber = cleaned;
+    }
+  }
+  const nameMatch = text.match(/(?:my name is|i am|i'm|this is|en peru|mera naam)\s+([A-Za-z][A-Za-z.\s]{1,35}?)(?:[,.!?\n]|from|at|for|and|$)/i);
+  if (nameMatch && nameMatch[1]) {
+    const candidate = nameMatch[1].trim();
+    if (candidate.split(/\s+/).length <= 4 && !/looking|interested|need|want/i.test(candidate)) {
+      extracted.customerName = candidate;
+    }
+  }
+  const bizMatch = text.match(/(?:company is|business is|from|company name|business name)\s+([A-Za-z0-9&.\-\s]{2,45}?)(?:[,.!?\n]|and|we|need|want|$)/i);
+  if (bizMatch && bizMatch[1]) {
+    const candidate = bizMatch[1].trim();
+    if (candidate.length >= 2 && !/^(india|tamil nadu|chennai|vaniyambadi)$/i.test(candidate)) {
+      extracted.businessName = candidate;
+    }
+  }
+  if (/(?:₹|rs\.?|inr|lakh|lakhs|budget|k\b)/i.test(text)) {
+    const budgetMatch = text.match(/(?:budget(?:\s+is|\s+around|\s+range)?[:\s-]*)([^.!?\n]{3,40})/i);
+    if (budgetMatch && budgetMatch[1]) {
+      extracted.budgetRange = budgetMatch[1].trim();
+    }
+  }
+  const timelineMatch = text.match(/(?:within\s+\d+\s+(?:days?|weeks?|months?)|in\s+\d+\s+(?:weeks?|months?)|next\s+month|urgent|immediately)/i);
+  if (timelineMatch) {
+    extracted.expectedTimeline = timelineMatch[0].trim();
+  }
+  return extracted;
+}
+function generateDemoReceptionistReply(req) {
+  const text = req.message.trim();
+  const lower = text.toLowerCase();
+  const lang = detectMessageLanguage(text);
+  const extracted = extractBasicLeadFieldsFromText(text);
+  const draft = { ...req.collectedDraft || {}, ...extracted };
+  const quickId = req.quickActionId || "";
+  let recommendedLinks = [];
+  let reply = "";
+  let suggestEnquiryForm = false;
+  let suggestHumanHandover = false;
+  const isPricingAsk = /(price|pricing|cost|rate|budget|quote|fees?|evlo|evalavu|kitna|விலை|கட்டணம்|कीमत)/i.test(text);
+  const isHumanAsk = quickId === "talk-to-human" || /(human|person|agent|call me|whatsapp|talk to|speak to|representative|pesanum|baat karni|மனிதர்|தொடர்பு)/i.test(lower);
+  if (isHumanAsk) {
+    suggestHumanHandover = true;
+    suggestEnquiryForm = true;
+    recommendedLinks = [{ label: "Contact UNIKORN360", path: "/contact" }];
+    if (lang === "ta") {
+      reply = 'நிச்சயமாக! கீழே உள்ள "Talk to UNIKORN360" WhatsApp பொத்தானை கிளிக் செய்து எங்கள் குழுவுடன் (+91 98848 24360) நேரடியாகப் பேசலாம். விருப்பப்பட்டால், உங்கள் பெயர் மற்றும் தேவை விவரங்களை Enquiry படிவத்தில் பகிர்ந்தால் எங்கள் குழு விரைவாகத் தொடர்பு கொள்ளும்.';
+    } else if (lang === "tanglish") {
+      reply = 'Sure! Keela irukura "Talk to UNIKORN360" WhatsApp button-a click panni direct-a enga team (+91 98848 24360) kooda pesalam. Neenga virumbinaal unga enquiry details-a inga share pannunga, naanga save panni follow-up panrom.';
+    } else if (lang === "hi") {
+      reply = 'बिल्कुल! आप नीचे दिए गए "Talk to UNIKORN360" WhatsApp बटन पर क्लिक करके हमारी टीम (+91 98848 24360) से सीधे बात कर सकते हैं। चाहें तो आप यहीं अपनी enquiry details भी सबमिट कर सकते हैं।';
+    } else {
+      reply = 'Of course — you can connect directly with our team on WhatsApp (+91 98848 24360) using the "Talk to UNIKORN360" button below. You can also share your details using the inline Enquiry form so our team has full context when reaching out.';
+    }
+  } else if (quickId === "explore-software-products" || /(product|invoicepro|deeds360|property360|advocate360|software product|saas)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "UNIKORN360 Software Products";
+    recommendedLinks = [
+      { label: "Explore All 4 Software Products", path: "/products" },
+      { label: "InvoicePro360", path: "/products/invoicepro360" },
+      { label: "Deeds360", path: "/products/deeds360" }
+    ];
+    suggestEnquiryForm = true;
+    if (lang === "ta") {
+      reply = "UNIKORN360 நான்கு தனித்தனி மென்பொருள் தயாரிப்புகளை வழங்குகிறது:\n• InvoicePro360 — GST பில்லிங் மற்றும் இன்வாய்ஸ் OCR சரிபார்ப்பு\n• Deeds360 — தமிழ் & ஆங்கில பத்திர வரைவு உதவி\n• Property360 — சொத்து ஆவண ஆய்வு மற்றும் வழக்கு தொகுப்பு\n• Advocate360 — வழக்கறிஞர்களுக்கான தினசரி பணி மேலாண்மை\n\nஎந்தத் தயாரிப்பிற்கு டெமோ தேவை? உங்கள் பெயர் மற்றும் வணிக விவரங்களைப் பகிர்ந்தால் குழு தொடர்பு கொள்ளும்.";
+    } else if (lang === "tanglish") {
+      reply = "UNIKORN360-la 4 standalone software products iruku:\n• InvoicePro360 — GST invoice drafting & OCR validation\n• Deeds360 — Tamil & English property deed drafting workspace\n• Property360 — Land revenue & property case review dossier\n• Advocate360 — Legal practice daily workspace\n\nUngalukku edhu demo venum? Unga peru and business details share pannaal team arrange pannuvanga.";
+    } else if (lang === "hi") {
+      reply = "UNIKORN360 चार standalone software products प्रदान करता है:\n• InvoicePro360 — GST इनवॉइसिंग और OCR सत्यापन\n• Deeds360 — तमिल और अंग्रेज़ी प्रॉपर्टी डीड ड्राफ्टिंग\n• Property360 — प्रॉपर्टी केस रिव्यू और डॉक्यूमेंट डोज़ियर\n• Advocate360 — वकीलों के लिए दैनिक केस वर्कस्पेस\n\nआप किस प्रोडक्ट का डेमो देखना चाहेंगे?";
+    } else {
+      reply = "UNIKORN360 builds four standalone software products:\n• InvoicePro360 — GST invoice drafting, OCR extraction, and ledger validation\n• Deeds360 — Bilingual (English & Tamil) property deed drafting workspace\n• Property360 — Land revenue and case-review dossier workspace\n• Advocate360 — Daily legal workspace for advocates\n\nWhich product would you like to explore or book a walkthrough for?";
+    }
+  } else if (quickId === "whatsapp-automation" || /(whatsapp automation|whatsapp bot|crm follow|lead routing)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "WhatsApp Automation";
+    recommendedLinks = [
+      { label: "AI, Automation & Business Systems", path: "/services/ai-automation-business-systems" }
+    ];
+    suggestEnquiryForm = true;
+    reply = lang === "ta" ? "எங்கள் AI, Automation & Business Systems பிரிவின் கீழ் வாடிக்கையாளர் விசாரணை பதிவு, CRM பைப்லைன் மற்றும் WhatsApp வணிகப் பணிப்பாய்வு இணைப்புகளை மனித மேற்பார்வையுடன் அமைக்கிறோம். உங்கள் வணிகத்தின் பெயர் மற்றும் தற்போதைய செயல்முறையைப் பகிரலாமா?" : lang === "tanglish" ? "Enga AI, Automation & Business Systems division-la enquiry capture, CRM pipeline, and WhatsApp business workflows human oversight-oda build panrom. Unga business name and current enquiry volume sollunga?" : lang === "hi" ? "हमारी AI, Automation & Business Systems टीम enquiry capture, CRM pipeline और WhatsApp workflow automation को मानव निगरानी के साथ सेटअप करती है। कृपया अपने बिज़नेस और मौजूदा प्रोसेस के बारे में थोड़ा बताएं।" : "Under our AI, Automation & Business Systems division, we connect enquiry capture, CRM pipelines, and structured WhatsApp business workflows with clear human oversight. To recommend the right setup, what type of business do you run and roughly how many enquiries do you handle weekly?";
+  } else if (quickId === "ai-automation" || /(ai|automation|chatbot|agent|workflow|dashboard|bi\b)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "AI & Automation";
+    recommendedLinks = [
+      { label: "AI, Automation & Business Systems", path: "/services/ai-automation-business-systems" }
+    ];
+    suggestEnquiryForm = true;
+    reply = lang === "ta" ? "UNIKORN360 AI உதவியாளர்கள், தனிப்பயன் பணிப்பாய்வு ஆட்டோமேஷன், CRM இணைப்புகள் மற்றும் நிர்வாக டாஷ்போர்டுகளை உருவாக்குகிறது. நீங்கள் எந்தப் பணியைத் தானியக்கமாக்க விரும்புகிறீர்கள்? (குறிப்பு: துல்லியமான கட்டணம் தேவைகளை ஆய்வு செய்த பின்னரே உறுதி செய்யப்படும்.)" : lang === "tanglish" ? "UNIKORN360-la AI assistants, workflow automation, CRM integration, and executive dashboards build panrom. Neenga endha manual work-a automate panna pakkureenga? Exact pricing scope review-ku apparam written quote-a tharuvom." : lang === "hi" ? "UNIKORN360 AI assistants, workflow automation, CRM integration और executive dashboards तैयार करता है। आप किस प्रक्रिया को ऑटोमेट करना चाहते हैं? सटीक लागत scope review के बाद लिखित प्रस्ताव में दी जाती है।" : "UNIKORN360 builds AI knowledge assistants, custom workflow automations, CRM integrations, and executive dashboards with human approval checkpoints. Which manual process are you looking to streamline first?";
+  } else if (quickId === "website-development" || /(website|web site|ecommerce|e-commerce|landing page|store|web design)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Website Development";
+    recommendedLinks = [
+      { label: "Website Development", path: "/services/websites-software/website-development" },
+      { label: "Websites & Software Division", path: "/services/websites-software" }
+    ];
+    suggestEnquiryForm = true;
+    reply = lang === "ta" ? "எங்கள் Websites & Software பிரிவின் மூலம் மொபைல்-நட்பு வணிக இணையதளங்கள், ஈ-காமர்ஸ் தளங்கள் மற்றும் விசாரணை இணைப்புகளை உருவாக்குகிறோம். உங்கள் இணையதளத்திற்கான முக்கிய நோக்கம் மற்றும் எதிர்பார்க்கும் கால அளவு என்ன? துல்லியமான கட்டணம் தேவை ஆய்வுக்குப் பின் வழங்கப்படும்." : lang === "tanglish" ? "Enga Websites & Software division-la fast mobile-first business websites, e-commerce stores, and enquiry-ready portals build panrom. Ungalukku corporate website venuma illa e-commerce store-aa? Exact quote scope review-ku apparam written proposal-a kidaikum." : lang === "hi" ? "हमारी Websites & Software टीम मोबाइल-रिस्पॉन्सिव बिज़नेस वेबसाइट, ई-कॉमर्स स्टोर और लीड-कैप्चर पोर्टल बनाती है। क्या आपको कॉर्पोरेट वेबसाइट चाहिए या ई-कॉमर्स स्टोर? सटीक कीमत scope review के बाद दी जाती है।" : "Through our Websites & Software division, we design and build mobile-first business websites, e-commerce stores, and enquiry-driven portals with technical SEO setup. Are you looking for a company website or an e-commerce store, and what is your target timeline?";
+  } else if (quickId === "software-development" || /(software|web app|mobile app|mvp|erp|portal|api|custom app)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Software Development";
+    recommendedLinks = [
+      { label: "Websites & Software Division", path: "/services/websites-software" }
+    ];
+    suggestEnquiryForm = true;
+    reply = "Our Websites & Software division engineers custom web applications, internal business portals, mobile apps, SaaS MVPs, and API integrations tailored around your workflows. Could you share a brief overview of what the software should handle and your expected timeline?";
+  } else if (quickId === "cybersecurity" || /(cyber|security|audit|vulnerability|maintenance|harden|server)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Cybersecurity & Maintenance";
+    recommendedLinks = [
+      { label: "Security & Maintenance Division", path: "/services/security-maintenance" }
+    ];
+    suggestEnquiryForm = true;
+    reply = "Our Security & Maintenance division handles application security reviews, AI-generated code audits, API and database checks, server hardening, and ongoing technical maintenance retainers. Is this for an existing live application or a pre-launch security review?";
+  } else if (quickId === "digital-marketing" || /(marketing|seo|ads|google ads|meta ads|ugc|creator|social media)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Digital Marketing & Creator Campaigns";
+    recommendedLinks = [
+      { label: "Marketing & Creator Campaigns", path: "/services/marketing-creator-campaigns" }
+    ];
+    suggestEnquiryForm = true;
+    reply = "Our Marketing & Creator Campaigns division covers technical and local SEO, Google and Meta paid advertising, social media content, UGC production, and regional creator collaborations. Which channel are you prioritizing for lead generation?";
+  } else if (quickId === "business-documentation" || /(gst|udyam|dpr|registration|trademark|subsidy|license|documentation|setup|loan)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Business Setup & Documentation";
+    recommendedLinks = [
+      { label: "Business Setup & Documentation", path: "/services/business-setup-documentation" }
+    ];
+    suggestEnquiryForm = true;
+    reply = "Our Business Setup & Documentation division assists with business registration coordination, GST and Udyam filings, trademark coordination, bank-ready DPR preparation, government scheme documentation, and commercial property paperwork. Which registration or document support do you need?";
+  } else if (quickId === "business-consulting" || /(consult|research|strategy|feasibility|competitor|market|plan)/i.test(lower)) {
+    extracted.serviceRequired = extracted.serviceRequired || "Business Consulting & Strategy";
+    recommendedLinks = [
+      { label: "Research & Business Strategy", path: "/services/research-business-strategy" }
+    ];
+    suggestEnquiryForm = true;
+    reply = "Our Research & Business Strategy division delivers market research, competitor benchmarks, performance diagnostics, financial feasibility studies, and growth planning. Tell me briefly about your business stage or expansion goal so we can guide you accurately.";
+  } else if (isPricingAsk) {
+    suggestEnquiryForm = true;
+    suggestHumanHandover = true;
+    recommendedLinks = [{ label: "Browse All Services", path: "/services" }];
+    reply = lang === "ta" ? "UNIKORN360 திட்டத்தின் துல்லியமான தேவைகளை ஆய்வு செய்த பின்னரே எழுத்துப்பூர்வ கட்டண முன்மொழிவை (written proposal) வழங்குகிறது; நாங்கள் யூக விலைகளைக் கூறுவதில்லை. உங்கள் தேவை, பட்ஜெட் வரம்பு மற்றும் கால அளவை Enquiry படிவத்தில் பகிருங்கள் அல்லது WhatsApp (+91 98848 24360) மூலம் தொடர்பு கொள்ளுங்கள்." : lang === "tanglish" ? "UNIKORN360-la exact scope review pannitu dhaan written commercial quote tharuvom; naanga guess price solla mattom. Unga requirement, budget range, and timeline-a enquiry form-la share pannunga, illa direct-a WhatsApp (+91 98848 24360) pannalam." : lang === "hi" ? "UNIKORN360 आपकी प्रोजेक्ट आवश्यकताओं की समीक्षा के बाद लिखित कमर्शियल प्रस्ताव देता है; हम अनुमानित या मनगढ़ंत कीमत नहीं बताते। कृपया अपनी आवश्यकता, बजट रेंज और समय-सीमा Enquiry फ़ॉर्म में साझा करें या WhatsApp (+91 98848 24360) पर संपर्क करें।" : "UNIKORN360 prepares an itemized written commercial proposal after reviewing your exact project scope — we never quote invented or unconfirmed rates. Share your required service, approximate budget range, and timeline in the Enquiry form below, or message our team directly on WhatsApp (+91 98848 24360).";
+  } else {
+    recommendedLinks = [
+      { label: "Browse All Services", path: "/services" },
+      { label: "Explore Software Products", path: "/products" }
+    ];
+    const hasSomeDetails = Boolean(
+      draft.customerName || draft.contactNumber || draft.email || draft.serviceRequired
+    );
+    suggestEnquiryForm = hasSomeDetails;
+    if (lang === "ta") {
+      reply = "வணக்கம்! UNIKORN360 Business Intelligence-க்கு வரவேற்கிறோம். இணையதள & மென்பொருள் மேம்பாடு, AI ஆட்டோமேஷன், பாதுகாப்பு ஆய்வு, டிஜிட்டல் மார்க்கெட்டிங், வணிக ஆலோசனை, வணிக ஆவண உதவி மற்றும் எங்கள் 4 மென்பொருள் தயாரிப்புகளில் (InvoicePro360, Deeds360, Property360, Advocate360) உங்களுக்கு எவ்வாறு உதவலாம்?";
+    } else if (lang === "tanglish") {
+      reply = "Vanakkam! UNIKORN360 Business Intelligence-ku varaverkirom. Website & software development, AI & WhatsApp automation, cybersecurity, digital marketing, business consulting, documentation, or enga 4 software products pathi enna help venum sollunga?";
+    } else if (lang === "hi") {
+      reply = "नमस्ते! UNIKORN360 Business Intelligence में आपका स्वागत है। हम वेबसाइट और सॉफ्टवेयर डेवलपमेंट, AI व WhatsApp ऑटोमेशन, साइबर सुरक्षा, डिजिटल मार्केटिंग, बिज़नेस कंसल्टिंग, डॉक्यूमेंटेशन और हमारे 4 सॉफ्टवेयर प्रोडक्ट्स में आपकी कैसे मदद कर सकते हैं?";
+    } else {
+      reply = "Welcome to UNIKORN360 Business Intelligence. We help businesses across six service divisions — Websites & Software, Security & Maintenance, Marketing & Creator Campaigns, AI & Automation, Research & Strategy, and Business Setup & Documentation — plus four standalone software products. Which area would you like help with today?";
+    }
+  }
+  return {
+    reply,
+    mode: "demo",
+    simulated: true,
+    detectedLanguage: lang,
+    recommendedLinks,
+    extractedFields: extracted,
+    suggestEnquiryForm,
+    suggestHumanHandover,
+    model: "demo-simulator"
+  };
+}
+function sanitizePlainText(value, maxLen) {
+  if (typeof value !== "string") return "";
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, maxLen);
+}
+function inferReceptionistMetadataFromConversation(userMessage, replyText, quickActionId, currentDraft) {
+  const userLang = detectMessageLanguage(userMessage);
+  const detectedLanguage = userLang !== "en" ? userLang : detectMessageLanguage(replyText);
+  const extractedFields = extractBasicLeadFieldsFromText(userMessage);
+  const combined = `${userMessage} ${replyText}`.toLowerCase();
+  const quickId = (quickActionId || "").trim();
+  const candidateLinks = [];
+  const pushApproved = (path, label) => {
+    const entry = APPROVED_PUBLIC_LINKS.get(path);
+    if (entry && !candidateLinks.some((c) => c.path === entry.path)) {
+      candidateLinks.push({ label: label || entry.label, path: entry.path });
+    }
+  };
+  if (quickId === "explore-software-products" || /(invoicepro360|deeds360|property360|advocate360|software product)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "UNIKORN360 Software Products";
+    if (/invoicepro/i.test(combined)) pushApproved("/products/invoicepro360");
+    if (/deeds360/i.test(combined)) pushApproved("/products/deeds360");
+    if (/property360/i.test(combined)) pushApproved("/products/property360");
+    if (/advocate360/i.test(combined)) pushApproved("/products/advocate360");
+    pushApproved("/products", "Explore All Software Products");
+  }
+  if (quickId === "whatsapp-automation" || /(whatsapp automation|whatsapp bot|whatsapp business|crm pipeline)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "WhatsApp Automation";
+    pushApproved("/services/ai-automation-business-systems");
+  }
+  if (quickId === "ai-automation" || /(ai automation|workflow automation|chatbot|ai agent|executive dashboard)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "AI & Automation";
+    pushApproved("/services/ai-automation-business-systems");
+  }
+  if (quickId === "website-development" || /(website|e-commerce|ecommerce|web portal|landing page|company site)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Website Development";
+    pushApproved("/services/websites-software/website-development");
+    pushApproved("/services/websites-software");
+  }
+  if (quickId === "software-development" || /(custom software|web application|mobile app|saas mvp|api integration)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Software Development";
+    pushApproved("/services/websites-software");
+  }
+  if (quickId === "cybersecurity" || /(cybersecurity|security review|security audit|maintenance|server hardening)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Cybersecurity & Maintenance";
+    pushApproved("/services/security-maintenance");
+  }
+  if (quickId === "digital-marketing" || /(digital marketing|\bseo\b|paid ads|meta ads|google ads|creator campaign|\bugc\b)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Digital Marketing & Creator Campaigns";
+    pushApproved("/services/marketing-creator-campaigns");
+  }
+  if (quickId === "business-documentation" || /(gst|udyam|\bdpr\b|trademark|registration|business documentation|subsidy)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Business Setup & Documentation";
+    pushApproved("/services/business-setup-documentation");
+  }
+  if (quickId === "business-consulting" || /(consulting|feasibility|market research|business strategy|competitor)/i.test(combined)) {
+    extractedFields.serviceRequired = extractedFields.serviceRequired || "Business Consulting & Strategy";
+    pushApproved("/services/research-business-strategy");
+  }
+  if (candidateLinks.length === 0 && /(service|solution|division)/i.test(combined)) {
+    pushApproved("/services", "Browse All Services");
+  }
+  const mergedDraft = { ...currentDraft || {}, ...extractedFields };
+  const hasLeadInterest = Boolean(
+    mergedDraft.serviceRequired || mergedDraft.customerName || mergedDraft.contactNumber || mergedDraft.email || /(quote|enquiry|inquiry|proposal|project|build|need|want|demo|venum|chahiye|வேண்டும்)/i.test(
+      userMessage
+    )
+  );
+  const suggestHumanHandover = quickId === "talk-to-human" || /(whatsapp|talk to human|speak to|call me|human|representative|98848|pesanum|baat karni|மனிதர்|தொடர்பு)/i.test(
+    combined
+  );
+  return {
+    detectedLanguage,
+    recommendedLinks: candidateLinks.slice(0, 3),
+    extractedFields,
+    suggestEnquiryForm: hasLeadInterest,
+    suggestHumanHandover
+  };
+}
+const ALLOWED_LANGUAGES = /* @__PURE__ */ new Set(["en", "ta", "tanglish", "hi"]);
+function normalizeReceptionistLanguage(value, fallback = "en") {
+  if (typeof value === "string" && ALLOWED_LANGUAGES.has(value)) {
+    return value;
+  }
+  return fallback;
+}
+function buildLiveAiFailurePersistInput(params) {
+  const safeCode = sanitizePlainText(params.errorCode, 80) || "LIVE_AI_ERROR";
+  const safeError = sanitizePlainText(params.errorMessage, 320) || "Live AI did not complete a response.";
+  return {
+    messageId: `fail_${params.assistantMessageId}`,
+    senderType: "system",
+    messageContent: `Live AI response failed (${safeCode}): ${safeError}`,
+    messageMetadata: {
+      currentPage: sanitizePlainText(params.currentPage, 160) || "/",
+      detectedLanguage: normalizeReceptionistLanguage(params.detectedLanguage, "en"),
+      errorCode: safeCode,
+      errorMessage: safeError,
+      failureStage: params.failureStage,
+      failedMessageId: params.assistantMessageId
+    },
+    aiModel: null,
+    deliveryStatus: "failed"
+  };
+}
 const EMPTY_ENQUIRY_DRAFT = {
   customerName: "",
   businessName: "",
@@ -9858,11 +10223,28 @@ const LEAD_STATUS_OPTIONS = [
   { value: "won", label: "Won", toneClass: "text-[#15803D]" },
   { value: "closed", label: "Closed", toneClass: "text-[#526176]" }
 ];
+const CONVERSATION_STATUS_OPTIONS = [
+  { value: "active", label: "Active Chat", toneClass: "text-[#0B1426]" },
+  ...LEAD_STATUS_OPTIONS
+];
 const __vite_import_meta_env__$1 = {};
+const CLOUDFLARE_CHAT_ENDPOINT = "https://inbox360-whatsapp-webhook.raj-asusrog.workers.dev/api/chat";
 const envObj = typeof import.meta !== "undefined" && __vite_import_meta_env__$1 ? __vite_import_meta_env__$1 : {};
 const API_BASE = (envObj.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
 function apiUrl(path) {
   return API_BASE ? `${API_BASE}${path}` : path;
+}
+function isProductionUnikornOrigin() {
+  var _a;
+  if (typeof window === "undefined" || !((_a = window.location) == null ? void 0 : _a.hostname)) return false;
+  const host = window.location.hostname.toLowerCase();
+  return host === "www.unikorn360.com" || host === "unikorn360.com";
+}
+function createMessageId(prefix) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 async function getAdminAuthHeaders() {
   var _a;
@@ -9887,14 +10269,298 @@ class ReceptionistClientError extends Error {
     this.fieldErrors = fieldErrors;
   }
 }
+async function persistTurnWithRetry(payload, maxAttempts = 2) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch(apiUrl("/api/receptionist/messages"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        return await res.json().catch(() => null);
+      }
+      if (res.status >= 400 && res.status < 500) {
+        return null;
+      }
+    } catch {
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  return null;
+}
 const receptionistService = {
-  async sendMessage(payload) {
-    const res = await fetch(apiUrl("/api/receptionist/chat"), {
+  async persistMessages(payload) {
+    const res = await fetch(apiUrl("/api/receptionist/messages"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ReceptionistClientError(
+        (data == null ? void 0 : data.error) || "Unable to persist conversation messages.",
+        res.status,
+        data == null ? void 0 : data.code
+      );
+    }
+    return data;
+  },
+  async hydrateSessionMessages(params) {
+    const query = new URLSearchParams({
+      sessionId: params.sessionId,
+      sourceChannel: params.sourceChannel || "website",
+      sourceMode: params.sourceMode
+    });
+    const res = await fetch(apiUrl(`/api/receptionist/messages?${query.toString()}`), {
+      method: "GET",
+      headers: {
+        "X-Receptionist-Session-Token": params.sessionToken
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ReceptionistClientError(
+        (data == null ? void 0 : data.error) || "Unable to restore previous session messages.",
+        res.status,
+        data == null ? void 0 : data.code
+      );
+    }
+    return data;
+  },
+  async sendMessage(payload) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const sourceChannel = payload.sourceChannel || "website";
+    const sourceMode = payload.sourceMode || payload.mode;
+    const currentPage = payload.currentPage || "/";
+    const customerMessageId = payload.clientMessageId || createMessageId("usr");
+    const assistantMessageId = payload.assistantMessageId || createMessageId("ast");
+    const detectedLang = payload.detectedLanguage || detectMessageLanguage(payload.message);
+    if (sourceMode === "demo") {
+      const demoResponse = generateDemoReceptionistReply(payload);
+      let persisted = false;
+      let conversationId;
+      if (payload.sessionToken) {
+        const customerIdentifier = ((_a = demoResponse.extractedFields) == null ? void 0 : _a.customerName) || ((_b = payload.collectedDraft) == null ? void 0 : _b.customerName) || ((_c = demoResponse.extractedFields) == null ? void 0 : _c.contactNumber) || void 0;
+        const saved = await persistTurnWithRetry({
+          sessionId: payload.sessionId,
+          sessionToken: payload.sessionToken,
+          sourceChannel,
+          sourceMode: "demo",
+          currentPage,
+          detectedLanguage: demoResponse.detectedLanguage || detectedLang,
+          customerIdentifier,
+          messages: [
+            {
+              messageId: customerMessageId,
+              senderType: "customer",
+              messageContent: payload.message,
+              messageMetadata: {
+                quickActionId: payload.quickActionId,
+                currentPage,
+                detectedLanguage: detectedLang
+              },
+              deliveryStatus: "received"
+            },
+            {
+              messageId: assistantMessageId,
+              senderType: "assistant",
+              messageContent: demoResponse.reply,
+              messageMetadata: {
+                recommendedLinks: demoResponse.recommendedLinks,
+                suggestEnquiryForm: demoResponse.suggestEnquiryForm,
+                suggestHumanHandover: demoResponse.suggestHumanHandover,
+                currentPage,
+                detectedLanguage: demoResponse.detectedLanguage
+              },
+              aiModel: demoResponse.model,
+              deliveryStatus: "delivered"
+            }
+          ]
+        });
+        if (saved) {
+          persisted = true;
+          conversationId = saved.conversationId;
+        }
+      }
+      return {
+        ...demoResponse,
+        conversationId,
+        customerMessageId,
+        assistantMessageId,
+        persisted
+      };
+    }
+    const turnstileToken = sanitizePlainText(payload.turnstileToken, 2048);
+    if (!turnstileToken) {
+      throw new ReceptionistClientError(
+        "Security verification (Cloudflare Turnstile) is required before contacting Live AI.",
+        400,
+        "TURNSTILE_TOKEN_REQUIRED"
+      );
+    }
+    if (isProductionUnikornOrigin()) {
+      let conversationId;
+      let customerSaved = false;
+      const customerMessageInput = {
+        messageId: customerMessageId,
+        senderType: "customer",
+        messageContent: payload.message,
+        messageMetadata: {
+          quickActionId: payload.quickActionId,
+          currentPage,
+          detectedLanguage: detectedLang
+        },
+        deliveryStatus: "received"
+      };
+      if (payload.sessionToken) {
+        const savedUser = await persistTurnWithRetry({
+          sessionId: payload.sessionId,
+          sessionToken: payload.sessionToken,
+          sourceChannel,
+          sourceMode: "live",
+          currentPage,
+          detectedLanguage: detectedLang,
+          customerIdentifier: ((_d = payload.collectedDraft) == null ? void 0 : _d.customerName) || void 0,
+          messages: [customerMessageInput]
+        });
+        if (savedUser) {
+          conversationId = savedUser.conversationId;
+          customerSaved = true;
+        }
+      }
+      const persistFailureEvent = async (errorCode, errorMessage, failureStage) => {
+        var _a2;
+        if (!payload.sessionToken) return;
+        const failureMsg = buildLiveAiFailurePersistInput({
+          assistantMessageId,
+          errorCode,
+          errorMessage,
+          failureStage,
+          currentPage,
+          detectedLanguage: detectedLang
+        });
+        await persistTurnWithRetry({
+          sessionId: payload.sessionId,
+          sessionToken: payload.sessionToken,
+          sourceChannel,
+          sourceMode: "live",
+          currentPage,
+          detectedLanguage: detectedLang,
+          customerIdentifier: ((_a2 = payload.collectedDraft) == null ? void 0 : _a2.customerName) || void 0,
+          messages: customerSaved ? [failureMsg] : [customerMessageInput, failureMsg]
+        });
+      };
+      const workerBody = {
+        message: payload.message,
+        history: payload.history.slice(-14).map((turn) => ({
+          role: turn.role,
+          text: turn.content
+        })),
+        turnstileToken
+      };
+      let res2;
+      try {
+        res2 = await fetch(CLOUDFLARE_CHAT_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(workerBody)
+        });
+      } catch {
+        const msg = "Unable to reach UNIKORN360 Live AI right now. Please try again or reach us on WhatsApp.";
+        await persistFailureEvent("CLOUDFLARE_NETWORK_ERROR", msg, "network");
+        throw new ReceptionistClientError(msg, 502, "CLOUDFLARE_NETWORK_ERROR");
+      }
+      const data2 = await res2.json().catch(() => null);
+      if (!res2.ok || !data2 || data2.ok !== true) {
+        const errCode = res2.status === 429 ? "CLOUDFLARE_RATE_LIMITED" : "CLOUDFLARE_BACKEND_ERROR";
+        const errMsg = sanitizePlainText(data2 == null ? void 0 : data2.error, 300) || "The UNIKORN360 Live AI service is temporarily unavailable. Please try again shortly.";
+        await persistFailureEvent(errCode, errMsg, "upstream_ai");
+        throw new ReceptionistClientError(errMsg, res2.status || 502, errCode);
+      }
+      const replyText = sanitizePlainText(data2.reply || data2.text, 4e3);
+      if (!replyText) {
+        const errMsg = "Live AI returned an empty reply. Please try again.";
+        await persistFailureEvent("CLOUDFLARE_EMPTY_REPLY", errMsg, "empty_reply");
+        throw new ReceptionistClientError(errMsg, 502, "CLOUDFLARE_EMPTY_REPLY");
+      }
+      const inferred = inferReceptionistMetadataFromConversation(
+        payload.message,
+        replyText,
+        payload.quickActionId,
+        payload.collectedDraft
+      );
+      const aiModel = sanitizePlainText(data2.model, 80) || "gemini-3.8-flash";
+      let persisted = false;
+      if (payload.sessionToken) {
+        const customerIdentifier = ((_e = inferred.extractedFields) == null ? void 0 : _e.customerName) || ((_f = payload.collectedDraft) == null ? void 0 : _f.customerName) || ((_g = inferred.extractedFields) == null ? void 0 : _g.contactNumber) || void 0;
+        const assistantMessageInput = {
+          messageId: assistantMessageId,
+          senderType: "assistant",
+          messageContent: replyText,
+          messageMetadata: {
+            recommendedLinks: inferred.recommendedLinks,
+            suggestEnquiryForm: inferred.suggestEnquiryForm,
+            suggestHumanHandover: inferred.suggestHumanHandover,
+            currentPage,
+            detectedLanguage: inferred.detectedLanguage
+          },
+          aiModel,
+          deliveryStatus: "delivered"
+        };
+        const savedReply = await persistTurnWithRetry({
+          sessionId: payload.sessionId,
+          sessionToken: payload.sessionToken,
+          sourceChannel,
+          sourceMode: "live",
+          currentPage,
+          detectedLanguage: inferred.detectedLanguage || detectedLang,
+          customerIdentifier,
+          messages: customerSaved ? [assistantMessageInput] : [customerMessageInput, assistantMessageInput]
+        });
+        if (savedReply) {
+          persisted = true;
+          conversationId = savedReply.conversationId;
+        }
+      }
+      return {
+        reply: replyText,
+        mode: "live",
+        simulated: false,
+        detectedLanguage: inferred.detectedLanguage,
+        recommendedLinks: inferred.recommendedLinks,
+        extractedFields: inferred.extractedFields,
+        suggestEnquiryForm: inferred.suggestEnquiryForm,
+        suggestHumanHandover: inferred.suggestHumanHandover,
+        model: aiModel,
+        conversationId,
+        customerMessageId,
+        assistantMessageId,
+        persisted
+      };
+    }
+    const res = await fetch(apiUrl("/api/receptionist/chat"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ...payload,
+        sourceChannel,
+        sourceMode: "live",
+        currentPage,
+        detectedLanguage: detectedLang,
+        clientMessageId: customerMessageId,
+        assistantMessageId
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -9960,13 +10626,394 @@ const receptionistService = {
       );
     }
     return data.enquiry;
+  },
+  async listAdminConversations(filters) {
+    var _a;
+    const headers = await getAdminAuthHeaders();
+    const query = new URLSearchParams();
+    if ((filters == null ? void 0 : filters.channel) && filters.channel !== "all") query.set("channel", filters.channel);
+    if ((filters == null ? void 0 : filters.mode) && filters.mode !== "all") query.set("mode", filters.mode);
+    if ((filters == null ? void 0 : filters.status) && filters.status !== "all") query.set("status", filters.status);
+    if ((filters == null ? void 0 : filters.language) && filters.language !== "all") query.set("language", filters.language);
+    if ((_a = filters == null ? void 0 : filters.search) == null ? void 0 : _a.trim()) query.set("search", filters.search.trim());
+    const qs = query.toString();
+    const res = await fetch(
+      apiUrl(`/api/admin/receptionist-conversations${qs ? `?${qs}` : ""}`),
+      {
+        method: "GET",
+        headers
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ReceptionistClientError(
+        (data == null ? void 0 : data.error) || "Failed to load AI receptionist conversations.",
+        res.status,
+        data == null ? void 0 : data.code
+      );
+    }
+    return data;
+  },
+  async getAdminConversationDetail(conversationId) {
+    const headers = await getAdminAuthHeaders();
+    const res = await fetch(
+      apiUrl(`/api/admin/receptionist-conversations?id=${encodeURIComponent(conversationId)}`),
+      {
+        method: "GET",
+        headers
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ReceptionistClientError(
+        (data == null ? void 0 : data.error) || "Failed to load conversation messages.",
+        res.status,
+        data == null ? void 0 : data.code
+      );
+    }
+    return data;
+  },
+  async updateAdminConversation(conversationId, updates) {
+    const headers = await getAdminAuthHeaders();
+    const res = await fetch(
+      apiUrl(`/api/admin/receptionist-conversations?id=${encodeURIComponent(conversationId)}`),
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ id: conversationId, ...updates })
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ReceptionistClientError(
+        (data == null ? void 0 : data.error) || "Failed to update conversation details.",
+        res.status,
+        data == null ? void 0 : data.code
+      );
+    }
+    return data.conversation;
   }
 };
-function createSessionId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return `rec-${crypto.randomUUID()}`;
+const CLOUDFLARE_TURNSTILE_SITE_KEY = "0x4AAAAAAGSQqxgKT3aGSBca";
+const CLOUDFLARE_TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+class TurnstileVerificationError extends Error {
+  constructor(message, code, rawErrorCode) {
+    super(message);
+    this.name = "TurnstileVerificationError";
+    this.code = code;
+    this.rawErrorCode = rawErrorCode;
   }
-  return `rec-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+function isRegisteredTurnstileHost(hostname) {
+  const host = (typeof window !== "undefined" ? window.location.hostname : "").toLowerCase().trim();
+  return host === "unikorn360.com" || host === "www.unikorn360.com";
+}
+function formatTurnstileErrorMessage(rawErrorCode) {
+  const code = String(rawErrorCode || "").trim();
+  if (code.startsWith("110200") && !isRegisteredTurnstileHost()) {
+    return "Security verification (Cloudflare Turnstile) only validates on www.unikorn360.com and unikorn360.com. You can preview replies using Demo Mode here.";
+  }
+  if (code) {
+    return `Security verification failed (Turnstile code ${code}). Please retry to verify your session.`;
+  }
+  return "Security verification could not be completed. Please retry to verify your session.";
+}
+async function waitForTurnstileApi(timeoutMs = 8e3, getApi = () => typeof window !== "undefined" ? window.turnstile : void 0) {
+  const existing = getApi();
+  if (existing && typeof existing.render === "function") {
+    return existing;
+  }
+  if (typeof document !== "undefined") {
+    const existingScript = document.querySelector(
+      'script[src*="challenges.cloudflare.com/turnstile/v0/api.js"]'
+    );
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.src = CLOUDFLARE_TURNSTILE_SCRIPT_SRC;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const api = getApi();
+    if (api && typeof api.render === "function") {
+      return api;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  throw new TurnstileVerificationError(
+    "Cloudflare Turnstile security script did not finish loading. Please check your connection or disable script blockers and retry.",
+    "TURNSTILE_UNAVAILABLE"
+  );
+}
+class TurnstileChallengeController {
+  constructor(options) {
+    this.widgetId = null;
+    this.container = null;
+    this.needsResetBeforeExecute = false;
+    this.pending = null;
+    this.siteKey = (options == null ? void 0 : options.siteKey) || CLOUDFLARE_TURNSTILE_SITE_KEY;
+    this.challengeTimeoutMs = (options == null ? void 0 : options.challengeTimeoutMs) ?? 45e3;
+    this.getApi = (options == null ? void 0 : options.getApi) || (() => typeof window !== "undefined" ? window.turnstile : void 0);
+  }
+  isMounted() {
+    return this.widgetId !== null;
+  }
+  async mount(container) {
+    if (this.widgetId && this.container === container) {
+      return this.widgetId;
+    }
+    if (this.widgetId) {
+      this.destroy();
+    }
+    const api = await waitForTurnstileApi(8e3, this.getApi);
+    this.container = container;
+    this.needsResetBeforeExecute = false;
+    this.widgetId = api.render(container, {
+      sitekey: this.siteKey,
+      theme: "light",
+      execution: "execute",
+      appearance: "interaction-only",
+      callback: (token) => {
+        const cleanToken = typeof token === "string" ? token.trim() : "";
+        if (!cleanToken) {
+          this.rejectPending(
+            new TurnstileVerificationError(
+              "Security verification returned an empty token. Please retry.",
+              "TURNSTILE_FAILED"
+            )
+          );
+          this.needsResetBeforeExecute = true;
+          return;
+        }
+        this.needsResetBeforeExecute = true;
+        this.resolvePending(cleanToken);
+      },
+      "expired-callback": () => {
+        this.needsResetBeforeExecute = true;
+        this.rejectPending(
+          new TurnstileVerificationError(
+            "Your security verification expired. Please retry sending your message.",
+            "TURNSTILE_EXPIRED"
+          )
+        );
+      },
+      "error-callback": (errorCode) => {
+        this.needsResetBeforeExecute = true;
+        this.rejectPending(
+          new TurnstileVerificationError(
+            formatTurnstileErrorMessage(errorCode),
+            "TURNSTILE_FAILED",
+            errorCode
+          )
+        );
+      },
+      "timeout-callback": () => {
+        this.needsResetBeforeExecute = true;
+        this.rejectPending(
+          new TurnstileVerificationError(
+            "Security verification timed out before completion. Please retry.",
+            "TURNSTILE_TIMEOUT"
+          )
+        );
+      }
+    });
+    return this.widgetId;
+  }
+  async executeFreshChallenge(container) {
+    if (this.pending) {
+      throw new TurnstileVerificationError(
+        "A security verification challenge is already in progress.",
+        "TURNSTILE_FAILED"
+      );
+    }
+    if (!this.widgetId) {
+      if (!container) {
+        throw new TurnstileVerificationError(
+          "Security verification widget is not ready yet. Please try again.",
+          "TURNSTILE_UNAVAILABLE"
+        );
+      }
+      await this.mount(container);
+    }
+    const api = this.getApi();
+    if (!api || !this.widgetId) {
+      throw new TurnstileVerificationError(
+        "Cloudflare Turnstile API is currently unavailable.",
+        "TURNSTILE_UNAVAILABLE"
+      );
+    }
+    const activeWidgetId = this.widgetId;
+    if (this.needsResetBeforeExecute) {
+      try {
+        api.reset(activeWidgetId);
+      } catch {
+      }
+      this.needsResetBeforeExecute = false;
+    }
+    return new Promise((resolve, reject) => {
+      const timerId = setTimeout(() => {
+        this.needsResetBeforeExecute = true;
+        this.rejectPending(
+          new TurnstileVerificationError(
+            "Security verification timed out. Please retry sending your message.",
+            "TURNSTILE_TIMEOUT"
+          )
+        );
+      }, this.challengeTimeoutMs);
+      this.pending = { resolve, reject, timerId };
+      try {
+        api.execute(activeWidgetId);
+      } catch (err) {
+        this.needsResetBeforeExecute = true;
+        this.rejectPending(
+          new TurnstileVerificationError(
+            err instanceof Error ? err.message : "Unable to execute Cloudflare Turnstile verification.",
+            "TURNSTILE_FAILED"
+          )
+        );
+      }
+    });
+  }
+  /**
+   * Resets the Turnstile widget after every request because tokens are single-use.
+   */
+  reset() {
+    const api = this.getApi();
+    this.needsResetBeforeExecute = false;
+    if (api && this.widgetId) {
+      try {
+        api.reset(this.widgetId);
+      } catch {
+      }
+    }
+  }
+  destroy() {
+    this.rejectPending(
+      new TurnstileVerificationError(
+        "Security verification was cancelled.",
+        "TURNSTILE_CANCELLED"
+      )
+    );
+    const api = this.getApi();
+    if (api && this.widgetId) {
+      try {
+        api.remove(this.widgetId);
+      } catch {
+      }
+    }
+    this.widgetId = null;
+    this.container = null;
+    this.needsResetBeforeExecute = false;
+  }
+  resolvePending(token) {
+    if (!this.pending) return;
+    const { resolve, timerId } = this.pending;
+    this.pending = null;
+    clearTimeout(timerId);
+    resolve(token);
+  }
+  rejectPending(err) {
+    if (!this.pending) return;
+    const { reject, timerId } = this.pending;
+    this.pending = null;
+    clearTimeout(timerId);
+    reject(err);
+  }
+}
+function getModeSessionStorageKey(mode) {
+  return `unikorn360_rec_session_v2:${mode}`;
+}
+function generateSessionRandomId(prefix) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  const rand = Math.random().toString(36).slice(2, 10);
+  const rand2 = Math.random().toString(36).slice(2, 10);
+  return `${prefix}-${Date.now().toString(36)}-${rand}${rand2}`;
+}
+function createModeScopedSession(mode, channel = "website") {
+  const channelCode = channel === "whatsapp" ? "wa" : "web";
+  const modeCode = mode === "demo" ? "demo" : "live";
+  return {
+    sessionId: generateSessionRandomId(`rec-${channelCode}-${modeCode}`),
+    sessionToken: generateSessionRandomId(`sectok-${modeCode}`),
+    mode,
+    channel
+  };
+}
+function getDefaultSessionStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+function isValidStoredSessionForMode(raw, mode, channel = "website") {
+  if (!raw || typeof raw.sessionId !== "string" || typeof raw.sessionToken !== "string") {
+    return false;
+  }
+  const id = raw.sessionId.trim();
+  const token = raw.sessionToken.trim();
+  if (id.length < 16 || token.length < 16) return false;
+  const expectedPrefix = `rec-${channel === "whatsapp" ? "wa" : "web"}-${mode === "demo" ? "demo" : "live"}-`;
+  if (!id.startsWith(expectedPrefix)) {
+    return false;
+  }
+  return true;
+}
+function saveModeSession(session, storage = getDefaultSessionStorage()) {
+  if (!storage) return;
+  try {
+    storage.setItem(getModeSessionStorageKey(session.mode), JSON.stringify(session));
+  } catch {
+  }
+}
+function loadOrCreateModeSession(mode, storage = getDefaultSessionStorage(), channel = "website") {
+  if (storage) {
+    try {
+      const raw = storage.getItem(getModeSessionStorageKey(mode));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (isValidStoredSessionForMode(parsed, mode, channel)) {
+          return {
+            sessionId: parsed.sessionId,
+            sessionToken: parsed.sessionToken,
+            mode,
+            channel
+          };
+        }
+      }
+    } catch {
+    }
+  }
+  const fresh = createModeScopedSession(mode, channel);
+  saveModeSession(fresh, storage);
+  return fresh;
+}
+function loadOrCreateIsolatedTabSessions(storage = getDefaultSessionStorage()) {
+  const live = loadOrCreateModeSession("live", storage, "website");
+  let demo = loadOrCreateModeSession("demo", storage, "website");
+  if (demo.sessionId === live.sessionId) {
+    demo = createModeScopedSession("demo", "website");
+    saveModeSession(demo, storage);
+  }
+  return { live, demo };
+}
+function resetActiveModeSession(current, activeMode, storage = getDefaultSessionStorage()) {
+  const otherMode = activeMode === "live" ? "demo" : "live";
+  let fresh = createModeScopedSession(activeMode, "website");
+  while (fresh.sessionId === current[otherMode].sessionId) {
+    fresh = createModeScopedSession(activeMode, "website");
+  }
+  saveModeSession(fresh, storage);
+  return {
+    ...current,
+    [activeMode]: fresh
+  };
 }
 function formatTime(iso) {
   try {
@@ -9980,7 +11027,7 @@ function formatTime(iso) {
 }
 function createWelcomeMessage(mode) {
   return {
-    id: `welcome-${Date.now()}`,
+    id: `welcome-${mode}-${Date.now()}`,
     role: "assistant",
     content: "Welcome to UNIKORN360 Business Intelligence. I can guide you across our 6 service divisions, 4 standalone software products, or help capture your project enquiry — in English, தமிழ், Tanglish, or हिन्दी. How can we assist your business today?",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -9995,12 +11042,20 @@ const ReceptionistWidget = ({
   const [widgetState, setWidgetState] = useState("closed");
   const [teaserDismissed, setTeaserDismissed] = useState(false);
   const [mode, setMode] = useState("live");
-  const [sessionId, setSessionId] = useState(() => createSessionId());
-  const [messages, setMessages] = useState(() => [
-    createWelcomeMessage("live")
-  ]);
+  const [sessionsByMode, setSessionsByMode] = useState(
+    () => loadOrCreateIsolatedTabSessions()
+  );
+  const activeSession = sessionsByMode[mode];
+  const sessionId = activeSession.sessionId;
+  const sessionToken = activeSession.sessionToken;
+  const [messagesByMode, setMessagesByMode] = useState(() => ({
+    live: [createWelcomeMessage("live")],
+    demo: [createWelcomeMessage("demo")]
+  }));
+  const messages = messagesByMode[mode];
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isVerifyingSecurity, setIsVerifyingSecurity] = useState(false);
   const [chatError, setChatError] = useState(null);
   const [detectedLanguage, setDetectedLanguage] = useState("en");
   const [showQuickActions, setShowQuickActions] = useState(true);
@@ -10014,9 +11069,71 @@ const ReceptionistWidget = ({
   const [copiedWhatsAppMsg, setCopiedWhatsAppMsg] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const turnstileContainerRef = useRef(null);
+  const turnstileControllerRef = useRef(null);
+  const hydratedKeysRef = useRef(/* @__PURE__ */ new Set());
   const capturedFieldCount = useMemo(() => {
     return Object.values(enquiryDraft).filter((v) => typeof v === "string" && v.trim().length > 0).length;
   }, [enquiryDraft]);
+  const whatsAppMessage = useMemo(() => {
+    if (submittedReceipt) {
+      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} Reference: ${submittedReceipt.referenceCode} (${submittedReceipt.serviceRequired}).`;
+    }
+    if (enquiryDraft.serviceRequired.trim()) {
+      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} I am interested in ${enquiryDraft.serviceRequired.trim()}.`;
+    }
+    return RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE;
+  }, [enquiryDraft.serviceRequired, submittedReceipt]);
+  useEffect(() => {
+    if (currentPath.startsWith("/admin")) return;
+    const targetSession = sessionsByMode[mode];
+    const hydrationKey = `${targetSession.sessionId}:${mode}`;
+    if (hydratedKeysRef.current.has(hydrationKey)) return;
+    let cancelled = false;
+    receptionistService.hydrateSessionMessages({
+      sessionId: targetSession.sessionId,
+      sessionToken: targetSession.sessionToken,
+      sourceChannel: "website",
+      sourceMode: mode
+    }).then((resp) => {
+      if (cancelled) return;
+      hydratedKeysRef.current.add(hydrationKey);
+      if (!resp.found || !resp.messages.length) return;
+      const restored = resp.messages.filter((m) => m.senderType === "customer" || m.senderType === "assistant").map((m) => ({
+        id: m.messageId || m.id,
+        role: m.senderType === "customer" ? "user" : "assistant",
+        content: m.content,
+        timestamp: m.timestamp,
+        mode: m.mode,
+        language: m.language,
+        recommendedLinks: m.recommendedLinks,
+        quickActionId: m.quickActionId,
+        suggestEnquiryForm: m.suggestEnquiryForm,
+        model: m.aiModel
+      }));
+      if (restored.length === 0) return;
+      setMessagesByMode((prev) => {
+        const currentList = prev[mode];
+        const welcomeMsg = currentList.find((m) => m.id.startsWith("welcome-")) || createWelcomeMessage(mode);
+        const nonWelcomeExisting = currentList.filter((m) => !m.id.startsWith("welcome-"));
+        const existingIds = new Set(nonWelcomeExisting.map((m) => m.id));
+        const merged = [
+          welcomeMsg,
+          ...restored.filter((m) => !existingIds.has(m.id)),
+          ...nonWelcomeExisting
+        ];
+        return { ...prev, [mode]: merged };
+      });
+      if (resp.detectedLanguage) {
+        setDetectedLanguage(resp.detectedLanguage);
+      }
+      setShowQuickActions(false);
+    }).catch(() => {
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionsByMode, mode, currentPath]);
   useEffect(() => {
     var _a;
     if (widgetState === "open") {
@@ -10032,18 +11149,29 @@ const ReceptionistWidget = ({
       return () => clearTimeout(timer);
     }
   }, [widgetState]);
+  useEffect(() => {
+    var _a;
+    if (currentPath.startsWith("/admin") || widgetState !== "open" || mode !== "live") {
+      (_a = turnstileControllerRef.current) == null ? void 0 : _a.destroy();
+      turnstileControllerRef.current = null;
+      return;
+    }
+    const container = turnstileContainerRef.current;
+    if (!container) return;
+    const controller = new TurnstileChallengeController();
+    turnstileControllerRef.current = controller;
+    controller.mount(container).catch(() => {
+    });
+    return () => {
+      controller.destroy();
+      if (turnstileControllerRef.current === controller) {
+        turnstileControllerRef.current = null;
+      }
+    };
+  }, [widgetState, mode, currentPath]);
   if (currentPath.startsWith("/admin")) {
     return null;
   }
-  const whatsAppMessage = useMemo(() => {
-    if (submittedReceipt) {
-      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} Reference: ${submittedReceipt.referenceCode} (${submittedReceipt.serviceRequired}).`;
-    }
-    if (enquiryDraft.serviceRequired.trim()) {
-      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} I am interested in ${enquiryDraft.serviceRequired.trim()}.`;
-    }
-    return RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE;
-  }, [enquiryDraft.serviceRequired, submittedReceipt]);
   const defaultWhatsAppHref = buildReceptionistWhatsAppUrl(RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE);
   const contextualWhatsAppHref = buildReceptionistWhatsAppUrl(whatsAppMessage);
   const handleOpenWidget = () => {
@@ -10057,9 +11185,14 @@ const ReceptionistWidget = ({
     setWidgetState("closed");
   };
   const handleResetConversation = () => {
-    const freshId = createSessionId();
-    setSessionId(freshId);
-    setMessages([createWelcomeMessage(mode)]);
+    var _a;
+    const oldSessionId = sessionsByMode[mode].sessionId;
+    hydratedKeysRef.current.delete(`${oldSessionId}:${mode}`);
+    setSessionsByMode((prev) => resetActiveModeSession(prev, mode));
+    setMessagesByMode((prev) => ({
+      ...prev,
+      [mode]: [createWelcomeMessage(mode)]
+    }));
     setInputValue("");
     setChatError(null);
     setDetectedLanguage("en");
@@ -10070,16 +11203,29 @@ const ReceptionistWidget = ({
     setFieldErrors({});
     setEnquirySubmitError("");
     setSubmittedReceipt(null);
+    if (mode === "live") {
+      (_a = turnstileControllerRef.current) == null ? void 0 : _a.reset();
+    }
   };
   const handleModeSwitch = (nextMode) => {
+    var _a;
     if (nextMode === mode) return;
     setMode(nextMode);
     setChatError(null);
+    if (nextMode === "demo") {
+      (_a = turnstileControllerRef.current) == null ? void 0 : _a.destroy();
+      turnstileControllerRef.current = null;
+    }
   };
   const sendMessageText = async (text, options) => {
+    var _a;
     const trimmed = text.trim();
     if (!trimmed || isSending) return;
     const activeMode = (options == null ? void 0 : options.overrideMode) || mode;
+    const targetSession = sessionsByMode[activeMode];
+    const clientMessageId = (options == null ? void 0 : options.retryClientMessageId) || generateSessionRandomId("usr");
+    const assistantMessageId = generateSessionRandomId("ast");
+    const inferredLang = detectMessageLanguage(trimmed);
     setChatError(null);
     setShowQuickActions(false);
     const nextDraft = (options == null ? void 0 : options.presetService) ? {
@@ -10090,27 +11236,59 @@ const ReceptionistWidget = ({
       setEnquiryDraft(nextDraft);
     }
     const userMsg = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: clientMessageId,
       role: "user",
       content: trimmed,
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       mode: activeMode,
       quickActionId: options == null ? void 0 : options.quickActionId
     };
-    const historyForApi = messages.slice(-14).map((m) => ({
+    const modeMessages = messagesByMode[activeMode];
+    const historyForApi = modeMessages.filter((m) => !m.id.startsWith("welcome-") && !m.id.startsWith("receipt-")).slice(-14).map((m) => ({
       role: m.role,
       content: m.content
     }));
-    setMessages((prev) => [...prev, userMsg]);
-    setInputValue("");
     setIsSending(true);
     try {
+      let turnstileToken;
+      if (activeMode === "live") {
+        setIsVerifyingSecurity(true);
+        try {
+          if (!turnstileControllerRef.current) {
+            turnstileControllerRef.current = new TurnstileChallengeController();
+          }
+          turnstileToken = await turnstileControllerRef.current.executeFreshChallenge(
+            turnstileContainerRef.current
+          );
+        } finally {
+          setIsVerifyingSecurity(false);
+        }
+        if (!turnstileToken || !turnstileToken.trim()) {
+          throw new TurnstileVerificationError(
+            "Security verification did not return a valid token. Please retry.",
+            "TURNSTILE_FAILED"
+          );
+        }
+      }
+      setMessagesByMode((prev) => {
+        const list = prev[activeMode];
+        if (list.some((m) => m.id === clientMessageId)) return prev;
+        return { ...prev, [activeMode]: [...list, userMsg] };
+      });
+      setInputValue("");
       const response = await receptionistService.sendMessage({
-        sessionId,
+        sessionId: targetSession.sessionId,
+        sessionToken: targetSession.sessionToken,
         message: trimmed,
         history: historyForApi,
         mode: activeMode,
+        sourceMode: activeMode,
+        sourceChannel: "website",
+        detectedLanguage: inferredLang,
+        turnstileToken,
         currentPage: currentPath,
+        clientMessageId,
+        assistantMessageId,
         quickActionId: options == null ? void 0 : options.quickActionId,
         collectedDraft: nextDraft
       });
@@ -10128,24 +11306,36 @@ const ReceptionistWidget = ({
         }));
       }
       const assistantMsg = {
-        id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: response.assistantMessageId || assistantMessageId,
         role: "assistant",
         content: response.reply,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         mode: response.mode,
         language: response.detectedLanguage,
-        recommendedLinks: response.recommendedLinks
+        recommendedLinks: response.recommendedLinks,
+        suggestEnquiryForm: response.suggestEnquiryForm,
+        model: response.model
       };
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessagesByMode((prev) => {
+        const list = prev[activeMode];
+        if (list.some((m) => m.id === assistantMsg.id)) return prev;
+        return { ...prev, [activeMode]: [...list, assistantMsg] };
+      });
       if (response.suggestHumanHandover) {
         setShowHandoverCard(true);
       }
-      if (response.suggestEnquiryForm && !submittedReceipt) {
-      }
     } catch (err) {
-      const message = err instanceof ReceptionistClientError ? err.message : "Unable to reach the receptionist service right now. Please try again.";
-      setChatError({ message, retryText: trimmed });
+      const message = err instanceof ReceptionistClientError || err instanceof TurnstileVerificationError ? err.message : "Unable to reach the receptionist service right now. Please try again.";
+      setChatError({
+        message,
+        retryText: trimmed,
+        retryClientMessageId: clientMessageId
+      });
     } finally {
+      if (activeMode === "live") {
+        (_a = turnstileControllerRef.current) == null ? void 0 : _a.reset();
+      }
+      setIsVerifyingSecurity(false);
       setIsSending(false);
     }
   };
@@ -10153,15 +11343,43 @@ const ReceptionistWidget = ({
     if (action.isHumanHandover) {
       setShowHandoverCard(true);
       setShowQuickActions(false);
+      const handoverId = generateSessionRandomId("handover");
+      const handoverContent = "You can reach the UNIKORN360 team directly on WhatsApp (+91 98848 24360) using the Talk to UNIKORN360 button below, or leave your enquiry details here so our team can follow up with full context.";
       const handoverMsg = {
-        id: `handover-${Date.now()}`,
+        id: handoverId,
         role: "assistant",
-        content: "You can reach the UNIKORN360 team directly on WhatsApp (+91 98848 24360) using the Talk to UNIKORN360 button below, or leave your enquiry details here so our team can follow up with full context.",
+        content: handoverContent,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         mode,
         language: detectedLanguage
       };
-      setMessages((prev) => [...prev, handoverMsg]);
+      setMessagesByMode((prev) => ({
+        ...prev,
+        [mode]: [...prev[mode], handoverMsg]
+      }));
+      receptionistService.persistMessages({
+        sessionId,
+        sessionToken,
+        sourceChannel: "website",
+        sourceMode: mode,
+        currentPage: currentPath,
+        detectedLanguage,
+        messages: [
+          {
+            messageId: handoverId,
+            senderType: "system",
+            messageContent: handoverContent,
+            messageMetadata: {
+              quickActionId: action.id,
+              suggestHumanHandover: true,
+              currentPage: currentPath,
+              detectedLanguage
+            },
+            deliveryStatus: "delivered"
+          }
+        ]
+      }).catch(() => {
+      });
       return;
     }
     sendMessageText(action.prompt, {
@@ -10247,17 +11465,21 @@ const ReceptionistWidget = ({
         customerName: enquiryDraft.customerName.trim()
       });
       setShowEnquiryForm(false);
-      setMessages((prev) => [
+      const receiptId = generateSessionRandomId("receipt");
+      setMessagesByMode((prev) => ({
         ...prev,
-        {
-          id: `receipt-${Date.now()}`,
-          role: "assistant",
-          content: `Thank you, ${enquiryDraft.customerName.trim()}. Your enquiry for ${enquiryDraft.serviceRequired.trim()} has been saved with reference ${result.referenceCode}. Our UNIKORN360 team will review your scope and follow up promptly. You can also continue directly on WhatsApp below.`,
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          mode,
-          language: detectedLanguage
-        }
-      ]);
+        [mode]: [
+          ...prev[mode],
+          {
+            id: receiptId,
+            role: "assistant",
+            content: `Thank you, ${enquiryDraft.customerName.trim()}. Your enquiry for ${enquiryDraft.serviceRequired.trim()} has been saved with reference ${result.referenceCode}. Our UNIKORN360 team will review your scope and follow up promptly. You can also continue directly on WhatsApp below.`,
+            timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+            mode,
+            language: detectedLanguage
+          }
+        ]
+      }));
     } catch (err) {
       if (err instanceof ReceptionistClientError && err.fieldErrors) {
         setFieldErrors(err.fieldErrors);
@@ -10644,6 +11866,7 @@ const ReceptionistWidget = ({
               )) })
             ] }),
             messages.map((msg) => {
+              var _a;
               const isUser = msg.role === "user";
               return /* @__PURE__ */ jsxs(
                 "div",
@@ -10656,28 +11879,42 @@ const ReceptionistWidget = ({
                         className: `max-w-[88%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-line ${isUser ? "bg-[#0B1426] text-white" : "bg-white border border-[#E4DFD5] text-[#263449]"}`,
                         children: [
                           msg.content,
-                          !isUser && msg.recommendedLinks && msg.recommendedLinks.length > 0 && /* @__PURE__ */ jsx("div", { className: "mt-2.5 pt-2 border-t border-[#E4DFD5] flex flex-wrap gap-1.5", children: msg.recommendedLinks.map((link) => /* @__PURE__ */ jsxs(
-                            "button",
-                            {
-                              type: "button",
-                              onClick: () => {
-                                onNavigate(link.path);
-                                setWidgetState("minimised");
+                          !isUser && (msg.recommendedLinks && msg.recommendedLinks.length > 0 || msg.suggestEnquiryForm && !submittedReceipt) && /* @__PURE__ */ jsxs("div", { className: "mt-2.5 pt-2 border-t border-[#E4DFD5] flex flex-wrap gap-1.5", children: [
+                            (_a = msg.recommendedLinks) == null ? void 0 : _a.map((link) => /* @__PURE__ */ jsxs(
+                              "button",
+                              {
+                                type: "button",
+                                onClick: () => {
+                                  onNavigate(link.path);
+                                  setWidgetState("minimised");
+                                },
+                                className: "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0B1426] bg-[#F6F5F1] hover:bg-[#EFECE5] border border-[#E4DFD5] rounded-lg transition-colors cursor-pointer",
+                                children: [
+                                  /* @__PURE__ */ jsx("span", { children: link.label }),
+                                  /* @__PURE__ */ jsx(ArrowUpRight, { className: "w-3.5 h-3.5 text-[#C49A36] shrink-0" })
+                                ]
                               },
-                              className: "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0B1426] bg-[#F6F5F1] hover:bg-[#EFECE5] border border-[#E4DFD5] rounded-lg transition-colors cursor-pointer",
-                              children: [
-                                /* @__PURE__ */ jsx("span", { children: link.label }),
-                                /* @__PURE__ */ jsx(ArrowUpRight, { className: "w-3.5 h-3.5 text-[#C49A36] shrink-0" })
-                              ]
-                            },
-                            link.path
-                          )) })
+                              link.path
+                            )),
+                            msg.suggestEnquiryForm && !submittedReceipt && /* @__PURE__ */ jsxs(
+                              "button",
+                              {
+                                type: "button",
+                                onClick: () => setShowEnquiryForm(true),
+                                className: "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-[#0B1426] hover:bg-[#1A2844] rounded-lg transition-colors cursor-pointer",
+                                children: [
+                                  /* @__PURE__ */ jsx(ClipboardList, { className: "w-3.5 h-3.5 text-[#C49A36] shrink-0" }),
+                                  /* @__PURE__ */ jsx("span", { children: "Review & Submit Enquiry" })
+                                ]
+                              }
+                            )
+                          ] })
                         ]
                       }
                     ),
                     /* @__PURE__ */ jsxs("div", { className: "mt-1 px-1 flex items-center gap-1.5 text-[11px] text-[#526176] tabular-nums", children: [
                       !isUser && /* @__PURE__ */ jsxs(Fragment, { children: [
-                        /* @__PURE__ */ jsx("span", { className: msg.mode === "demo" ? "text-[#8A6510] font-medium" : "", children: msg.mode === "demo" ? "Demo Mode (Simulated)" : "Live AI" }),
+                        /* @__PURE__ */ jsx("span", { className: msg.mode === "demo" ? "text-[#8A6510] font-medium" : "", children: msg.mode === "demo" ? "Demo Mode (Simulated)" : msg.model ? `Live AI · ${msg.model}` : "Live AI" }),
                         /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" })
                       ] }),
                       /* @__PURE__ */ jsx("span", { children: formatTime(msg.timestamp) })
@@ -10687,7 +11924,7 @@ const ReceptionistWidget = ({
                 msg.id
               );
             }),
-            isSending && /* @__PURE__ */ jsx("div", { className: "flex items-start", children: /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E4DFD5] rounded-xl px-3.5 py-2.5 text-xs text-[#526176]", children: mode === "demo" ? "Preparing Demo Mode response..." : "UNIKORN360 Receptionist is typing..." }) }),
+            isSending && /* @__PURE__ */ jsx("div", { className: "flex items-start", children: /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E4DFD5] rounded-xl px-3.5 py-2.5 text-xs text-[#526176]", children: mode === "demo" ? "Preparing Demo Mode response..." : isVerifyingSecurity ? "Verifying browser security check..." : "UNIKORN360 Receptionist is typing..." }) }),
             chatError && /* @__PURE__ */ jsxs(
               "div",
               {
@@ -10703,7 +11940,9 @@ const ReceptionistWidget = ({
                       "button",
                       {
                         type: "button",
-                        onClick: () => sendMessageText(chatError.retryText),
+                        onClick: () => sendMessageText(chatError.retryText, {
+                          retryClientMessageId: chatError.retryClientMessageId
+                        }),
                         className: "inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#0B1426] text-white font-semibold rounded-lg cursor-pointer",
                         children: [
                           /* @__PURE__ */ jsx(RefreshCw, { className: "w-3 h-3" }),
@@ -10811,6 +12050,15 @@ const ReceptionistWidget = ({
                     ")"
                   ] })
                 ]
+              }
+            ),
+            mode === "live" && /* @__PURE__ */ jsx(
+              "div",
+              {
+                ref: turnstileContainerRef,
+                id: "receptionist-turnstile-container",
+                className: "min-h-0 flex justify-center",
+                "aria-live": "polite"
               }
             ),
             !showEnquiryForm && /* @__PURE__ */ jsxs("form", { onSubmit: handleChatSubmit, className: "flex items-center gap-2", children: [
@@ -18554,6 +19802,585 @@ const AdminCreatorManager = ({ currentRole = "evaluator" }) => {
     ] }) })
   ] });
 };
+function formatDateTime$1(iso) {
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return iso;
+  }
+}
+function formatLanguageLabel(lang) {
+  switch (lang) {
+    case "ta":
+      return "Tamil (TA)";
+    case "tanglish":
+      return "Tanglish";
+    case "hi":
+      return "Hindi (HI)";
+    default:
+      return "English (EN)";
+  }
+}
+function getConversationStatusMeta(status) {
+  return CONVERSATION_STATUS_OPTIONS.find((opt) => opt.value === status) || {
+    value: status,
+    label: status,
+    toneClass: "text-[#526176]"
+  };
+}
+function getSenderBadgeLabel(senderType, mode) {
+  switch (senderType) {
+    case "customer":
+      return "Customer";
+    case "agent":
+      return "Team Agent";
+    case "system":
+      return "System Event";
+    default:
+      return mode === "demo" ? "AI Receptionist (Demo)" : "AI Receptionist (Live)";
+  }
+}
+const AdminReceptionistInbox = ({ currentRole }) => {
+  const [conversations, setConversations] = useState([]);
+  const [assignees, setAssignees] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    liveThreads: 0,
+    demoThreads: 0,
+    activeOrFollowUp: 0,
+    unassigned: 0
+  });
+  const [storageMode, setStorageMode] = useState("supabase");
+  const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [channelFilter, setChannelFilter] = useState("all");
+  const [modeFilter, setModeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [languageFilter, setLanguageFilter] = useState("all");
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [drawerMessages, setDrawerMessages] = useState([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [editStatus, setEditStatus] = useState("active");
+  const [editAssignee, setEditAssignee] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveBanner, setSaveBanner] = useState("");
+  const activeConversationIdRef = useRef(null);
+  const canModify = currentRole === "superadmin" || currentRole === "admin";
+  const loadConversations = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await receptionistService.listAdminConversations({
+        channel: channelFilter,
+        mode: modeFilter,
+        status: statusFilter,
+        language: languageFilter,
+        search: searchInput
+      });
+      setConversations(data.conversations);
+      setAssignees(data.assignees || []);
+      setStats(data.stats);
+      setStorageMode(data.storage);
+      setNotice(data.notice || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load conversation inbox.");
+    } finally {
+      setLoading(false);
+    }
+  }, [channelFilter, modeFilter, statusFilter, languageFilter, searchInput]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadConversations();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [loadConversations]);
+  const closeConversationDrawer = () => {
+    activeConversationIdRef.current = null;
+    setSelectedConversation(null);
+    setDrawerMessages([]);
+    setDrawerLoading(false);
+    setSaveBanner("");
+  };
+  const openConversationDrawer = async (conv) => {
+    activeConversationIdRef.current = conv.id;
+    setSelectedConversation(conv);
+    setEditStatus(conv.conversation_status);
+    setEditAssignee(conv.assigned_employee || "");
+    setDrawerMessages([]);
+    setSaveBanner("");
+    setDrawerLoading(true);
+    try {
+      const detail = await receptionistService.getAdminConversationDetail(conv.id);
+      if (activeConversationIdRef.current !== conv.id) return;
+      setSelectedConversation({
+        ...conv,
+        ...detail.conversation,
+        enquiry_reference_code: conv.enquiry_reference_code || detail.conversation.enquiry_reference_code
+      });
+      setDrawerMessages((detail.messages || []).filter((m) => m.conversation_id === conv.id));
+    } catch (err) {
+      if (activeConversationIdRef.current !== conv.id) return;
+      setError(err instanceof Error ? err.message : "Failed to load conversation messages.");
+    } finally {
+      if (activeConversationIdRef.current === conv.id) {
+        setDrawerLoading(false);
+      }
+    }
+  };
+  const handleSaveConversation = async () => {
+    if (!selectedConversation || !canModify) return;
+    setSaving(true);
+    setSaveBanner("");
+    setError("");
+    try {
+      const updated = await receptionistService.updateAdminConversation(selectedConversation.id, {
+        conversation_status: editStatus,
+        assigned_employee: editAssignee.trim() || null
+      });
+      const merged = {
+        ...selectedConversation,
+        ...updated
+      };
+      setSelectedConversation(merged);
+      setConversations((prev) => prev.map((row) => row.id === updated.id ? { ...row, ...updated } : row));
+      setSaveBanner("Conversation status and assignment updated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update conversation.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "space-y-6", children: [
+    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 lg:grid-cols-4 gap-4", children: [
+      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "Total Conversations" }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.total }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: storageMode === "supabase" ? "Synced with Supabase CRM" : "Preview session store" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "Live AI Threads" }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.liveThreads }),
+        /* @__PURE__ */ jsxs("p", { className: "mt-1 text-xs text-[#526176] tabular-nums", children: [
+          stats.demoThreads,
+          " Demo Mode separated"
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#B45309]", children: "Active / Follow-Up" }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#B45309] tabular-nums", children: stats.activeOrFollowUp }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Needs team review or reply" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#15803D]", children: "Unassigned Threads" }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.unassigned }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Ready for employee assignment" })
+      ] })
+    ] }),
+    notice && /* @__PURE__ */ jsxs("div", { className: "bg-[#FDF8EA] border border-[#E8D59E] rounded-xl px-4 py-3 text-xs text-[#6B4E08] flex items-center gap-2", children: [
+      /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0" }),
+      /* @__PURE__ */ jsx("span", { children: notice })
+    ] }),
+    error && /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-800 flex items-center justify-between gap-3", children: [
+      /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0 text-red-600" }),
+        error
+      ] }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          onClick: loadConversations,
+          className: "font-semibold underline whitespace-nowrap cursor-pointer",
+          children: "Retry"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3", children: [
+      /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-md", children: [
+        /* @__PURE__ */ jsx(Search, { className: "w-4 h-4 text-[#526176] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "text",
+            "aria-label": "Search conversations",
+            value: searchInput,
+            onChange: (e) => setSearchInput(e.target.value),
+            placeholder: "Search customer, session ID, assignee, or message text...",
+            className: "w-full pl-9 pr-3 py-2 text-sm bg-[#F6F5F1] border border-[#E4DFD5] rounded-lg text-[#0B1426] placeholder:text-[#526176]/75 focus:bg-white focus:border-[#0B1426]"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Filter by source channel",
+            value: channelFilter,
+            onChange: (e) => setChannelFilter(e.target.value),
+            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "all", children: "All Channels" }),
+              /* @__PURE__ */ jsx("option", { value: "website", children: "Website Widget" }),
+              /* @__PURE__ */ jsx("option", { value: "whatsapp", children: "WhatsApp" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Filter by source mode",
+            value: modeFilter,
+            onChange: (e) => setModeFilter(e.target.value),
+            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "all", children: "Live & Demo" }),
+              /* @__PURE__ */ jsx("option", { value: "live", children: "Live AI Only" }),
+              /* @__PURE__ */ jsx("option", { value: "demo", children: "Demo Mode Only" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Filter by conversation status",
+            value: statusFilter,
+            onChange: (e) => setStatusFilter(e.target.value),
+            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "all", children: "All Statuses" }),
+              CONVERSATION_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "select",
+          {
+            "aria-label": "Filter by detected language",
+            value: languageFilter,
+            onChange: (e) => setLanguageFilter(e.target.value),
+            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+            children: [
+              /* @__PURE__ */ jsx("option", { value: "all", children: "All Languages" }),
+              /* @__PURE__ */ jsx("option", { value: "en", children: "English (EN)" }),
+              /* @__PURE__ */ jsx("option", { value: "ta", children: "Tamil (TA)" }),
+              /* @__PURE__ */ jsx("option", { value: "tanglish", children: "Tanglish" }),
+              /* @__PURE__ */ jsx("option", { value: "hi", children: "Hindi (HI)" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            onClick: loadConversations,
+            disabled: loading,
+            className: "inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white border border-[#E4DFD5] hover:border-[#0B1426] text-[#0B1426] rounded-lg transition-colors whitespace-nowrap cursor-pointer",
+            children: [
+              /* @__PURE__ */ jsx(RefreshCw, { className: `w-3.5 h-3.5 ${loading ? "animate-spin" : ""}` }),
+              /* @__PURE__ */ jsx("span", { children: "Refresh" })
+            ]
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E4DFD5] rounded-xl overflow-hidden", children: loading ? /* @__PURE__ */ jsx("div", { className: "p-6 space-y-3", children: [1, 2, 3, 4].map((row) => /* @__PURE__ */ jsx("div", { className: "h-12 bg-[#F6F5F1] rounded-lg animate-pulse" }, row)) }) : conversations.length === 0 ? /* @__PURE__ */ jsxs("div", { className: "p-10 text-center", children: [
+      /* @__PURE__ */ jsx(MessageSquare, { className: "w-8 h-8 text-[#C49A36] mx-auto mb-3" }),
+      /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "No customer conversations found" }),
+      /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176] max-w-md mx-auto leading-relaxed", children: "Every customer and AI message from Website Live AI, Demo Mode, and future WhatsApp threads is logged here automatically." })
+    ] }) : /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
+      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E4DFD5] bg-[#F6F5F1] text-xs font-semibold text-[#526176]", children: [
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Customer / Session" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Channel & Mode" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Language" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Lead Status" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Assigned Employee" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Last Activity" }),
+        /* @__PURE__ */ jsx("th", { className: "py-3 px-4 text-right", children: "Messages" })
+      ] }) }),
+      /* @__PURE__ */ jsx("tbody", { className: "divide-y divide-[#E4DFD5] text-sm", children: conversations.map((conv) => {
+        const statusMeta = getConversationStatusMeta(conv.conversation_status);
+        return /* @__PURE__ */ jsxs(
+          "tr",
+          {
+            onClick: () => openConversationDrawer(conv),
+            className: "hover:bg-[#F6F5F1]/70 transition-colors cursor-pointer",
+            children: [
+              /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top max-w-xs", children: [
+                /* @__PURE__ */ jsx("div", { className: "font-semibold text-[#0B1426] truncate", children: conv.customer_identifier || "Website Visitor" }),
+                /* @__PURE__ */ jsxs(
+                  "div",
+                  {
+                    className: "text-[11px] text-[#526176] font-mono mt-0.5 truncate",
+                    title: `Conversation ID: ${conv.id} · Session ID: ${conv.session_id}`,
+                    children: [
+                      "ID: ",
+                      conv.id.slice(0, 8),
+                      " · ",
+                      conv.session_id,
+                      conv.enquiry_reference_code ? ` · ${conv.enquiry_reference_code}` : ""
+                    ]
+                  }
+                ),
+                conv.last_message_preview && /* @__PURE__ */ jsx("div", { className: "text-xs text-[#263449] mt-1 line-clamp-1", children: conv.last_message_preview })
+              ] }),
+              /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: [
+                /* @__PURE__ */ jsx("div", { className: "text-xs font-semibold text-[#0B1426] capitalize", children: conv.source_channel }),
+                /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#526176] mt-0.5", children: [
+                  /* @__PURE__ */ jsx(
+                    "span",
+                    {
+                      className: conv.source_mode === "demo" ? "font-semibold text-[#9A6B00]" : "font-semibold text-[#0B1426]",
+                      children: conv.source_mode === "demo" ? "Demo Mode" : "Live AI"
+                    }
+                  ),
+                  " · ",
+                  /* @__PURE__ */ jsx("span", { className: "font-mono", children: conv.current_page || "/" }),
+                  (conv.failed_count ?? 0) > 0 && /* @__PURE__ */ jsxs("span", { className: "ml-1.5 font-semibold text-red-700", children: [
+                    "· ",
+                    conv.failed_count,
+                    " failed"
+                  ] })
+                ] })
+              ] }),
+              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap text-xs text-[#0B1426] font-medium", children: formatLanguageLabel(conv.detected_language) }),
+              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: /* @__PURE__ */ jsx("span", { className: `text-xs font-semibold ${statusMeta.toneClass}`, children: statusMeta.label }) }),
+              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap text-xs text-[#263449]", children: conv.assigned_employee ? /* @__PURE__ */ jsxs("span", { className: "inline-flex items-center gap-1 font-medium text-[#0B1426]", children: [
+                /* @__PURE__ */ jsx(UserCheck, { className: "w-3.5 h-3.5 text-[#15803D]" }),
+                conv.assigned_employee
+              ] }) : /* @__PURE__ */ jsx("span", { className: "text-[#526176]", children: "Unassigned" }) }),
+              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap text-xs text-[#263449] tabular-nums", children: formatDateTime$1(conv.last_message_at) }),
+              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top text-right whitespace-nowrap", children: /* @__PURE__ */ jsxs(
+                "button",
+                {
+                  type: "button",
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    openConversationDrawer(conv);
+                  },
+                  className: "px-3 py-1.5 text-xs font-semibold text-[#0B1426] bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-colors cursor-pointer tabular-nums",
+                  children: [
+                    "View (",
+                    conv.message_count ?? 0,
+                    ")"
+                  ]
+                }
+              ) })
+            ]
+          },
+          conv.id
+        );
+      }) })
+    ] }) }) }),
+    selectedConversation && /* @__PURE__ */ jsx(
+      "div",
+      {
+        role: "dialog",
+        "aria-label": `Conversation ${selectedConversation.session_id}`,
+        className: "fixed inset-0 z-50 bg-[#0B1426]/45 flex justify-end",
+        onClick: closeConversationDrawer,
+        children: /* @__PURE__ */ jsxs(
+          "div",
+          {
+            className: "w-full max-w-2xl bg-[#F6F5F1] h-full overflow-y-auto border-l border-[#E4DFD5] shadow-2xl flex flex-col",
+            onClick: (e) => e.stopPropagation(),
+            children: [
+              /* @__PURE__ */ jsxs("div", { className: "bg-white border-b border-[#E4DFD5] px-6 py-4 flex items-start justify-between gap-4 sticky top-0 z-10", children: [
+                /* @__PURE__ */ jsxs("div", { children: [
+                  /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] flex flex-wrap items-center gap-2 tabular-nums", children: [
+                    /* @__PURE__ */ jsx("span", { className: "font-mono font-semibold text-[#0B1426]", children: selectedConversation.id }),
+                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                    /* @__PURE__ */ jsx("span", { className: "font-mono", children: selectedConversation.session_id }),
+                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                    /* @__PURE__ */ jsx("span", { className: "capitalize", children: selectedConversation.source_channel }),
+                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                    /* @__PURE__ */ jsx("span", { children: selectedConversation.source_mode === "demo" ? "Demo Mode" : "Live Gemini AI" }),
+                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                    /* @__PURE__ */ jsx("span", { children: formatLanguageLabel(selectedConversation.detected_language) })
+                  ] }),
+                  /* @__PURE__ */ jsx("h2", { className: "text-lg font-bold text-[#0B1426] mt-1", children: selectedConversation.customer_identifier || "Website Visitor Conversation" })
+                ] }),
+                /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: closeConversationDrawer,
+                    "aria-label": "Close conversation drawer",
+                    className: "p-2 text-[#526176] hover:text-[#0B1426] rounded-lg hover:bg-[#F6F5F1] cursor-pointer",
+                    children: /* @__PURE__ */ jsx(X, { className: "w-5 h-5" })
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "p-6 space-y-6", children: [
+                saveBanner && /* @__PURE__ */ jsxs("div", { className: "bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5 text-xs text-emerald-800 flex items-center gap-2", children: [
+                  /* @__PURE__ */ jsx(CheckCircle2, { className: "w-4 h-4 text-emerald-600 shrink-0" }),
+                  /* @__PURE__ */ jsx("span", { children: saveBanner })
+                ] }),
+                /* @__PURE__ */ jsx("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: /* @__PURE__ */ jsxs("dl", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs", children: [
+                  /* @__PURE__ */ jsxs("div", { children: [
+                    /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Current Page" }),
+                    /* @__PURE__ */ jsxs("dd", { className: "font-mono font-semibold text-[#0B1426] mt-0.5 flex items-center gap-1.5", children: [
+                      /* @__PURE__ */ jsx(Globe, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
+                      selectedConversation.current_page || "/"
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { children: [
+                    /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Linked Enquiry" }),
+                    /* @__PURE__ */ jsx("dd", { className: "font-mono font-semibold text-[#0B1426] mt-0.5", children: selectedConversation.enquiry_reference_code || "Not submitted yet" })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { children: [
+                    /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Conversation Started" }),
+                    /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5 tabular-nums", children: formatDateTime$1(selectedConversation.created_at) })
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { children: [
+                    /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Last Activity" }),
+                    /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5 tabular-nums", children: formatDateTime$1(selectedConversation.last_message_at) })
+                  ] })
+                ] }) }),
+                /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-4", children: [
+                  /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "CRM Status & Employee Assignment" }),
+                  /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-4", children: [
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "label",
+                        {
+                          htmlFor: "conv-lead-status",
+                          className: "block text-xs font-semibold text-[#0B1426] mb-1",
+                          children: "Lead / Conversation Status"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        "select",
+                        {
+                          id: "conv-lead-status",
+                          disabled: !canModify,
+                          value: editStatus,
+                          onChange: (e) => setEditStatus(e.target.value),
+                          className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] disabled:bg-[#F6F5F1]",
+                          children: CONVERSATION_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
+                        }
+                      )
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "label",
+                        {
+                          htmlFor: "conv-assigned-employee",
+                          className: "block text-xs font-semibold text-[#0B1426] mb-1",
+                          children: "Assigned Employee"
+                        }
+                      ),
+                      /* @__PURE__ */ jsxs(
+                        "select",
+                        {
+                          id: "conv-assigned-employee",
+                          disabled: !canModify,
+                          value: editAssignee,
+                          onChange: (e) => setEditAssignee(e.target.value),
+                          className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] disabled:bg-[#F6F5F1]",
+                          children: [
+                            /* @__PURE__ */ jsx("option", { value: "", children: "Unassigned" }),
+                            assignees.map((member) => /* @__PURE__ */ jsxs("option", { value: member.email, children: [
+                              member.email,
+                              " (",
+                              member.role,
+                              ")"
+                            ] }, member.email)),
+                            editAssignee && !assignees.some((a) => a.email === editAssignee) && /* @__PURE__ */ jsx("option", { value: editAssignee, children: editAssignee })
+                          ]
+                        }
+                      )
+                    ] })
+                  ] }),
+                  canModify ? /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsxs(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: handleSaveConversation,
+                      disabled: saving,
+                      className: "inline-flex items-center gap-2 px-4 py-2 bg-[#0B1426] hover:bg-[#1A2844] disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer",
+                      children: [
+                        /* @__PURE__ */ jsx(Save, { className: "w-3.5 h-3.5" }),
+                        /* @__PURE__ */ jsx("span", { children: saving ? "Saving..." : "Save CRM Update" })
+                      ]
+                    }
+                  ) }) : /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "Read-only view for evaluator role. Contact an administrator to reassign or update conversation status." })
+                ] }),
+                /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-3", children: [
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
+                    /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Individual Messages" }),
+                    /* @__PURE__ */ jsxs("span", { className: "text-xs text-[#526176] tabular-nums", children: [
+                      drawerMessages.length,
+                      " persisted"
+                    ] })
+                  ] }),
+                  drawerLoading ? /* @__PURE__ */ jsx("div", { className: "space-y-2.5", children: [1, 2, 3].map((row) => /* @__PURE__ */ jsx("div", { className: "h-14 bg-[#F6F5F1] rounded-lg animate-pulse" }, row)) }) : drawerMessages.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "No individual messages stored in this conversation yet." }) : /* @__PURE__ */ jsx("div", { className: "space-y-3 max-h-[420px] overflow-y-auto pr-1", children: drawerMessages.map((msg) => {
+                    var _a, _b, _c;
+                    const isCustomer = msg.sender_type === "customer";
+                    const isSystem = msg.sender_type === "system";
+                    const isFailed = msg.delivery_status === "failed";
+                    return /* @__PURE__ */ jsxs(
+                      "div",
+                      {
+                        className: `rounded-lg p-3.5 text-xs leading-relaxed border ${isFailed ? "bg-red-50 text-red-900 border-red-200" : isCustomer ? "bg-[#0B1426] text-white border-[#0B1426]" : isSystem ? "bg-[#FDF8EA] text-[#6B4E08] border-[#E8D59E]" : "bg-[#F6F5F1] text-[#263449] border-[#E4DFD5]"}`,
+                        children: [
+                          /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 mb-1.5 opacity-85 tabular-nums text-[11px]", children: [
+                            /* @__PURE__ */ jsxs("span", { className: "font-semibold inline-flex items-center gap-1.5", children: [
+                              isFailed ? /* @__PURE__ */ jsx(AlertTriangle, { className: "w-3.5 h-3.5 text-red-700" }) : isCustomer ? /* @__PURE__ */ jsx(User, { className: "w-3.5 h-3.5" }) : isSystem ? /* @__PURE__ */ jsx(ShieldCheck, { className: "w-3.5 h-3.5" }) : /* @__PURE__ */ jsx(Bot, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
+                              getSenderBadgeLabel(msg.sender_type, selectedConversation.source_mode),
+                              msg.ai_model ? ` · ${msg.ai_model}` : ""
+                            ] }),
+                            /* @__PURE__ */ jsxs("span", { className: isFailed ? "font-semibold text-red-800" : "", children: [
+                              msg.delivery_status,
+                              " · ",
+                              formatDateTime$1(msg.created_at)
+                            ] })
+                          ] }),
+                          /* @__PURE__ */ jsx("p", { className: "whitespace-pre-line", children: msg.message_content }),
+                          (((_a = msg.message_metadata) == null ? void 0 : _a.errorCode) || ((_b = msg.message_metadata) == null ? void 0 : _b.failureStage)) && /* @__PURE__ */ jsxs("div", { className: "mt-2 pt-2 border-t border-red-200/80 text-[11px] font-mono text-red-800 flex flex-wrap gap-2", children: [
+                            msg.message_metadata.failureStage && /* @__PURE__ */ jsxs("span", { children: [
+                              "Stage: ",
+                              msg.message_metadata.failureStage
+                            ] }),
+                            msg.message_metadata.errorCode && /* @__PURE__ */ jsxs("span", { children: [
+                              "Code: ",
+                              msg.message_metadata.errorCode
+                            ] })
+                          ] }),
+                          Array.isArray((_c = msg.message_metadata) == null ? void 0 : _c.recommendedLinks) && msg.message_metadata.recommendedLinks.length > 0 && /* @__PURE__ */ jsx("div", { className: "mt-2 pt-2 border-t border-current/15 flex flex-wrap gap-1.5", children: msg.message_metadata.recommendedLinks.map((link) => /* @__PURE__ */ jsxs(
+                            "span",
+                            {
+                              className: "px-2 py-0.5 text-[10px] font-mono bg-white/80 text-[#0B1426] border border-[#E4DFD5] rounded",
+                              children: [
+                                link.label,
+                                " (",
+                                link.path,
+                                ")"
+                              ]
+                            },
+                            link.path
+                          )) })
+                        ]
+                      },
+                      msg.id
+                    );
+                  }) })
+                ] })
+              ] })
+            ]
+          }
+        )
+      }
+    )
+  ] });
+};
 function formatDateTime(iso) {
   try {
     return new Date(iso).toLocaleString("en-IN", {
@@ -18578,6 +20405,7 @@ const AdminReceptionistEnquiries = ({
   currentRole
 }) => {
   var _a;
+  const [activeSubTab, setActiveSubTab] = useState("enquiries");
   const [enquiries, setEnquiries] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -18680,445 +20508,484 @@ const AdminReceptionistEnquiries = ({
     });
   }, [enquiries, searchQuery, statusFilter, followUpOnly, modeFilter]);
   return /* @__PURE__ */ jsxs("div", { className: "space-y-6", children: [
-    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 lg:grid-cols-4 gap-4", children: [
-      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
-        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "Total Enquiries" }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.total }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: storageMode === "supabase" ? "Synced with Supabase" : "Preview session store" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
-        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "New Leads" }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.newLeads }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Awaiting first contact" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
-        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#B45309]", children: "Follow-Up Required" }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#B45309] tabular-nums", children: stats.followUpRequired }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Flagged for team follow-up" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
-        /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#15803D]", children: "Qualified / Won" }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#15803D] tabular-nums", children: stats.qualifiedOrWon }),
-        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Active proposals & wins" })
-      ] })
-    ] }),
-    notice && /* @__PURE__ */ jsxs("div", { className: "bg-[#FDF8EA] border border-[#E8D59E] rounded-xl px-4 py-3 text-xs text-[#6B4E08] flex items-center gap-2", children: [
-      /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0" }),
-      /* @__PURE__ */ jsx("span", { children: notice })
-    ] }),
-    error && /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-800 flex items-center justify-between gap-3", children: [
-      /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0 text-red-600" }),
-        error
-      ] }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          type: "button",
-          onClick: loadEnquiries,
-          className: "font-semibold underline whitespace-nowrap cursor-pointer",
-          children: "Retry"
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3", children: [
-      /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-md", children: [
-        /* @__PURE__ */ jsx(Search, { className: "w-4 h-4 text-[#526176] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" }),
-        /* @__PURE__ */ jsx(
-          "input",
-          {
-            type: "text",
-            value: searchQuery,
-            onChange: (e) => setSearchQuery(e.target.value),
-            placeholder: "Search customer, business, email, phone, or service...",
-            className: "w-full pl-9 pr-3 py-2 text-sm bg-[#F6F5F1] border border-[#E4DFD5] rounded-lg text-[#0B1426] placeholder:text-[#526176]/75 focus:bg-white focus:border-[#0B1426]"
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-3 bg-white border border-[#E4DFD5] rounded-xl p-2", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1.5", role: "tablist", "aria-label": "AI Receptionist sections", children: [
         /* @__PURE__ */ jsxs(
-          "select",
-          {
-            "aria-label": "Filter by lead status",
-            value: statusFilter,
-            onChange: (e) => setStatusFilter(e.target.value),
-            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
-            children: [
-              /* @__PURE__ */ jsx("option", { value: "all", children: "All Statuses" }),
-              LEAD_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxs(
-          "select",
-          {
-            "aria-label": "Filter by mode",
-            value: modeFilter,
-            onChange: (e) => setModeFilter(e.target.value),
-            className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
-            children: [
-              /* @__PURE__ */ jsx("option", { value: "all", children: "Live & Demo" }),
-              /* @__PURE__ */ jsx("option", { value: "live", children: "Live AI Only" }),
-              /* @__PURE__ */ jsx("option", { value: "demo", children: "Demo Mode Only" })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsx(
           "button",
           {
             type: "button",
-            onClick: () => setFollowUpOnly((prev) => !prev),
-            className: `px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${followUpOnly ? "bg-[#0B1426] text-white border-[#0B1426]" : "bg-white text-[#0B1426] border-[#E4DFD5] hover:border-[#0B1426]"}`,
-            children: "Follow-Up Only"
+            role: "tab",
+            "aria-selected": activeSubTab === "enquiries",
+            onClick: () => setActiveSubTab("enquiries"),
+            className: `inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${activeSubTab === "enquiries" ? "bg-[#0B1426] text-white" : "text-[#526176] hover:text-[#0B1426] hover:bg-[#F6F5F1]"}`,
+            children: [
+              /* @__PURE__ */ jsx(MessageSquare, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
+              /* @__PURE__ */ jsxs("span", { children: [
+                "Submitted Enquiries (",
+                stats.total,
+                ")"
+              ] })
+            ]
           }
         ),
         /* @__PURE__ */ jsxs(
+          "button",
+          {
+            type: "button",
+            role: "tab",
+            "aria-selected": activeSubTab === "inbox",
+            onClick: () => setActiveSubTab("inbox"),
+            className: `inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${activeSubTab === "inbox" ? "bg-[#0B1426] text-white" : "text-[#526176] hover:text-[#0B1426] hover:bg-[#F6F5F1]"}`,
+            children: [
+              /* @__PURE__ */ jsx(Inbox, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
+              /* @__PURE__ */ jsx("span", { children: "Conversation Inbox" })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: "text-[11px] text-[#526176] px-2", children: activeSubTab === "inbox" ? "Every Live AI, Demo & future WhatsApp chat turn" : "Structured lead forms captured by AI Receptionist" })
+    ] }),
+    activeSubTab === "inbox" ? /* @__PURE__ */ jsx(AdminReceptionistInbox, { currentRole }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 lg:grid-cols-4 gap-4", children: [
+        /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "Total Enquiries" }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.total }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: storageMode === "supabase" ? "Synced with Supabase" : "Preview session store" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#526176]", children: "New Leads" }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#0B1426] tabular-nums", children: stats.newLeads }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Awaiting first contact" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#B45309]", children: "Follow-Up Required" }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#B45309] tabular-nums", children: stats.followUpRequired }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Flagged for team follow-up" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5", children: [
+          /* @__PURE__ */ jsx("p", { className: "text-xs font-medium text-[#15803D]", children: "Qualified / Won" }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-2xl font-bold text-[#15803D] tabular-nums", children: stats.qualifiedOrWon }),
+          /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176]", children: "Active proposals & wins" })
+        ] })
+      ] }),
+      notice && /* @__PURE__ */ jsxs("div", { className: "bg-[#FDF8EA] border border-[#E8D59E] rounded-xl px-4 py-3 text-xs text-[#6B4E08] flex items-center gap-2", children: [
+        /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0" }),
+        /* @__PURE__ */ jsx("span", { children: notice })
+      ] }),
+      error && /* @__PURE__ */ jsxs("div", { className: "bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-800 flex items-center justify-between gap-3", children: [
+        /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0 text-red-600" }),
+          error
+        ] }),
+        /* @__PURE__ */ jsx(
           "button",
           {
             type: "button",
             onClick: loadEnquiries,
-            disabled: loading,
-            className: "inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white border border-[#E4DFD5] hover:border-[#0B1426] text-[#0B1426] rounded-lg transition-colors whitespace-nowrap cursor-pointer",
-            children: [
-              /* @__PURE__ */ jsx(RefreshCw, { className: `w-3.5 h-3.5 ${loading ? "animate-spin" : ""}` }),
-              /* @__PURE__ */ jsx("span", { children: "Refresh" })
-            ]
+            className: "font-semibold underline whitespace-nowrap cursor-pointer",
+            children: "Retry"
           }
         )
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E4DFD5] rounded-xl overflow-hidden", children: loading ? /* @__PURE__ */ jsx("div", { className: "p-6 space-y-3", children: [1, 2, 3, 4].map((row) => /* @__PURE__ */ jsx("div", { className: "h-12 bg-[#F6F5F1] rounded-lg animate-pulse" }, row)) }) : filteredEnquiries.length === 0 ? /* @__PURE__ */ jsxs("div", { className: "p-10 text-center", children: [
-      /* @__PURE__ */ jsx(MessageSquare, { className: "w-8 h-8 text-[#C49A36] mx-auto mb-3" }),
-      /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: enquiries.length === 0 ? "No AI Receptionist enquiries yet" : "No enquiries match the active filters" }),
-      /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176] max-w-md mx-auto leading-relaxed", children: enquiries.length === 0 ? "When visitors submit project enquiries through the website AI Receptionist widget, their details and full conversation history will appear here." : "Adjust your search term, status filter, or mode selection to view other enquiries." })
-    ] }) : /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
-      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E4DFD5] bg-[#F6F5F1] text-xs font-semibold text-[#526176]", children: [
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Customer Details" }),
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Service Interest" }),
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Lead Status" }),
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Enquiry Date" }),
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Follow-Up" }),
-        /* @__PURE__ */ jsx("th", { className: "py-3 px-4 text-right", children: "Transcript" })
-      ] }) }),
-      /* @__PURE__ */ jsx("tbody", { className: "divide-y divide-[#E4DFD5] text-sm", children: filteredEnquiries.map((item) => {
-        const statusMeta = getStatusMeta(item.lead_status);
-        const turnCount = Array.isArray(item.conversation_history) ? item.conversation_history.length : 0;
-        return /* @__PURE__ */ jsxs(
-          "tr",
-          {
-            onClick: () => openEnquiryDrawer(item),
-            className: "hover:bg-[#F6F5F1]/70 transition-colors cursor-pointer",
-            children: [
-              /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top", children: [
-                /* @__PURE__ */ jsx("div", { className: "font-semibold text-[#0B1426]", children: item.customer_name }),
-                /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] mt-0.5 flex flex-wrap items-center gap-1.5", children: [
-                  item.business_name && /* @__PURE__ */ jsxs(Fragment, { children: [
-                    /* @__PURE__ */ jsx("span", { children: item.business_name }),
-                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "bg-white border border-[#E4DFD5] rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3", children: [
+        /* @__PURE__ */ jsxs("div", { className: "relative flex-1 max-w-md", children: [
+          /* @__PURE__ */ jsx(Search, { className: "w-4 h-4 text-[#526176] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              type: "text",
+              value: searchQuery,
+              onChange: (e) => setSearchQuery(e.target.value),
+              placeholder: "Search customer, business, email, phone, or service...",
+              className: "w-full pl-9 pr-3 py-2 text-sm bg-[#F6F5F1] border border-[#E4DFD5] rounded-lg text-[#0B1426] placeholder:text-[#526176]/75 focus:bg-white focus:border-[#0B1426]"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+          /* @__PURE__ */ jsxs(
+            "select",
+            {
+              "aria-label": "Filter by lead status",
+              value: statusFilter,
+              onChange: (e) => setStatusFilter(e.target.value),
+              className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+              children: [
+                /* @__PURE__ */ jsx("option", { value: "all", children: "All Statuses" }),
+                LEAD_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "select",
+            {
+              "aria-label": "Filter by mode",
+              value: modeFilter,
+              onChange: (e) => setModeFilter(e.target.value),
+              className: "px-3 py-2 text-xs font-medium bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426]",
+              children: [
+                /* @__PURE__ */ jsx("option", { value: "all", children: "Live & Demo" }),
+                /* @__PURE__ */ jsx("option", { value: "live", children: "Live AI Only" }),
+                /* @__PURE__ */ jsx("option", { value: "demo", children: "Demo Mode Only" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              type: "button",
+              onClick: () => setFollowUpOnly((prev) => !prev),
+              className: `px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${followUpOnly ? "bg-[#0B1426] text-white border-[#0B1426]" : "bg-white text-[#0B1426] border-[#E4DFD5] hover:border-[#0B1426]"}`,
+              children: "Follow-Up Only"
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "button",
+            {
+              type: "button",
+              onClick: loadEnquiries,
+              disabled: loading,
+              className: "inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white border border-[#E4DFD5] hover:border-[#0B1426] text-[#0B1426] rounded-lg transition-colors whitespace-nowrap cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsx(RefreshCw, { className: `w-3.5 h-3.5 ${loading ? "animate-spin" : ""}` }),
+                /* @__PURE__ */ jsx("span", { children: "Refresh" })
+              ]
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "bg-white border border-[#E4DFD5] rounded-xl overflow-hidden", children: loading ? /* @__PURE__ */ jsx("div", { className: "p-6 space-y-3", children: [1, 2, 3, 4].map((row) => /* @__PURE__ */ jsx("div", { className: "h-12 bg-[#F6F5F1] rounded-lg animate-pulse" }, row)) }) : filteredEnquiries.length === 0 ? /* @__PURE__ */ jsxs("div", { className: "p-10 text-center", children: [
+        /* @__PURE__ */ jsx(MessageSquare, { className: "w-8 h-8 text-[#C49A36] mx-auto mb-3" }),
+        /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: enquiries.length === 0 ? "No AI Receptionist enquiries yet" : "No enquiries match the active filters" }),
+        /* @__PURE__ */ jsx("p", { className: "mt-1 text-xs text-[#526176] max-w-md mx-auto leading-relaxed", children: enquiries.length === 0 ? "When visitors submit project enquiries through the website AI Receptionist widget, their details and full conversation history will appear here." : "Adjust your search term, status filter, or mode selection to view other enquiries." })
+      ] }) : /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-left border-collapse", children: [
+        /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "border-b border-[#E4DFD5] bg-[#F6F5F1] text-xs font-semibold text-[#526176]", children: [
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Customer Details" }),
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Service Interest" }),
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Lead Status" }),
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Enquiry Date" }),
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4", children: "Follow-Up" }),
+          /* @__PURE__ */ jsx("th", { className: "py-3 px-4 text-right", children: "Transcript" })
+        ] }) }),
+        /* @__PURE__ */ jsx("tbody", { className: "divide-y divide-[#E4DFD5] text-sm", children: filteredEnquiries.map((item) => {
+          const statusMeta = getStatusMeta(item.lead_status);
+          const turnCount = Array.isArray(item.conversation_history) ? item.conversation_history.length : 0;
+          return /* @__PURE__ */ jsxs(
+            "tr",
+            {
+              onClick: () => openEnquiryDrawer(item),
+              className: "hover:bg-[#F6F5F1]/70 transition-colors cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top", children: [
+                  /* @__PURE__ */ jsx("div", { className: "font-semibold text-[#0B1426]", children: item.customer_name }),
+                  /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] mt-0.5 flex flex-wrap items-center gap-1.5", children: [
+                    item.business_name && /* @__PURE__ */ jsxs(Fragment, { children: [
+                      /* @__PURE__ */ jsx("span", { children: item.business_name }),
+                      /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" })
+                    ] }),
+                    /* @__PURE__ */ jsx("span", { className: "tabular-nums", children: item.contact_number })
                   ] }),
-                  /* @__PURE__ */ jsx("span", { className: "tabular-nums", children: item.contact_number })
+                  /* @__PURE__ */ jsx("div", { className: "text-xs text-[#526176] mt-0.5", children: item.email })
                 ] }),
-                /* @__PURE__ */ jsx("div", { className: "text-xs text-[#526176] mt-0.5", children: item.email })
-              ] }),
-              /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top", children: [
-                /* @__PURE__ */ jsx("div", { className: "font-medium text-[#0B1426]", children: item.service_required }),
-                /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] mt-0.5 flex flex-wrap items-center gap-1.5", children: [
-                  /* @__PURE__ */ jsx("span", { children: item.budget_range || "Budget TBD" }),
-                  /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
-                  /* @__PURE__ */ jsx("span", { children: item.expected_timeline || "Timeline TBD" })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#526176] mt-0.5 font-mono", children: [
-                  item.reference_code,
-                  " · ",
-                  item.source_mode === "demo" ? "Demo" : "Live AI"
-                ] })
-              ] }),
-              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: /* @__PURE__ */ jsx("span", { className: `text-xs font-semibold ${statusMeta.toneClass}`, children: statusMeta.label }) }),
-              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap text-xs text-[#263449] tabular-nums", children: formatDateTime(item.created_at) }),
-              /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: [
-                /* @__PURE__ */ jsx(
-                  "div",
-                  {
-                    className: `text-xs font-semibold ${item.follow_up_required ? "text-[#B45309]" : "text-[#526176]"}`,
-                    children: item.follow_up_required ? "Required" : "No follow-up"
-                  }
-                ),
-                item.follow_up_date && /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#526176] tabular-nums mt-0.5", children: [
-                  "Due ",
-                  item.follow_up_date
-                ] })
-              ] }),
-              /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top text-right whitespace-nowrap", children: /* @__PURE__ */ jsxs(
-                "button",
-                {
-                  type: "button",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    openEnquiryDrawer(item);
-                  },
-                  className: "px-3 py-1.5 text-xs font-semibold text-[#0B1426] bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-colors cursor-pointer",
-                  children: [
-                    "Inspect (",
-                    turnCount,
-                    ")"
-                  ]
-                }
-              ) })
-            ]
-          },
-          item.id
-        );
-      }) })
-    ] }) }) }),
-    selectedEnquiry && /* @__PURE__ */ jsx(
-      "div",
-      {
-        role: "dialog",
-        "aria-label": `Enquiry details for ${selectedEnquiry.customer_name}`,
-        className: "fixed inset-0 z-50 bg-[#0B1426]/45 flex justify-end",
-        onClick: () => setSelectedEnquiry(null),
-        children: /* @__PURE__ */ jsxs(
-          "div",
-          {
-            className: "w-full max-w-2xl bg-[#F6F5F1] h-full overflow-y-auto border-l border-[#E4DFD5] shadow-2xl flex flex-col",
-            onClick: (e) => e.stopPropagation(),
-            children: [
-              /* @__PURE__ */ jsxs("div", { className: "bg-white border-b border-[#E4DFD5] px-6 py-4 flex items-start justify-between gap-4 sticky top-0 z-10", children: [
-                /* @__PURE__ */ jsxs("div", { children: [
-                  /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] flex items-center gap-2 tabular-nums", children: [
-                    /* @__PURE__ */ jsx("span", { className: "font-mono font-semibold text-[#0B1426]", children: selectedEnquiry.reference_code }),
+                /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top", children: [
+                  /* @__PURE__ */ jsx("div", { className: "font-medium text-[#0B1426]", children: item.service_required }),
+                  /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] mt-0.5 flex flex-wrap items-center gap-1.5", children: [
+                    /* @__PURE__ */ jsx("span", { children: item.budget_range || "Budget TBD" }),
                     /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
-                    /* @__PURE__ */ jsx("span", { children: formatDateTime(selectedEnquiry.created_at) }),
-                    /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
-                    /* @__PURE__ */ jsx("span", { children: selectedEnquiry.source_mode === "demo" ? "Demo Mode" : "Live Gemini AI" })
+                    /* @__PURE__ */ jsx("span", { children: item.expected_timeline || "Timeline TBD" })
                   ] }),
-                  /* @__PURE__ */ jsxs("h2", { className: "text-lg font-bold text-[#0B1426] mt-1", children: [
-                    selectedEnquiry.customer_name,
-                    selectedEnquiry.business_name ? ` — ${selectedEnquiry.business_name}` : ""
+                  /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#526176] mt-0.5 font-mono", children: [
+                    item.reference_code,
+                    " · ",
+                    item.source_mode === "demo" ? "Demo" : "Live AI"
                   ] })
                 ] }),
-                /* @__PURE__ */ jsx(
+                /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: /* @__PURE__ */ jsx("span", { className: `text-xs font-semibold ${statusMeta.toneClass}`, children: statusMeta.label }) }),
+                /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top whitespace-nowrap text-xs text-[#263449] tabular-nums", children: formatDateTime(item.created_at) }),
+                /* @__PURE__ */ jsxs("td", { className: "py-3.5 px-4 align-top whitespace-nowrap", children: [
+                  /* @__PURE__ */ jsx(
+                    "div",
+                    {
+                      className: `text-xs font-semibold ${item.follow_up_required ? "text-[#B45309]" : "text-[#526176]"}`,
+                      children: item.follow_up_required ? "Required" : "No follow-up"
+                    }
+                  ),
+                  item.follow_up_date && /* @__PURE__ */ jsxs("div", { className: "text-[11px] text-[#526176] tabular-nums mt-0.5", children: [
+                    "Due ",
+                    item.follow_up_date
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsx("td", { className: "py-3.5 px-4 align-top text-right whitespace-nowrap", children: /* @__PURE__ */ jsxs(
                   "button",
                   {
                     type: "button",
-                    onClick: () => setSelectedEnquiry(null),
-                    "aria-label": "Close enquiry drawer",
-                    className: "p-2 text-[#526176] hover:text-[#0B1426] rounded-lg hover:bg-[#F6F5F1] cursor-pointer",
-                    children: /* @__PURE__ */ jsx(X, { className: "w-5 h-5" })
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      openEnquiryDrawer(item);
+                    },
+                    className: "px-3 py-1.5 text-xs font-semibold text-[#0B1426] bg-white border border-[#E4DFD5] hover:border-[#0B1426] rounded-lg transition-colors cursor-pointer",
+                    children: [
+                      "Inspect (",
+                      turnCount,
+                      ")"
+                    ]
                   }
-                )
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "p-6 space-y-6", children: [
-                saveBanner && /* @__PURE__ */ jsxs("div", { className: "bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5 text-xs text-emerald-800 flex items-center gap-2", children: [
-                  /* @__PURE__ */ jsx(CheckCircle2, { className: "w-4 h-4 text-emerald-600 shrink-0" }),
-                  /* @__PURE__ */ jsx("span", { children: saveBanner })
-                ] }),
-                /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-4", children: [
-                  /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2", children: [
-                    /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Customer & Scope Details" }),
-                    /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-                      /* @__PURE__ */ jsxs(
-                        "a",
-                        {
-                          href: buildReceptionistWhatsAppUrl(
-                            `Hello ${selectedEnquiry.customer_name}, following up on your UNIKORN360 enquiry (${selectedEnquiry.reference_code}) regarding ${selectedEnquiry.service_required}.`
-                          ),
-                          target: "_blank",
-                          rel: "noopener noreferrer",
-                          className: "inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0B1426] text-white text-xs font-semibold rounded-lg hover:bg-[#1A2844]",
-                          children: [
-                            /* @__PURE__ */ jsx(Phone, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
-                            /* @__PURE__ */ jsx("span", { children: "WhatsApp" }),
-                            /* @__PURE__ */ jsx(ExternalLink, { className: "w-3 h-3" })
-                          ]
-                        }
-                      ),
-                      /* @__PURE__ */ jsxs(
-                        "a",
-                        {
-                          href: `mailto:${selectedEnquiry.email}?subject=${encodeURIComponent(
-                            `UNIKORN360 Enquiry Follow-Up — ${selectedEnquiry.reference_code}`
-                          )}`,
-                          className: "inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E4DFD5] hover:border-[#0B1426] text-[#0B1426] text-xs font-semibold rounded-lg",
-                          children: [
-                            /* @__PURE__ */ jsx(Mail, { className: "w-3.5 h-3.5" }),
-                            /* @__PURE__ */ jsx("span", { children: "Email" })
-                          ]
-                        }
-                      )
-                    ] })
-                  ] }),
-                  /* @__PURE__ */ jsxs("dl", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs", children: [
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Customer Name" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.customer_name })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Business Name" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.business_name || "Not provided" })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Contact Number" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5 tabular-nums", children: selectedEnquiry.contact_number })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Email" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.email })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Service Required" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.service_required })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Budget Range" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.budget_range || "To be discussed" })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Expected Timeline" }),
-                      /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.expected_timeline || "Not specified" })
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Detected Language / Page" }),
-                      /* @__PURE__ */ jsxs("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: [
-                        selectedEnquiry.detected_language.toUpperCase(),
-                        " ·",
-                        " ",
-                        selectedEnquiry.page_url || "/"
-                      ] })
-                    ] })
-                  ] }),
-                  /* @__PURE__ */ jsxs("div", { className: "pt-3 border-t border-[#E4DFD5]", children: [
-                    /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176] mb-1", children: "Project Description" }),
-                    /* @__PURE__ */ jsx("p", { className: "text-sm text-[#263449] leading-relaxed whitespace-pre-line", children: selectedEnquiry.project_description })
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-4", children: [
-                  /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Lead Status & Follow-Up" }),
-                  /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-4", children: [
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx(
-                        "label",
-                        {
-                          htmlFor: "admin-lead-status",
-                          className: "block text-xs font-semibold text-[#0B1426] mb-1",
-                          children: "Lead Status"
-                        }
-                      ),
-                      /* @__PURE__ */ jsx(
-                        "select",
-                        {
-                          id: "admin-lead-status",
-                          disabled: !canModify,
-                          value: editStatus,
-                          onChange: (e) => setEditStatus(e.target.value),
-                          className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] disabled:bg-[#F6F5F1]",
-                          children: LEAD_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
-                        }
-                      )
-                    ] }),
-                    /* @__PURE__ */ jsxs("div", { children: [
-                      /* @__PURE__ */ jsx(
-                        "label",
-                        {
-                          htmlFor: "admin-followup-date",
-                          className: "block text-xs font-semibold text-[#0B1426] mb-1",
-                          children: "Follow-Up Date"
-                        }
-                      ),
-                      /* @__PURE__ */ jsxs("div", { className: "relative", children: [
-                        /* @__PURE__ */ jsx(Calendar, { className: "w-4 h-4 text-[#526176] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" }),
-                        /* @__PURE__ */ jsx(
-                          "input",
-                          {
-                            id: "admin-followup-date",
-                            type: "date",
-                            disabled: !canModify,
-                            value: editFollowUpDate,
-                            onChange: (e) => setEditFollowUpDate(e.target.value),
-                            className: "w-full pl-9 pr-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] tabular-nums disabled:bg-[#F6F5F1]"
-                          }
-                        )
-                      ] })
-                    ] })
-                  ] }),
-                  /* @__PURE__ */ jsxs("label", { className: "inline-flex items-center gap-2 text-xs font-medium text-[#0B1426] cursor-pointer", children: [
-                    /* @__PURE__ */ jsx(
-                      "input",
-                      {
-                        type: "checkbox",
-                        disabled: !canModify,
-                        checked: editFollowUpRequired,
-                        onChange: (e) => setEditFollowUpRequired(e.target.checked),
-                        className: "w-4 h-4 accent-[#0B1426]"
-                      }
-                    ),
-                    /* @__PURE__ */ jsx("span", { children: "Follow-up required by UNIKORN360 team" })
-                  ] }),
+                ) })
+              ]
+            },
+            item.id
+          );
+        }) })
+      ] }) }) }),
+      selectedEnquiry && /* @__PURE__ */ jsx(
+        "div",
+        {
+          role: "dialog",
+          "aria-label": `Enquiry details for ${selectedEnquiry.customer_name}`,
+          className: "fixed inset-0 z-50 bg-[#0B1426]/45 flex justify-end",
+          onClick: () => setSelectedEnquiry(null),
+          children: /* @__PURE__ */ jsxs(
+            "div",
+            {
+              className: "w-full max-w-2xl bg-[#F6F5F1] h-full overflow-y-auto border-l border-[#E4DFD5] shadow-2xl flex flex-col",
+              onClick: (e) => e.stopPropagation(),
+              children: [
+                /* @__PURE__ */ jsxs("div", { className: "bg-white border-b border-[#E4DFD5] px-6 py-4 flex items-start justify-between gap-4 sticky top-0 z-10", children: [
                   /* @__PURE__ */ jsxs("div", { children: [
-                    /* @__PURE__ */ jsx(
-                      "label",
-                      {
-                        htmlFor: "admin-followup-notes",
-                        className: "block text-xs font-semibold text-[#0B1426] mb-1",
-                        children: "Internal Follow-Up Notes"
-                      }
-                    ),
-                    /* @__PURE__ */ jsx(
-                      "textarea",
-                      {
-                        id: "admin-followup-notes",
-                        rows: 3,
-                        disabled: !canModify,
-                        value: editFollowUpNotes,
-                        onChange: (e) => setEditFollowUpNotes(e.target.value),
-                        placeholder: "Record call notes, proposal status, or next action...",
-                        className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] resize-none disabled:bg-[#F6F5F1]"
-                      }
-                    )
+                    /* @__PURE__ */ jsxs("div", { className: "text-xs text-[#526176] flex items-center gap-2 tabular-nums", children: [
+                      /* @__PURE__ */ jsx("span", { className: "font-mono font-semibold text-[#0B1426]", children: selectedEnquiry.reference_code }),
+                      /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                      /* @__PURE__ */ jsx("span", { children: formatDateTime(selectedEnquiry.created_at) }),
+                      /* @__PURE__ */ jsx("span", { "aria-hidden": "true", children: "·" }),
+                      /* @__PURE__ */ jsx("span", { children: selectedEnquiry.source_mode === "demo" ? "Demo Mode" : "Live Gemini AI" })
+                    ] }),
+                    /* @__PURE__ */ jsxs("h2", { className: "text-lg font-bold text-[#0B1426] mt-1", children: [
+                      selectedEnquiry.customer_name,
+                      selectedEnquiry.business_name ? ` — ${selectedEnquiry.business_name}` : ""
+                    ] })
                   ] }),
-                  canModify ? /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsxs(
+                  /* @__PURE__ */ jsx(
                     "button",
                     {
                       type: "button",
-                      onClick: handleSaveChanges,
-                      disabled: saving,
-                      className: "inline-flex items-center gap-2 px-4 py-2 bg-[#0B1426] hover:bg-[#1A2844] disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer",
-                      children: [
-                        /* @__PURE__ */ jsx(Save, { className: "w-3.5 h-3.5" }),
-                        /* @__PURE__ */ jsx("span", { children: saving ? "Saving..." : "Save Changes" })
-                      ]
+                      onClick: () => setSelectedEnquiry(null),
+                      "aria-label": "Close enquiry drawer",
+                      className: "p-2 text-[#526176] hover:text-[#0B1426] rounded-lg hover:bg-[#F6F5F1] cursor-pointer",
+                      children: /* @__PURE__ */ jsx(X, { className: "w-5 h-5" })
                     }
-                  ) }) : /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "Read-only view for evaluator role. Contact an admin to update lead status." })
+                  )
                 ] }),
-                /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-3", children: [
-                  /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
-                    /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Conversation History" }),
-                    /* @__PURE__ */ jsxs("span", { className: "text-xs text-[#526176] tabular-nums", children: [
-                      ((_a = selectedEnquiry.conversation_history) == null ? void 0 : _a.length) || 0,
-                      " messages"
+                /* @__PURE__ */ jsxs("div", { className: "p-6 space-y-6", children: [
+                  saveBanner && /* @__PURE__ */ jsxs("div", { className: "bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5 text-xs text-emerald-800 flex items-center gap-2", children: [
+                    /* @__PURE__ */ jsx(CheckCircle2, { className: "w-4 h-4 text-emerald-600 shrink-0" }),
+                    /* @__PURE__ */ jsx("span", { children: saveBanner })
+                  ] }),
+                  /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-4", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2", children: [
+                      /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Customer & Scope Details" }),
+                      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+                        /* @__PURE__ */ jsxs(
+                          "a",
+                          {
+                            href: buildReceptionistWhatsAppUrl(
+                              `Hello ${selectedEnquiry.customer_name}, following up on your UNIKORN360 enquiry (${selectedEnquiry.reference_code}) regarding ${selectedEnquiry.service_required}.`
+                            ),
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            className: "inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0B1426] text-white text-xs font-semibold rounded-lg hover:bg-[#1A2844]",
+                            children: [
+                              /* @__PURE__ */ jsx(Phone, { className: "w-3.5 h-3.5 text-[#C49A36]" }),
+                              /* @__PURE__ */ jsx("span", { children: "WhatsApp" }),
+                              /* @__PURE__ */ jsx(ExternalLink, { className: "w-3 h-3" })
+                            ]
+                          }
+                        ),
+                        /* @__PURE__ */ jsxs(
+                          "a",
+                          {
+                            href: `mailto:${selectedEnquiry.email}?subject=${encodeURIComponent(
+                              `UNIKORN360 Enquiry Follow-Up — ${selectedEnquiry.reference_code}`
+                            )}`,
+                            className: "inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E4DFD5] hover:border-[#0B1426] text-[#0B1426] text-xs font-semibold rounded-lg",
+                            children: [
+                              /* @__PURE__ */ jsx(Mail, { className: "w-3.5 h-3.5" }),
+                              /* @__PURE__ */ jsx("span", { children: "Email" })
+                            ]
+                          }
+                        )
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxs("dl", { className: "grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Customer Name" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.customer_name })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Business Name" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.business_name || "Not provided" })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Contact Number" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5 tabular-nums", children: selectedEnquiry.contact_number })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Email" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.email })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Service Required" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.service_required })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Budget Range" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.budget_range || "To be discussed" })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Expected Timeline" }),
+                        /* @__PURE__ */ jsx("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: selectedEnquiry.expected_timeline || "Not specified" })
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx("dt", { className: "text-[#526176]", children: "Detected Language / Page" }),
+                        /* @__PURE__ */ jsxs("dd", { className: "font-semibold text-[#0B1426] mt-0.5", children: [
+                          selectedEnquiry.detected_language.toUpperCase(),
+                          " ·",
+                          " ",
+                          selectedEnquiry.page_url || "/"
+                        ] })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "pt-3 border-t border-[#E4DFD5]", children: [
+                      /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176] mb-1", children: "Project Description" }),
+                      /* @__PURE__ */ jsx("p", { className: "text-sm text-[#263449] leading-relaxed whitespace-pre-line", children: selectedEnquiry.project_description })
                     ] })
                   ] }),
-                  !selectedEnquiry.conversation_history || selectedEnquiry.conversation_history.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "No chat messages were recorded before submission." }) : /* @__PURE__ */ jsx("div", { className: "space-y-2.5 max-h-[360px] overflow-y-auto pr-1", children: selectedEnquiry.conversation_history.map((msg, index) => /* @__PURE__ */ jsxs(
-                    "div",
-                    {
-                      className: `rounded-lg p-3 text-xs leading-relaxed border ${msg.role === "user" ? "bg-[#0B1426] text-white border-[#0B1426]" : "bg-[#F6F5F1] text-[#263449] border-[#E4DFD5]"}`,
-                      children: [
-                        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-2 mb-1 opacity-80 tabular-nums text-[11px]", children: [
-                          /* @__PURE__ */ jsx("span", { className: "font-semibold", children: msg.role === "user" ? selectedEnquiry.customer_name : `UNIKORN360 Receptionist (${msg.mode === "demo" ? "Demo" : "Live AI"})` }),
-                          /* @__PURE__ */ jsx("span", { children: formatDateTime(msg.timestamp) })
-                        ] }),
-                        /* @__PURE__ */ jsx("p", { className: "whitespace-pre-line", children: msg.content })
-                      ]
-                    },
-                    msg.id || index
-                  )) })
+                  /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-4", children: [
+                    /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Lead Status & Follow-Up" }),
+                    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-2 gap-4", children: [
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx(
+                          "label",
+                          {
+                            htmlFor: "admin-lead-status",
+                            className: "block text-xs font-semibold text-[#0B1426] mb-1",
+                            children: "Lead Status"
+                          }
+                        ),
+                        /* @__PURE__ */ jsx(
+                          "select",
+                          {
+                            id: "admin-lead-status",
+                            disabled: !canModify,
+                            value: editStatus,
+                            onChange: (e) => setEditStatus(e.target.value),
+                            className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] disabled:bg-[#F6F5F1]",
+                            children: LEAD_STATUS_OPTIONS.map((opt) => /* @__PURE__ */ jsx("option", { value: opt.value, children: opt.label }, opt.value))
+                          }
+                        )
+                      ] }),
+                      /* @__PURE__ */ jsxs("div", { children: [
+                        /* @__PURE__ */ jsx(
+                          "label",
+                          {
+                            htmlFor: "admin-followup-date",
+                            className: "block text-xs font-semibold text-[#0B1426] mb-1",
+                            children: "Follow-Up Date"
+                          }
+                        ),
+                        /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+                          /* @__PURE__ */ jsx(Calendar, { className: "w-4 h-4 text-[#526176] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" }),
+                          /* @__PURE__ */ jsx(
+                            "input",
+                            {
+                              id: "admin-followup-date",
+                              type: "date",
+                              disabled: !canModify,
+                              value: editFollowUpDate,
+                              onChange: (e) => setEditFollowUpDate(e.target.value),
+                              className: "w-full pl-9 pr-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] tabular-nums disabled:bg-[#F6F5F1]"
+                            }
+                          )
+                        ] })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxs("label", { className: "inline-flex items-center gap-2 text-xs font-medium text-[#0B1426] cursor-pointer", children: [
+                      /* @__PURE__ */ jsx(
+                        "input",
+                        {
+                          type: "checkbox",
+                          disabled: !canModify,
+                          checked: editFollowUpRequired,
+                          onChange: (e) => setEditFollowUpRequired(e.target.checked),
+                          className: "w-4 h-4 accent-[#0B1426]"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx("span", { children: "Follow-up required by UNIKORN360 team" })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { children: [
+                      /* @__PURE__ */ jsx(
+                        "label",
+                        {
+                          htmlFor: "admin-followup-notes",
+                          className: "block text-xs font-semibold text-[#0B1426] mb-1",
+                          children: "Internal Follow-Up Notes"
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        "textarea",
+                        {
+                          id: "admin-followup-notes",
+                          rows: 3,
+                          disabled: !canModify,
+                          value: editFollowUpNotes,
+                          onChange: (e) => setEditFollowUpNotes(e.target.value),
+                          placeholder: "Record call notes, proposal status, or next action...",
+                          className: "w-full px-3 py-2 text-sm bg-white border border-[#E4DFD5] rounded-lg text-[#0B1426] resize-none disabled:bg-[#F6F5F1]"
+                        }
+                      )
+                    ] }),
+                    canModify ? /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsxs(
+                      "button",
+                      {
+                        type: "button",
+                        onClick: handleSaveChanges,
+                        disabled: saving,
+                        className: "inline-flex items-center gap-2 px-4 py-2 bg-[#0B1426] hover:bg-[#1A2844] disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer",
+                        children: [
+                          /* @__PURE__ */ jsx(Save, { className: "w-3.5 h-3.5" }),
+                          /* @__PURE__ */ jsx("span", { children: saving ? "Saving..." : "Save Changes" })
+                        ]
+                      }
+                    ) }) : /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "Read-only view for evaluator role. Contact an admin to update lead status." })
+                  ] }),
+                  /* @__PURE__ */ jsxs("section", { className: "bg-white border border-[#E4DFD5] rounded-xl p-5 space-y-3", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
+                      /* @__PURE__ */ jsx("h3", { className: "text-sm font-bold text-[#0B1426]", children: "Conversation History" }),
+                      /* @__PURE__ */ jsxs("span", { className: "text-xs text-[#526176] tabular-nums", children: [
+                        ((_a = selectedEnquiry.conversation_history) == null ? void 0 : _a.length) || 0,
+                        " messages"
+                      ] })
+                    ] }),
+                    !selectedEnquiry.conversation_history || selectedEnquiry.conversation_history.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-xs text-[#526176]", children: "No chat messages were recorded before submission." }) : /* @__PURE__ */ jsx("div", { className: "space-y-2.5 max-h-[360px] overflow-y-auto pr-1", children: selectedEnquiry.conversation_history.map((msg, index) => /* @__PURE__ */ jsxs(
+                      "div",
+                      {
+                        className: `rounded-lg p-3 text-xs leading-relaxed border ${msg.role === "user" ? "bg-[#0B1426] text-white border-[#0B1426]" : "bg-[#F6F5F1] text-[#263449] border-[#E4DFD5]"}`,
+                        children: [
+                          /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-2 mb-1 opacity-80 tabular-nums text-[11px]", children: [
+                            /* @__PURE__ */ jsx("span", { className: "font-semibold", children: msg.role === "user" ? selectedEnquiry.customer_name : `UNIKORN360 Receptionist (${msg.mode === "demo" ? "Demo" : "Live AI"})` }),
+                            /* @__PURE__ */ jsx("span", { children: formatDateTime(msg.timestamp) })
+                          ] }),
+                          /* @__PURE__ */ jsx("p", { className: "whitespace-pre-line", children: msg.content })
+                        ]
+                      },
+                      msg.id || index
+                    )) })
+                  ] })
                 ] })
-              ] })
-            ]
-          }
-        )
-      }
-    )
+              ]
+            }
+          )
+        }
+      )
+    ] })
   ] });
 };
 const AdminPage = ({ onNavigate }) => {
@@ -19452,7 +21319,7 @@ const AdminPage = ({ onNavigate }) => {
             className: `px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 whitespace-nowrap ${adminTab === "enquiries" ? "bg-white text-[#0B1426] border-[#0B1426] shadow-xs" : "text-[#505B66] hover:text-[#30363D] border-transparent hover:bg-white/50"}`,
             children: [
               /* @__PURE__ */ jsx(MessageSquare, { className: "w-4 h-4 text-[#C49A36]" }),
-              /* @__PURE__ */ jsx("span", { children: "AI Receptionist Enquiries" })
+              /* @__PURE__ */ jsx("span", { children: "AI Receptionist CRM" })
             ]
           }
         )
@@ -19834,25 +21701,158 @@ const AdminPage = ({ onNavigate }) => {
     ] }) })
   ] });
 };
+const GoogleLogoIcon = () => /* @__PURE__ */ jsxs(
+  "svg",
+  {
+    "aria-hidden": "true",
+    className: "w-4 h-4 shrink-0",
+    viewBox: "0 0 24 24",
+    xmlns: "http://www.w3.org/2000/svg",
+    children: [
+      /* @__PURE__ */ jsx(
+        "path",
+        {
+          d: "M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z",
+          fill: "#4285F4"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "path",
+        {
+          d: "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z",
+          fill: "#34A853"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "path",
+        {
+          d: "M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z",
+          fill: "#FBBC05"
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "path",
+        {
+          d: "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z",
+          fill: "#EA4335"
+        }
+      )
+    ]
+  }
+);
+function parseOAuthCallbackUrlState() {
+  if (typeof window === "undefined") {
+    return { oauthError: null, hasCallbackParams: false };
+  }
+  const searchParams = new URLSearchParams(window.location.search || "");
+  const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash || "";
+  const hashParams = new URLSearchParams(rawHash);
+  const rawErrorDesc = searchParams.get("error_description") || hashParams.get("error_description") || searchParams.get("error") || hashParams.get("error");
+  const hasCallbackParams = Boolean(
+    searchParams.get("code") || hashParams.get("access_token") || hashParams.get("refresh_token")
+  );
+  if (!rawErrorDesc) {
+    return { oauthError: null, hasCallbackParams };
+  }
+  const normalized = rawErrorDesc.replace(/\+/g, " ").trim().slice(0, 240);
+  return {
+    oauthError: normalized || "Google authentication failed or was cancelled.",
+    hasCallbackParams
+  };
+}
+function clearOAuthUrlParams() {
+  var _a;
+  if (typeof window === "undefined" || !((_a = window.history) == null ? void 0 : _a.replaceState)) return;
+  if (window.location.search || window.location.hash) {
+    window.history.replaceState({}, "", "/admin/login");
+  }
+}
 const AdminLoginPage = ({ onNavigate }) => {
+  const initialCallback = parseOAuthCallbackUrlState();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialCallback.oauthError || "");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [oauthVerifying, setOauthVerifying] = useState(initialCallback.hasCallbackParams);
+  const navigatedRef = useRef(false);
   useEffect(() => {
     let active = true;
-    servicesDb.verifyAdminSession().then((result) => {
+    const { oauthError, hasCallbackParams } = parseOAuthCallbackUrlState();
+    if (oauthError) {
+      setError(oauthError);
+      setOauthVerifying(false);
+      clearOAuthUrlParams();
+    }
+    const handleVerificationResult = (result) => {
       if (!active) return;
       if (result.status === "authenticated" && result.session) {
-        onNavigate("/admin");
-      } else if (result.status === "forbidden" && result.error) {
+        if (!navigatedRef.current) {
+          navigatedRef.current = true;
+          clearOAuthUrlParams();
+          onNavigate("/admin");
+        }
+        return;
+      }
+      if (result.status === "forbidden") {
+        setError(
+          result.error || "Access Denied: Your Google account is not registered as an administrator in creator_admin_users."
+        );
+        setOauthVerifying(false);
+        setGoogleLoading(false);
+        clearOAuthUrlParams();
+        return;
+      }
+      if (result.status === "error" && result.error) {
         setError(result.error);
+        setOauthVerifying(false);
+        setGoogleLoading(false);
+      }
+    };
+    const unsubscribe = servicesDb.onAdminAuthStateChange((result, event) => {
+      if (!active) return;
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        handleVerificationResult(result);
+        if (result.status === "unauthenticated" && !hasCallbackParams) {
+          setOauthVerifying(false);
+        }
       }
     });
+    servicesDb.verifyAdminSession().then((result) => {
+      if (!active) return;
+      handleVerificationResult(result);
+      if (result.status === "unauthenticated" && !hasCallbackParams) {
+        setOauthVerifying(false);
+      }
+    });
+    const callbackTimeout = hasCallbackParams ? window.setTimeout(() => {
+      if (!active) return;
+      setOauthVerifying(false);
+    }, 5e3) : null;
     return () => {
       active = false;
+      unsubscribe();
+      if (callbackTimeout !== null) {
+        window.clearTimeout(callbackTimeout);
+      }
     };
   }, [onNavigate]);
+  const handleGoogleSignIn = async () => {
+    var _a;
+    setError("");
+    setGoogleLoading(true);
+    try {
+      const origin = typeof window !== "undefined" && ((_a = window.location) == null ? void 0 : _a.origin) ? window.location.origin : "https://www.unikorn360.com";
+      const result = await servicesDb.signInWithGoogleOAuth(origin);
+      if (result.status !== "redirecting") {
+        setError(result.error || "Unable to initiate Google authentication.");
+        setGoogleLoading(false);
+      }
+    } catch {
+      setError("Network communication failed while initiating Google sign-in.");
+      setGoogleLoading(false);
+    }
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -19864,6 +21864,7 @@ const AdminLoginPage = ({ onNavigate }) => {
     try {
       const result = await servicesDb.signInAdmin(email.trim(), password.trim());
       if (result.status === "authenticated" && result.session) {
+        navigatedRef.current = true;
         onNavigate("/admin");
       } else {
         setError(result.error || "Authentication rejected. Valid administrative credentials required.");
@@ -19874,6 +21875,7 @@ const AdminLoginPage = ({ onNavigate }) => {
       setLoading(false);
     }
   };
+  const isBusy = loading || googleLoading || oauthVerifying;
   return /* @__PURE__ */ jsxs("main", { className: "bg-[#06162D] min-h-screen flex items-center justify-center p-4", children: [
     /* @__PURE__ */ jsx(
       SEOHead,
@@ -19907,9 +21909,41 @@ const AdminLoginPage = ({ onNavigate }) => {
         /* @__PURE__ */ jsx("h2", { className: "text-xl font-bold text-white", children: "Administrator Access" }),
         /* @__PURE__ */ jsx("p", { className: "text-xs text-slate-300 mt-1", children: "Sign in with your authorized administrator Supabase credentials to access the console." })
       ] }),
-      error && /* @__PURE__ */ jsxs("div", { className: "mb-4 p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-center gap-2", children: [
-        /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0" }),
-        /* @__PURE__ */ jsx("span", { children: error })
+      oauthVerifying && /* @__PURE__ */ jsxs("div", { className: "mb-4 p-3 rounded-xl bg-[#06162D] border border-[#F3C94F]/40 text-[#F3C94F] text-xs flex items-center gap-2.5", children: [
+        /* @__PURE__ */ jsx(Loader2, { className: "w-4 h-4 shrink-0 animate-spin" }),
+        /* @__PURE__ */ jsx("span", { children: "Verifying Google session and administrator access..." })
+      ] }),
+      error && /* @__PURE__ */ jsxs(
+        "div",
+        {
+          role: "alert",
+          className: "mb-4 p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-center gap-2",
+          children: [
+            /* @__PURE__ */ jsx(AlertTriangle, { className: "w-4 h-4 shrink-0" }),
+            /* @__PURE__ */ jsx("span", { children: error })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          onClick: handleGoogleSignIn,
+          disabled: isBusy,
+          className: "w-full py-3 px-4 bg-white hover:bg-slate-100 text-[#06162D] border border-slate-200 font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-md active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed",
+          children: googleLoading ? /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx(Loader2, { className: "w-4 h-4 animate-spin text-[#06162D]" }),
+            /* @__PURE__ */ jsx("span", { children: "Redirecting to Google..." })
+          ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx(GoogleLogoIcon, {}),
+            /* @__PURE__ */ jsx("span", { children: "Continue with Google" })
+          ] })
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { className: "my-5 flex items-center gap-3", "aria-hidden": "true", children: [
+        /* @__PURE__ */ jsx("div", { className: "h-px flex-1 bg-slate-700/80" }),
+        /* @__PURE__ */ jsx("span", { className: "text-[11px] font-semibold uppercase tracking-widest text-slate-400", children: "OR" }),
+        /* @__PURE__ */ jsx("div", { className: "h-px flex-1 bg-slate-700/80" })
       ] }),
       /* @__PURE__ */ jsxs("form", { onSubmit: handleSubmit, className: "space-y-4", children: [
         /* @__PURE__ */ jsxs("div", { children: [
@@ -19922,11 +21956,11 @@ const AdminLoginPage = ({ onNavigate }) => {
             {
               type: "email",
               required: true,
+              disabled: isBusy,
               placeholder: "e.g. admin@unikorn360.com",
               value: email,
               onChange: (e) => setEmail(e.target.value),
-              className: "w-full bg-[#06162D] border border-slate-700 rounded-xl px-4 py-3 text-xs text-white placeholder-slate-400 focus:border-[#43C8E8] focus:outline-none",
-              autoFocus: true
+              className: "w-full bg-[#06162D] border border-slate-700 rounded-xl px-4 py-3 text-xs text-white placeholder-slate-400 focus:border-[#43C8E8] focus:outline-none disabled:opacity-60"
             }
           )
         ] }),
@@ -19940,10 +21974,11 @@ const AdminLoginPage = ({ onNavigate }) => {
             {
               type: "password",
               required: true,
+              disabled: isBusy,
               value: password,
               onChange: (e) => setPassword(e.target.value),
               placeholder: "Enter account password",
-              className: "w-full bg-[#06162D] border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:border-[#F3C94F] focus:outline-none"
+              className: "w-full bg-[#06162D] border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:border-[#F3C94F] focus:outline-none disabled:opacity-60"
             }
           )
         ] }),
@@ -19951,7 +21986,7 @@ const AdminLoginPage = ({ onNavigate }) => {
           "button",
           {
             type: "submit",
-            disabled: loading,
+            disabled: isBusy,
             className: "w-full mt-2 py-3.5 bg-[#F3C94F] hover:bg-[#e0b83f] text-[#06162D] font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 disabled:opacity-50",
             children: loading ? /* @__PURE__ */ jsx("span", { children: "Authenticating..." }) : /* @__PURE__ */ jsxs(Fragment, { children: [
               /* @__PURE__ */ jsx("span", { children: "Enter Admin Console" }),

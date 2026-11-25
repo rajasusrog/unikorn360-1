@@ -15,6 +15,7 @@ import {
   resolvePublicRouteMeta
 } from './src/lib/seo';
 import {
+  buildLiveAiFailurePersistInput,
   createSlidingWindowRateLimiter,
   detectMessageLanguage,
   normalizeReceptionistChannel,
@@ -23,6 +24,7 @@ import {
   validateAdminEnquiryUpdatePayload,
   validateChatRequestPayload,
   validateEnquirySubmissionPayload,
+  validateModeScopedSessionIsolation,
   validatePersistMessagesPayload
 } from './src/lib/receptionistKnowledge';
 import {
@@ -3566,6 +3568,19 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
   const assistantMsgId = chatReq.assistantMessageId || `ast_${crypto.randomUUID()}`;
   const detectedLang = chatReq.detectedLanguage || detectMessageLanguage(chatReq.message);
   let conversationId: string | undefined;
+  let customerSaved = false;
+
+  const customerMsgInput = {
+    messageId: customerMsgId,
+    senderType: 'customer' as const,
+    messageContent: chatReq.message,
+    messageMetadata: {
+      quickActionId: chatReq.quickActionId,
+      currentPage: chatReq.currentPage || '/',
+      detectedLanguage: detectedLang
+    },
+    deliveryStatus: 'received' as const
+  };
 
   try {
     if (sessionToken) {
@@ -3578,23 +3593,13 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
             sourceMode,
             currentPage: chatReq.currentPage || '/',
             detectedLanguage: detectedLang,
-            messages: [
-              {
-                messageId: customerMsgId,
-                senderType: 'customer',
-                messageContent: chatReq.message,
-                messageMetadata: {
-                  quickActionId: chatReq.quickActionId,
-                  currentPage: chatReq.currentPage || '/',
-                  detectedLanguage: detectedLang
-                },
-                deliveryStatus: 'received'
-              }
-            ]
+            customerIdentifier: chatReq.collectedDraft?.customerName || undefined,
+            messages: [customerMsgInput]
           },
           process.env
         );
         conversationId = persistedCustomer.conversationId;
+        customerSaved = true;
       } catch (persistErr: unknown) {
         if (persistErr instanceof ReceptionistApiError && persistErr.code === 'INVALID_SESSION_TOKEN') {
           throw persistErr;
@@ -3614,6 +3619,21 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
           result.extractedFields?.contactNumber ||
           undefined;
 
+        const assistantMsgInput = {
+          messageId: assistantMsgId,
+          senderType: 'assistant' as const,
+          messageContent: result.reply,
+          messageMetadata: {
+            recommendedLinks: result.recommendedLinks,
+            suggestEnquiryForm: result.suggestEnquiryForm,
+            suggestHumanHandover: result.suggestHumanHandover,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: result.detectedLanguage
+          },
+          aiModel: result.model || null,
+          deliveryStatus: 'delivered' as const
+        };
+
         const persistedReply = await persistConversationMessages(
           {
             sessionId: chatReq.sessionId,
@@ -3623,22 +3643,7 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
             currentPage: chatReq.currentPage || '/',
             detectedLanguage: result.detectedLanguage || detectedLang,
             customerIdentifier,
-            messages: [
-              {
-                messageId: assistantMsgId,
-                senderType: 'assistant',
-                messageContent: result.reply,
-                messageMetadata: {
-                  recommendedLinks: result.recommendedLinks,
-                  suggestEnquiryForm: result.suggestEnquiryForm,
-                  suggestHumanHandover: result.suggestHumanHandover,
-                  currentPage: chatReq.currentPage || '/',
-                  detectedLanguage: result.detectedLanguage
-                },
-                aiModel: result.model || null,
-                deliveryStatus: 'delivered'
-              }
-            ]
+            messages: customerSaved ? [assistantMsgInput] : [customerMsgInput, assistantMsgInput]
           },
           process.env
         );
@@ -3659,7 +3664,43 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     if (err instanceof ReceptionistApiError) {
-      return res.status(err.status).json({ error: err.message, code: err.code });
+      if (sessionToken && err.code !== 'INVALID_SESSION_TOKEN' && sourceMode === 'live') {
+        try {
+          const failureStage =
+            err.code === 'CLOUDFLARE_NETWORK_ERROR'
+              ? 'network'
+              : err.code === 'CLOUDFLARE_EMPTY_REPLY'
+              ? 'empty_reply'
+              : err.code === 'TURNSTILE_TOKEN_REQUIRED'
+              ? 'turnstile'
+              : 'upstream_ai';
+          const failMsg = buildLiveAiFailurePersistInput({
+            assistantMessageId: assistantMsgId,
+            errorCode: err.code,
+            errorMessage: err.message,
+            failureStage,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: detectedLang
+          });
+          const failedPersisted = await persistConversationMessages(
+            {
+              sessionId: chatReq.sessionId,
+              sessionToken,
+              sourceChannel,
+              sourceMode,
+              currentPage: chatReq.currentPage || '/',
+              detectedLanguage: detectedLang,
+              customerIdentifier: chatReq.collectedDraft?.customerName || undefined,
+              messages: customerSaved ? [failMsg] : [customerMsgInput, failMsg]
+            },
+            process.env
+          );
+          conversationId = failedPersisted.conversationId;
+        } catch (failPersistErr) {
+          console.warn('Non-fatal failure event persistence warning:', failPersistErr);
+        }
+      }
+      return res.status(err.status).json({ error: err.message, code: err.code, conversationId });
     }
     console.error('Error in POST /api/receptionist/chat:', err);
     return res.status(500).json({
@@ -3690,6 +3731,14 @@ app.get('/api/receptionist/messages', async (req: Request, res: Response) => {
     return res.status(400).json({
       error: 'A valid sessionId query parameter is required.',
       code: 'VALIDATION_ERROR'
+    });
+  }
+
+  const isolationError = validateModeScopedSessionIsolation(sessionId, sourceMode, sourceChannel);
+  if (isolationError) {
+    return res.status(400).json({
+      error: isolationError,
+      code: 'SESSION_ISOLATION_VIOLATION'
     });
   }
 

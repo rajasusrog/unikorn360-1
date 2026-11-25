@@ -129,6 +129,7 @@ function stripInternalConversationFields(
     updated_at: row.updated_at,
     last_message_at: row.last_message_at,
     message_count: row.message_count,
+    failed_count: row.failed_count,
     last_message_preview: row.last_message_preview,
     enquiry_reference_code: row.enquiry_reference_code
   };
@@ -311,6 +312,20 @@ export async function persistConversationMessages(
     } else {
       duplicateSkippedIds.push(msg.messageId);
     }
+  }
+
+  if (savedMessageIds.length > 0) {
+    await fetchImpl(
+      `${cfg.url}/rest/v1/receptionist_conversations?id=eq.${encodeURIComponent(conversation.id)}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          last_message_at: nowIso,
+          updated_at: nowIso
+        })
+      }
+    ).catch(() => {});
   }
 
   return {
@@ -742,7 +757,7 @@ export async function listAdminConversations(
   // Fetch recent messages for counts/previews/search + admin assignees + linked enquiry codes cleanly
   const [msgRes, assigneeRes, enquiryRes] = await Promise.all([
     fetchImpl(
-      `${cfg.url}/rest/v1/receptionist_messages?select=conversation_id,message_content,sender_type,created_at&order=created_at.desc&limit=1000`,
+      `${cfg.url}/rest/v1/receptionist_messages?select=conversation_id,message_content,sender_type,delivery_status,created_at&order=created_at.desc&limit=1000`,
       { method: 'GET', headers }
     ).catch(() => null),
     fetchImpl(
@@ -755,20 +770,28 @@ export async function listAdminConversations(
     ).catch(() => null)
   ]);
 
-  const msgSummary = new Map<string, { count: number; latestPreview: string | null; textBlob: string }>();
+  const msgSummary = new Map<
+    string,
+    { count: number; failedCount: number; latestPreview: string | null; textBlob: string }
+  >();
   if (msgRes && msgRes.ok) {
     const msgRows = (await msgRes.json().catch(() => [])) as Array<{
       conversation_id: string;
       message_content: string;
+      delivery_status?: string;
     }>;
     if (Array.isArray(msgRows)) {
       for (const m of msgRows) {
         const entry = msgSummary.get(m.conversation_id) || {
           count: 0,
+          failedCount: 0,
           latestPreview: m.message_content || null,
           textBlob: ''
         };
         entry.count += 1;
+        if (m.delivery_status === 'failed') {
+          entry.failedCount += 1;
+        }
         if (!entry.latestPreview && m.message_content) {
           entry.latestPreview = m.message_content;
         }
@@ -816,6 +839,7 @@ export async function listAdminConversations(
     return {
       ...conv,
       message_count: summary?.count ?? 0,
+      failed_count: summary?.failedCount ?? 0,
       last_message_preview: summary?.latestPreview ?? null,
       enquiry_reference_code: conv.enquiry_id ? enquiryCodeById.get(conv.enquiry_id) || null : null
     };
@@ -846,9 +870,11 @@ function listInMemoryConversations(
     .map((conv) => {
       const msgs = memoryMessagesByConversation.get(conv.id) || [];
       const lastMsg = msgs[msgs.length - 1];
+      const failedCount = msgs.filter((m) => m.delivery_status === 'failed').length;
       return {
         ...stripInternalConversationFields(conv),
         message_count: msgs.length,
+        failed_count: failedCount,
         last_message_preview: lastMsg?.message_content || null
       };
     });

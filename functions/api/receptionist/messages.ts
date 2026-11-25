@@ -2,6 +2,7 @@ import {
   createSlidingWindowRateLimiter,
   normalizeReceptionistChannel,
   sanitizePlainText,
+  validateModeScopedSessionIsolation,
   validatePersistMessagesPayload
 } from '../../../src/lib/receptionistKnowledge';
 import {
@@ -66,6 +67,11 @@ export async function onRequestGet(context: {
 
   if (!sessionId || !SAFE_SESSION_REGEX.test(sessionId)) {
     return jsonResponse({ error: 'A valid sessionId query parameter is required.', code: 'VALIDATION_ERROR' }, 400);
+  }
+
+  const isolationError = validateModeScopedSessionIsolation(sessionId, sourceMode, sourceChannel);
+  if (isolationError) {
+    return jsonResponse({ error: isolationError, code: 'SESSION_ISOLATION_VIOLATION' }, 400);
   }
 
   if (!sessionToken || !SAFE_TOKEN_REGEX.test(sessionToken)) {
