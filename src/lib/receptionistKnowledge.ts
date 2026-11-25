@@ -14,11 +14,18 @@ import {
   CentralKnowledgeService,
   ReceptionistChatRequest,
   ReceptionistChatResponse,
+  ReceptionistConversationStatus,
+  ReceptionistDeliveryStatus,
   ReceptionistEnquiryDraft,
   ReceptionistEnquirySubmissionRequest,
   ReceptionistLanguage,
   ReceptionistLeadStatus,
+  ReceptionistMessageMetadata,
+  ReceptionistPersistMessageInput,
+  ReceptionistPersistTurnRequest,
   ReceptionistQuickAction,
+  ReceptionistSenderType,
+  ReceptionistSourceChannel,
   RecommendedLink
 } from '../types/receptionist';
 
@@ -1049,6 +1056,83 @@ export function inferReceptionistMetadataFromConversation(
   };
 }
 
+const ALLOWED_LANGUAGES = new Set<ReceptionistLanguage>(['en', 'ta', 'tanglish', 'hi']);
+const ALLOWED_CHANNELS = new Set<ReceptionistSourceChannel>(['website', 'whatsapp']);
+const ALLOWED_SENDER_TYPES = new Set<ReceptionistSenderType>(['customer', 'assistant', 'agent', 'system']);
+const ALLOWED_DELIVERY_STATUSES = new Set<ReceptionistDeliveryStatus>([
+  'received',
+  'pending',
+  'sent',
+  'delivered',
+  'read',
+  'failed'
+]);
+const ALLOWED_CONVERSATION_STATUSES = new Set<ReceptionistConversationStatus>([
+  'active',
+  'new',
+  'contacted',
+  'qualified',
+  'follow_up',
+  'won',
+  'closed'
+]);
+const SAFE_ID_REGEX = /^[a-zA-Z0-9_.:-]{4,128}$/;
+
+export function normalizeReceptionistLanguage(value: unknown, fallback: ReceptionistLanguage = 'en'): ReceptionistLanguage {
+  if (typeof value === 'string' && ALLOWED_LANGUAGES.has(value as ReceptionistLanguage)) {
+    return value as ReceptionistLanguage;
+  }
+  return fallback;
+}
+
+export function normalizeReceptionistChannel(
+  value: unknown,
+  fallback: ReceptionistSourceChannel = 'website'
+): ReceptionistSourceChannel {
+  if (typeof value === 'string' && ALLOWED_CHANNELS.has(value as ReceptionistSourceChannel)) {
+    return value as ReceptionistSourceChannel;
+  }
+  return fallback;
+}
+
+export function sanitizeConversationMetadata(raw: unknown): ReceptionistMessageMetadata {
+  if (!raw || typeof raw !== 'object') return {};
+  const obj = raw as Record<string, unknown>;
+  const cleaned: ReceptionistMessageMetadata = {};
+
+  if (Array.isArray(obj.recommendedLinks)) {
+    const links = sanitizeRecommendedLinks(
+      obj.recommendedLinks
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map((item) => ({
+          label: sanitizePlainText(item.label, 80),
+          path: sanitizePlainText(item.path, 160),
+          external: Boolean(item.external)
+        }))
+    );
+    if (links.length > 0) cleaned.recommendedLinks = links;
+  }
+
+  const quickActionId = sanitizePlainText(obj.quickActionId, 60);
+  if (quickActionId) cleaned.quickActionId = quickActionId;
+
+  if (typeof obj.suggestEnquiryForm === 'boolean') {
+    cleaned.suggestEnquiryForm = obj.suggestEnquiryForm;
+  }
+  if (typeof obj.suggestHumanHandover === 'boolean') {
+    cleaned.suggestHumanHandover = obj.suggestHumanHandover;
+  }
+
+  const currentPage = sanitizePlainText(obj.currentPage, 160);
+  if (currentPage) cleaned.currentPage = currentPage;
+
+  if (obj.detectedLanguage !== undefined) {
+    cleaned.detectedLanguage = normalizeReceptionistLanguage(obj.detectedLanguage);
+  }
+
+  return cleaned;
+}
+
 export function validateChatRequestPayload(
   raw: unknown
 ): { ok: true; data: ReceptionistChatRequest } | { ok: false; error: string } {
@@ -1062,7 +1146,11 @@ export function validateChatRequestPayload(
   }
 
   const sessionId = sanitizePlainText(obj.sessionId, 80) || 'anonymous-session';
-  const mode = obj.mode === 'demo' ? 'demo' : 'live';
+  const rawMode = obj.sourceMode !== undefined ? obj.sourceMode : obj.mode;
+  const mode = rawMode === 'demo' ? 'demo' : 'live';
+  const sourceChannel = normalizeReceptionistChannel(obj.sourceChannel, 'website');
+  const detectedLanguage =
+    obj.detectedLanguage !== undefined ? normalizeReceptionistLanguage(obj.detectedLanguage) : undefined;
   const turnstileToken = sanitizePlainText(obj.turnstileToken, 2048) || undefined;
   if (mode === 'live' && !turnstileToken) {
     return {
@@ -1072,6 +1160,17 @@ export function validateChatRequestPayload(
   }
   const currentPage = sanitizePlainText(obj.currentPage, 160) || '/';
   const quickActionId = sanitizePlainText(obj.quickActionId, 60) || undefined;
+  const rawClientMessageId = sanitizePlainText(obj.clientMessageId, 128);
+  const clientMessageId =
+    rawClientMessageId && SAFE_ID_REGEX.test(rawClientMessageId) ? rawClientMessageId : undefined;
+  const rawAssistantMessageId = sanitizePlainText(obj.assistantMessageId, 128);
+  const assistantMessageId =
+    rawAssistantMessageId && SAFE_ID_REGEX.test(rawAssistantMessageId)
+      ? rawAssistantMessageId
+      : undefined;
+  const rawSessionToken = sanitizePlainText(obj.sessionToken, 128);
+  const sessionToken =
+    rawSessionToken && SAFE_ID_REGEX.test(rawSessionToken) ? rawSessionToken : undefined;
 
   const historyRaw = Array.isArray(obj.history) ? obj.history.slice(-16) : [];
   const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -1108,8 +1207,14 @@ export function validateChatRequestPayload(
       message,
       history,
       mode,
+      sourceMode: mode,
+      sourceChannel,
+      detectedLanguage,
       turnstileToken,
       currentPage,
+      clientMessageId,
+      assistantMessageId,
+      sessionToken,
       quickActionId,
       collectedDraft
     }
@@ -1259,6 +1364,130 @@ export function validateAdminEnquiryUpdatePayload(raw: unknown):
       }
       data.follow_up_date = dateStr;
     }
+  }
+
+  if (Object.keys(data).length === 0) {
+    return { ok: false, error: 'No valid fields provided for update.' };
+  }
+
+  return { ok: true, data };
+}
+
+export function validatePersistMessagesPayload(
+  raw: unknown
+): { ok: true; data: ReceptionistPersistTurnRequest } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, error: 'Message persistence payload must be a JSON object.' };
+  }
+  const obj = raw as Record<string, unknown>;
+
+  const sessionId = sanitizePlainText(obj.sessionId, 80);
+  if (!sessionId || !SAFE_ID_REGEX.test(sessionId)) {
+    return { ok: false, error: 'A valid sessionId is required.' };
+  }
+
+  const sessionToken = sanitizePlainText(obj.sessionToken, 128);
+  if (!sessionToken || sessionToken.length < 16 || !SAFE_ID_REGEX.test(sessionToken)) {
+    return { ok: false, error: 'A valid sessionToken is required.' };
+  }
+
+  const sourceChannel = normalizeReceptionistChannel(obj.sourceChannel, 'website');
+  const sourceMode = obj.sourceMode === 'demo' ? 'demo' : 'live';
+  const currentPage = sanitizePlainText(obj.currentPage, 160) || '/';
+  const detectedLanguage = normalizeReceptionistLanguage(obj.detectedLanguage, 'en');
+  const customerIdentifier = sanitizePlainText(obj.customerIdentifier, 160) || undefined;
+
+  const rawMessages = Array.isArray(obj.messages) ? obj.messages.slice(0, 10) : [];
+  if (rawMessages.length === 0) {
+    return { ok: false, error: 'At least one message entry is required.' };
+  }
+
+  const messages: ReceptionistPersistMessageInput[] = [];
+  for (const item of rawMessages) {
+    if (!item || typeof item !== 'object') continue;
+    const msgObj = item as Record<string, unknown>;
+    const messageId = sanitizePlainText(msgObj.messageId, 128);
+    if (!messageId || !SAFE_ID_REGEX.test(messageId)) {
+      return { ok: false, error: 'Each message must provide a valid messageId.' };
+    }
+    const senderType = msgObj.senderType as ReceptionistSenderType;
+    if (!ALLOWED_SENDER_TYPES.has(senderType)) {
+      return { ok: false, error: 'Invalid senderType value.' };
+    }
+    const messageContent = sanitizePlainText(msgObj.messageContent, 4000);
+    if (!messageContent) {
+      return { ok: false, error: 'Message content cannot be empty.' };
+    }
+    const rawDelivery = msgObj.deliveryStatus as ReceptionistDeliveryStatus | undefined;
+    const deliveryStatus: ReceptionistDeliveryStatus =
+      rawDelivery && ALLOWED_DELIVERY_STATUSES.has(rawDelivery)
+        ? rawDelivery
+        : senderType === 'customer'
+        ? 'received'
+        : 'delivered';
+    const aiModel = sanitizePlainText(msgObj.aiModel, 80) || null;
+    const messageMetadata = sanitizeConversationMetadata(msgObj.messageMetadata);
+
+    messages.push({
+      messageId,
+      senderType,
+      messageContent,
+      messageMetadata,
+      aiModel,
+      deliveryStatus
+    });
+  }
+
+  if (messages.length === 0) {
+    return { ok: false, error: 'No valid messages were provided.' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      sessionId,
+      sessionToken,
+      sourceChannel,
+      sourceMode,
+      currentPage,
+      detectedLanguage,
+      customerIdentifier,
+      messages
+    }
+  };
+}
+
+export function validateAdminConversationUpdatePayload(raw: unknown):
+  | {
+      ok: true;
+      data: {
+        conversation_status?: ReceptionistConversationStatus;
+        assigned_employee?: string | null;
+      };
+    }
+  | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, error: 'Update payload must be a JSON object.' };
+  }
+  const obj = raw as Record<string, unknown>;
+  const data: {
+    conversation_status?: ReceptionistConversationStatus;
+    assigned_employee?: string | null;
+  } = {};
+
+  if (obj.conversation_status !== undefined) {
+    const status = String(obj.conversation_status) as ReceptionistConversationStatus;
+    if (!ALLOWED_CONVERSATION_STATUSES.has(status)) {
+      return { ok: false, error: 'Invalid conversation_status value.' };
+    }
+    data.conversation_status = status;
+  }
+
+  if (obj.assigned_employee !== undefined) {
+    data.assigned_employee =
+      obj.assigned_employee === null
+        ? null
+        : sanitizePlainText(obj.assigned_employee, 120) || null;
   }
 
   if (Object.keys(data).length === 0) {

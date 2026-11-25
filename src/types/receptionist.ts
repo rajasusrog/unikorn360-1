@@ -52,6 +52,27 @@ export interface ReceptionistEnquiryDraft {
   expectedTimeline: string;
 }
 
+export type ReceptionistSourceChannel = 'website' | 'whatsapp';
+
+export type ReceptionistSenderType = 'customer' | 'assistant' | 'agent' | 'system';
+
+export type ReceptionistConversationStatus =
+  | 'active'
+  | 'new'
+  | 'contacted'
+  | 'qualified'
+  | 'follow_up'
+  | 'won'
+  | 'closed';
+
+export type ReceptionistDeliveryStatus =
+  | 'received'
+  | 'pending'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed';
+
 export interface ReceptionistQuickAction {
   id: string;
   label: string;
@@ -70,6 +91,12 @@ export interface ReceptionistChatRequest {
   mode: ReceptionistMode;
   turnstileToken?: string;
   currentPage?: string;
+  sourceChannel?: ReceptionistSourceChannel;
+  sourceMode?: ReceptionistMode;
+  detectedLanguage?: ReceptionistLanguage;
+  clientMessageId?: string;
+  assistantMessageId?: string;
+  sessionToken?: string;
   quickActionId?: string;
   collectedDraft?: Partial<ReceptionistEnquiryDraft>;
 }
@@ -84,6 +111,127 @@ export interface ReceptionistChatResponse {
   suggestEnquiryForm: boolean;
   suggestHumanHandover: boolean;
   model?: string;
+  conversationId?: string;
+  customerMessageId?: string;
+  assistantMessageId?: string;
+  persisted?: boolean;
+}
+
+export interface ReceptionistMessageMetadata {
+  recommendedLinks?: RecommendedLink[];
+  quickActionId?: string;
+  suggestEnquiryForm?: boolean;
+  suggestHumanHandover?: boolean;
+  currentPage?: string;
+  detectedLanguage?: ReceptionistLanguage;
+}
+
+export interface ReceptionistMessageRecord {
+  id: string;
+  conversation_id: string;
+  message_id: string;
+  sender_type: ReceptionistSenderType;
+  message_content: string;
+  message_metadata: ReceptionistMessageMetadata;
+  ai_model: string | null;
+  delivery_status: ReceptionistDeliveryStatus;
+  created_at: string;
+}
+
+export interface ReceptionistConversationRecord {
+  id: string;
+  session_id: string;
+  source_channel: ReceptionistSourceChannel;
+  source_mode: ReceptionistMode;
+  customer_identifier: string | null;
+  detected_language: ReceptionistLanguage;
+  current_page: string | null;
+  conversation_status: ReceptionistConversationStatus;
+  assigned_employee: string | null;
+  enquiry_id: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  message_count?: number;
+  last_message_preview?: string | null;
+  enquiry_reference_code?: string | null;
+}
+
+export interface ReceptionistPersistMessageInput {
+  messageId: string;
+  senderType: ReceptionistSenderType;
+  messageContent: string;
+  messageMetadata?: ReceptionistMessageMetadata;
+  aiModel?: string | null;
+  deliveryStatus?: ReceptionistDeliveryStatus;
+}
+
+export interface ReceptionistPersistTurnRequest {
+  sessionId: string;
+  sessionToken: string;
+  sourceChannel: ReceptionistSourceChannel;
+  sourceMode: ReceptionistMode;
+  currentPage: string;
+  detectedLanguage: ReceptionistLanguage;
+  customerIdentifier?: string;
+  messages: ReceptionistPersistMessageInput[];
+}
+
+export interface ReceptionistPersistTurnResponse {
+  ok: true;
+  conversationId: string;
+  storage: 'supabase' | 'preview_memory';
+  savedMessageIds: string[];
+  duplicateSkippedIds: string[];
+  lastMessageAt: string;
+}
+
+export interface ReceptionistSessionHydrationMessage {
+  id: string;
+  messageId: string;
+  senderType: ReceptionistSenderType;
+  content: string;
+  timestamp: string;
+  mode: ReceptionistMode;
+  language: ReceptionistLanguage;
+  aiModel?: string;
+  recommendedLinks?: RecommendedLink[];
+  quickActionId?: string;
+  suggestEnquiryForm?: boolean;
+}
+
+export interface ReceptionistSessionHydrationResponse {
+  ok: true;
+  found: boolean;
+  conversationId?: string;
+  detectedLanguage?: ReceptionistLanguage;
+  storage: 'supabase' | 'preview_memory';
+  messages: ReceptionistSessionHydrationMessage[];
+}
+
+export interface ReceptionistAdminAssigneeOption {
+  email: string;
+  role: 'superadmin' | 'admin' | 'evaluator';
+}
+
+export interface ReceptionistAdminConversationsListResponse {
+  conversations: ReceptionistConversationRecord[];
+  assignees: ReceptionistAdminAssigneeOption[];
+  storage: 'supabase' | 'preview_memory';
+  notice?: string;
+  stats: {
+    total: number;
+    liveThreads: number;
+    demoThreads: number;
+    activeOrFollowUp: number;
+    unassigned: number;
+  };
+}
+
+export interface ReceptionistAdminConversationDetailResponse {
+  conversation: ReceptionistConversationRecord;
+  messages: ReceptionistMessageRecord[];
+  storage: 'supabase' | 'preview_memory';
 }
 
 export interface ReceptionistEnquirySubmissionRequest {
@@ -161,6 +309,15 @@ export const LEAD_STATUS_OPTIONS: Array<{
   { value: 'follow_up', label: 'Follow-Up', toneClass: 'text-[#B45309]' },
   { value: 'won', label: 'Won', toneClass: 'text-[#15803D]' },
   { value: 'closed', label: 'Closed', toneClass: 'text-[#526176]' }
+];
+
+export const CONVERSATION_STATUS_OPTIONS: Array<{
+  value: ReceptionistConversationStatus;
+  label: string;
+  toneClass: string;
+}> = [
+  { value: 'active', label: 'Active Chat', toneClass: 'text-[#0B1426]' },
+  ...LEAD_STATUS_OPTIONS
 ];
 
 // ====================================================================

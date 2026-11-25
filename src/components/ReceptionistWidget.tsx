@@ -23,7 +23,8 @@ import {
   RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE,
   RECEPTIONIST_WHATSAPP_DISPLAY,
   TIMELINE_OPTIONS,
-  buildReceptionistWhatsAppUrl
+  buildReceptionistWhatsAppUrl,
+  detectMessageLanguage
 } from '../lib/receptionistKnowledge';
 import {
   EMPTY_ENQUIRY_DRAFT,
@@ -47,11 +48,63 @@ interface ReceptionistWidgetProps {
   onNavigate: (path: string) => void;
 }
 
-function createSessionId(): string {
+const SESSION_STORAGE_KEY = 'unikorn360_rec_session_v1';
+
+interface StoredBrowserSession {
+  sessionId: string;
+  sessionToken: string;
+}
+
+function generateRandomId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `rec-${crypto.randomUUID()}`;
+    return `${prefix}-${crypto.randomUUID()}`;
   }
-  return `rec-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createFreshBrowserSession(): StoredBrowserSession {
+  return {
+    sessionId: generateRandomId('rec'),
+    sessionToken: `${generateRandomId('sectok')}-${Math.random().toString(36).slice(2, 10)}`
+  };
+}
+
+function loadOrCreateBrowserSession(): StoredBrowserSession {
+  if (typeof window === 'undefined') {
+    return createFreshBrowserSession();
+  }
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StoredBrowserSession>;
+      if (
+        typeof parsed?.sessionId === 'string' &&
+        parsed.sessionId.length >= 8 &&
+        typeof parsed?.sessionToken === 'string' &&
+        parsed.sessionToken.length >= 16
+      ) {
+        return {
+          sessionId: parsed.sessionId,
+          sessionToken: parsed.sessionToken
+        };
+      }
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+
+  const fresh = createFreshBrowserSession();
+  saveBrowserSession(fresh);
+  return fresh;
+}
+
+function saveBrowserSession(sess: StoredBrowserSession): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sess));
+  } catch {
+    // Ignore storage quota/privacy mode errors
+  }
 }
 
 function formatTime(iso: string): string {
@@ -67,7 +120,7 @@ function formatTime(iso: string): string {
 
 function createWelcomeMessage(mode: ReceptionistMode): ReceptionistChatMessage {
   return {
-    id: `welcome-${Date.now()}`,
+    id: `welcome-${mode}-${Date.now()}`,
     role: 'assistant',
     content:
       'Welcome to UNIKORN360 Business Intelligence. I can guide you across our 6 service divisions, 4 standalone software products, or help capture your project enquiry — in English, தமிழ், Tanglish, or हिन्दी. How can we assist your business today?',
@@ -84,14 +137,29 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   const [widgetState, setWidgetState] = useState<'closed' | 'minimised' | 'open'>('closed');
   const [teaserDismissed, setTeaserDismissed] = useState(false);
   const [mode, setMode] = useState<ReceptionistMode>('live');
-  const [sessionId, setSessionId] = useState<string>(() => createSessionId());
-  const [messages, setMessages] = useState<ReceptionistChatMessage[]>(() => [
-    createWelcomeMessage('live')
-  ]);
+  const [browserSession, setBrowserSession] = useState<StoredBrowserSession>(() =>
+    loadOrCreateBrowserSession()
+  );
+  const sessionId = browserSession.sessionId;
+  const sessionToken = browserSession.sessionToken;
+
+  const [messagesByMode, setMessagesByMode] = useState<{
+    live: ReceptionistChatMessage[];
+    demo: ReceptionistChatMessage[];
+  }>(() => ({
+    live: [createWelcomeMessage('live')],
+    demo: [createWelcomeMessage('demo')]
+  }));
+  const messages = messagesByMode[mode];
+
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isVerifyingSecurity, setIsVerifyingSecurity] = useState(false);
-  const [chatError, setChatError] = useState<{ message: string; retryText?: string } | null>(null);
+  const [chatError, setChatError] = useState<{
+    message: string;
+    retryText?: string;
+    retryClientMessageId?: string;
+  } | null>(null);
   const [detectedLanguage, setDetectedLanguage] = useState<ReceptionistLanguage>('en');
   const [showQuickActions, setShowQuickActions] = useState(true);
 
@@ -116,6 +184,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileControllerRef = useRef<TurnstileChallengeController | null>(null);
+  const hydratedKeysRef = useRef<Set<string>>(new Set());
 
   const capturedFieldCount = useMemo(() => {
     return (Object.values(enquiryDraft) as string[]).filter((v) => typeof v === 'string' && v.trim().length > 0).length;
@@ -130,6 +199,69 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     }
     return RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE;
   }, [enquiryDraft.serviceRequired, submittedReceipt]);
+
+  useEffect(() => {
+    if (currentPath.startsWith('/admin')) return;
+    const hydrationKey = `${sessionId}:${mode}`;
+    if (hydratedKeysRef.current.has(hydrationKey)) return;
+
+    let cancelled = false;
+    receptionistService
+      .hydrateSessionMessages({
+        sessionId,
+        sessionToken,
+        sourceChannel: 'website',
+        sourceMode: mode
+      })
+      .then((resp) => {
+        if (cancelled) return;
+        hydratedKeysRef.current.add(hydrationKey);
+        if (!resp.found || !resp.messages.length) return;
+
+        const restored: ReceptionistChatMessage[] = resp.messages
+          .filter((m) => m.senderType === 'customer' || m.senderType === 'assistant')
+          .map((m) => ({
+            id: m.messageId || m.id,
+            role: m.senderType === 'customer' ? 'user' : 'assistant',
+            content: m.content,
+            timestamp: m.timestamp,
+            mode: m.mode,
+            language: m.language,
+            recommendedLinks: m.recommendedLinks,
+            quickActionId: m.quickActionId,
+            suggestEnquiryForm: m.suggestEnquiryForm,
+            model: m.aiModel
+          }));
+
+        if (restored.length === 0) return;
+
+        setMessagesByMode((prev) => {
+          const currentList = prev[mode];
+          const welcomeMsg =
+            currentList.find((m) => m.id.startsWith('welcome-')) || createWelcomeMessage(mode);
+          const nonWelcomeExisting = currentList.filter((m) => !m.id.startsWith('welcome-'));
+          const existingIds = new Set(nonWelcomeExisting.map((m) => m.id));
+          const merged = [
+            welcomeMsg,
+            ...restored.filter((m) => !existingIds.has(m.id)),
+            ...nonWelcomeExisting
+          ];
+          return { ...prev, [mode]: merged };
+        });
+
+        if (resp.detectedLanguage) {
+          setDetectedLanguage(resp.detectedLanguage);
+        }
+        setShowQuickActions(false);
+      })
+      .catch(() => {
+        // Non-fatal: hydration can retry cleanly if opened later
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sessionToken, mode, currentPath]);
 
   useEffect(() => {
     if (widgetState === 'open') {
@@ -193,9 +325,14 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   };
 
   const handleResetConversation = () => {
-    const freshId = createSessionId();
-    setSessionId(freshId);
-    setMessages([createWelcomeMessage(mode)]);
+    const freshSession = createFreshBrowserSession();
+    saveBrowserSession(freshSession);
+    hydratedKeysRef.current.clear();
+    setBrowserSession(freshSession);
+    setMessagesByMode({
+      live: [createWelcomeMessage('live')],
+      demo: [createWelcomeMessage('demo')]
+    });
     setInputValue('');
     setChatError(null);
     setDetectedLanguage('en');
@@ -221,12 +358,21 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
 
   const sendMessageText = async (
     text: string,
-    options?: { quickActionId?: string; presetService?: string; overrideMode?: ReceptionistMode }
+    options?: {
+      quickActionId?: string;
+      presetService?: string;
+      overrideMode?: ReceptionistMode;
+      retryClientMessageId?: string;
+    }
   ) => {
     const trimmed = text.trim();
     if (!trimmed || isSending) return;
 
     const activeMode = options?.overrideMode || mode;
+    const clientMessageId = options?.retryClientMessageId || generateRandomId('usr');
+    const assistantMessageId = generateRandomId('ast');
+    const inferredLang = detectMessageLanguage(trimmed);
+
     setChatError(null);
     setShowQuickActions(false);
 
@@ -242,7 +388,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     }
 
     const userMsg: ReceptionistChatMessage = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: clientMessageId,
       role: 'user',
       content: trimmed,
       timestamp: new Date().toISOString(),
@@ -250,7 +396,8 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       quickActionId: options?.quickActionId
     };
 
-    const historyForApi = messages
+    const modeMessages = messagesByMode[activeMode];
+    const historyForApi = modeMessages
       .filter((m) => !m.id.startsWith('welcome-') && !m.id.startsWith('receipt-'))
       .slice(-14)
       .map((m) => ({
@@ -284,16 +431,26 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
         }
       }
 
-      setMessages((prev) => [...prev, userMsg]);
+      setMessagesByMode((prev) => {
+        const list = prev[activeMode];
+        if (list.some((m) => m.id === clientMessageId)) return prev;
+        return { ...prev, [activeMode]: [...list, userMsg] };
+      });
       setInputValue('');
 
       const response = await receptionistService.sendMessage({
         sessionId,
+        sessionToken,
         message: trimmed,
         history: historyForApi,
         mode: activeMode,
+        sourceMode: activeMode,
+        sourceChannel: 'website',
+        detectedLanguage: inferredLang,
         turnstileToken,
         currentPage: currentPath,
+        clientMessageId,
+        assistantMessageId,
         quickActionId: options?.quickActionId,
         collectedDraft: nextDraft
       });
@@ -314,7 +471,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       }
 
       const assistantMsg: ReceptionistChatMessage = {
-        id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: response.assistantMessageId || assistantMessageId,
         role: 'assistant',
         content: response.reply,
         timestamp: new Date().toISOString(),
@@ -325,7 +482,11 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
         model: response.model
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessagesByMode((prev) => {
+        const list = prev[activeMode];
+        if (list.some((m) => m.id === assistantMsg.id)) return prev;
+        return { ...prev, [activeMode]: [...list, assistantMsg] };
+      });
 
       if (response.suggestHumanHandover) {
         setShowHandoverCard(true);
@@ -335,7 +496,11 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
         err instanceof ReceptionistClientError || err instanceof TurnstileVerificationError
           ? err.message
           : 'Unable to reach the receptionist service right now. Please try again.';
-      setChatError({ message, retryText: trimmed });
+      setChatError({
+        message,
+        retryText: trimmed,
+        retryClientMessageId: clientMessageId
+      });
     } finally {
       if (activeMode === 'live') {
         turnstileControllerRef.current?.reset();
@@ -349,16 +514,45 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     if (action.isHumanHandover) {
       setShowHandoverCard(true);
       setShowQuickActions(false);
+      const handoverId = generateRandomId('handover');
+      const handoverContent =
+        'You can reach the UNIKORN360 team directly on WhatsApp (+91 98848 24360) using the Talk to UNIKORN360 button below, or leave your enquiry details here so our team can follow up with full context.';
       const handoverMsg: ReceptionistChatMessage = {
-        id: `handover-${Date.now()}`,
+        id: handoverId,
         role: 'assistant',
-        content:
-          'You can reach the UNIKORN360 team directly on WhatsApp (+91 98848 24360) using the Talk to UNIKORN360 button below, or leave your enquiry details here so our team can follow up with full context.',
+        content: handoverContent,
         timestamp: new Date().toISOString(),
         mode,
         language: detectedLanguage
       };
-      setMessages((prev) => [...prev, handoverMsg]);
+      setMessagesByMode((prev) => ({
+        ...prev,
+        [mode]: [...prev[mode], handoverMsg]
+      }));
+      receptionistService
+        .persistMessages({
+          sessionId,
+          sessionToken,
+          sourceChannel: 'website',
+          sourceMode: mode,
+          currentPage: currentPath,
+          detectedLanguage,
+          messages: [
+            {
+              messageId: handoverId,
+              senderType: 'system',
+              messageContent: handoverContent,
+              messageMetadata: {
+                quickActionId: action.id,
+                suggestHumanHandover: true,
+                currentPage: currentPath,
+                detectedLanguage
+              },
+              deliveryStatus: 'delivered'
+            }
+          ]
+        })
+        .catch(() => {});
       return;
     }
 
@@ -458,17 +652,21 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       });
       setShowEnquiryForm(false);
 
-      setMessages((prev) => [
+      const receiptId = generateRandomId('receipt');
+      setMessagesByMode((prev) => ({
         ...prev,
-        {
-          id: `receipt-${Date.now()}`,
-          role: 'assistant',
-          content: `Thank you, ${enquiryDraft.customerName.trim()}. Your enquiry for ${enquiryDraft.serviceRequired.trim()} has been saved with reference ${result.referenceCode}. Our UNIKORN360 team will review your scope and follow up promptly. You can also continue directly on WhatsApp below.`,
-          timestamp: new Date().toISOString(),
-          mode,
-          language: detectedLanguage
-        }
-      ]);
+        [mode]: [
+          ...prev[mode],
+          {
+            id: receiptId,
+            role: 'assistant',
+            content: `Thank you, ${enquiryDraft.customerName.trim()}. Your enquiry for ${enquiryDraft.serviceRequired.trim()} has been saved with reference ${result.referenceCode}. Our UNIKORN360 team will review your scope and follow up promptly. You can also continue directly on WhatsApp below.`,
+            timestamp: new Date().toISOString(),
+            mode,
+            language: detectedLanguage
+          }
+        ]
+      }));
     } catch (err: unknown) {
       if (err instanceof ReceptionistClientError && err.fieldErrors) {
         setFieldErrors(err.fieldErrors);
@@ -1005,7 +1203,11 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
                     {chatError.retryText && (
                       <button
                         type="button"
-                        onClick={() => sendMessageText(chatError.retryText!)}
+                        onClick={() =>
+                          sendMessageText(chatError.retryText!, {
+                            retryClientMessageId: chatError.retryClientMessageId
+                          })
+                        }
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#0B1426] text-white font-semibold rounded-lg cursor-pointer"
                       >
                         <RefreshCw className="w-3 h-3" />

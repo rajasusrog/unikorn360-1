@@ -16,9 +16,14 @@ import {
 } from './src/lib/seo';
 import {
   createSlidingWindowRateLimiter,
+  detectMessageLanguage,
+  normalizeReceptionistChannel,
+  sanitizePlainText,
+  validateAdminConversationUpdatePayload,
   validateAdminEnquiryUpdatePayload,
   validateChatRequestPayload,
-  validateEnquirySubmissionPayload
+  validateEnquirySubmissionPayload,
+  validatePersistMessagesPayload
 } from './src/lib/receptionistKnowledge';
 import {
   buildInMemoryEnquiryRecord,
@@ -30,6 +35,14 @@ import {
   ReceptionistApiError,
   updateEnquiryInSupabaseRest
 } from './src/lib/receptionistServerCore';
+import {
+  getAdminConversationDetail,
+  hydrateVisitorSessionMessages,
+  linkEnquiryToConversation,
+  listAdminConversations,
+  persistConversationMessages,
+  updateAdminConversation
+} from './src/lib/receptionistConversationStore';
 import { ReceptionistEnquiryRecord } from './src/types/receptionist';
 
 dotenv.config();
@@ -3523,6 +3536,11 @@ app.get('/api/receptionist/knowledge', async (req: Request, res: Response) => {
   }
 });
 
+const receptionistMessagePersistLimiter = createSlidingWindowRateLimiter(30, 60_000);
+const receptionistSessionHydrateLimiter = createSlidingWindowRateLimiter(40, 60_000);
+const SAFE_SESSION_TOKEN_REGEX = /^[a-zA-Z0-9_.:-]{16,128}$/;
+const SAFE_SESSION_ID_REGEX = /^[a-zA-Z0-9_.:-]{4,80}$/;
+
 app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
   const ip = getRequestClientIp(req);
   const rate = receptionistChatLimiter(`chat:${ip}`);
@@ -3540,10 +3558,105 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
     return res.status(400).json({ error: validation.error, code: 'VALIDATION_ERROR' });
   }
 
+  const chatReq = validation.data;
+  const sessionToken = chatReq.sessionToken;
+  const sourceChannel = chatReq.sourceChannel || 'website';
+  const sourceMode = chatReq.sourceMode || chatReq.mode;
+  const customerMsgId = chatReq.clientMessageId || `usr_${crypto.randomUUID()}`;
+  const assistantMsgId = chatReq.assistantMessageId || `ast_${crypto.randomUUID()}`;
+  const detectedLang = chatReq.detectedLanguage || detectMessageLanguage(chatReq.message);
+  let conversationId: string | undefined;
+
   try {
-    const result = await handleReceptionistChat(validation.data, process.env);
+    if (sessionToken) {
+      try {
+        const persistedCustomer = await persistConversationMessages(
+          {
+            sessionId: chatReq.sessionId,
+            sessionToken,
+            sourceChannel,
+            sourceMode,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: detectedLang,
+            messages: [
+              {
+                messageId: customerMsgId,
+                senderType: 'customer',
+                messageContent: chatReq.message,
+                messageMetadata: {
+                  quickActionId: chatReq.quickActionId,
+                  currentPage: chatReq.currentPage || '/',
+                  detectedLanguage: detectedLang
+                },
+                deliveryStatus: 'received'
+              }
+            ]
+          },
+          process.env
+        );
+        conversationId = persistedCustomer.conversationId;
+      } catch (persistErr: unknown) {
+        if (persistErr instanceof ReceptionistApiError && persistErr.code === 'INVALID_SESSION_TOKEN') {
+          throw persistErr;
+        }
+        console.warn('Non-fatal customer message persistence warning:', persistErr);
+      }
+    }
+
+    const result = await handleReceptionistChat(chatReq, process.env);
+    let persisted = false;
+
+    if (sessionToken) {
+      try {
+        const customerIdentifier =
+          result.extractedFields?.customerName ||
+          chatReq.collectedDraft?.customerName ||
+          result.extractedFields?.contactNumber ||
+          undefined;
+
+        const persistedReply = await persistConversationMessages(
+          {
+            sessionId: chatReq.sessionId,
+            sessionToken,
+            sourceChannel,
+            sourceMode,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: result.detectedLanguage || detectedLang,
+            customerIdentifier,
+            messages: [
+              {
+                messageId: assistantMsgId,
+                senderType: 'assistant',
+                messageContent: result.reply,
+                messageMetadata: {
+                  recommendedLinks: result.recommendedLinks,
+                  suggestEnquiryForm: result.suggestEnquiryForm,
+                  suggestHumanHandover: result.suggestHumanHandover,
+                  currentPage: chatReq.currentPage || '/',
+                  detectedLanguage: result.detectedLanguage
+                },
+                aiModel: result.model || null,
+                deliveryStatus: 'delivered'
+              }
+            ]
+          },
+          process.env
+        );
+        conversationId = persistedReply.conversationId;
+        persisted = true;
+      } catch (persistErr) {
+        console.warn('Non-fatal assistant reply persistence warning:', persistErr);
+      }
+    }
+
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json(result);
+    return res.status(200).json({
+      ...result,
+      conversationId,
+      customerMessageId: customerMsgId,
+      assistantMessageId: assistantMsgId,
+      persisted
+    });
   } catch (err: unknown) {
     if (err instanceof ReceptionistApiError) {
       return res.status(err.status).json({ error: err.message, code: err.code });
@@ -3553,6 +3666,86 @@ app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
       error: 'Unexpected error processing your message. Please try again.',
       code: 'INTERNAL_ERROR'
     });
+  }
+});
+
+app.get('/api/receptionist/messages', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const ip = getRequestClientIp(req);
+  const rate = receptionistSessionHydrateLimiter(`hydrate:${ip}`);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    return res.status(429).json({
+      error: `Too many requests. Please wait ${rate.retryAfterSeconds} seconds.`,
+      code: 'RATE_LIMITED'
+    });
+  }
+
+  const sessionId = sanitizePlainText(req.query.sessionId, 80);
+  const sessionToken = sanitizePlainText(req.header('X-Receptionist-Session-Token'), 128);
+  const sourceChannel = normalizeReceptionistChannel(req.query.sourceChannel, 'website');
+  const sourceMode = req.query.sourceMode === 'demo' ? 'demo' : 'live';
+
+  if (!sessionId || !SAFE_SESSION_ID_REGEX.test(sessionId)) {
+    return res.status(400).json({
+      error: 'A valid sessionId query parameter is required.',
+      code: 'VALIDATION_ERROR'
+    });
+  }
+
+  if (!sessionToken || !SAFE_SESSION_TOKEN_REGEX.test(sessionToken)) {
+    return res.status(401).json({
+      error: 'A valid X-Receptionist-Session-Token header is required.',
+      code: 'SESSION_TOKEN_REQUIRED'
+    });
+  }
+
+  try {
+    const hydrated = await hydrateVisitorSessionMessages(
+      {
+        sessionId,
+        sessionToken,
+        sourceChannel,
+        sourceMode
+      },
+      process.env
+    );
+    return res.status(200).json(hydrated);
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in GET /api/receptionist/messages:', err);
+    return res.status(500).json({ error: 'Unable to restore session conversation.' });
+  }
+});
+
+app.post('/api/receptionist/messages', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const ip = getRequestClientIp(req);
+  const rate = receptionistMessagePersistLimiter(`persist:${ip}`);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    return res.status(429).json({
+      error: `Too many requests. Please wait ${rate.retryAfterSeconds} seconds.`,
+      code: 'RATE_LIMITED'
+    });
+  }
+
+  const validation = validatePersistMessagesPayload(req.body);
+  if (validation.ok === false) {
+    return res.status(400).json({ error: validation.error, code: 'VALIDATION_ERROR' });
+  }
+
+  try {
+    const persisted = await persistConversationMessages(validation.data, process.env);
+    return res.status(200).json(persisted);
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in POST /api/receptionist/messages:', err);
+    return res.status(500).json({ error: 'Failed to persist conversation messages.' });
   }
 });
 
@@ -3580,6 +3773,18 @@ app.post('/api/receptionist/enquiry', async (req: Request, res: Response) => {
   try {
     const saved = await insertEnquiryIntoSupabaseRest(validation.data, process.env);
     if (saved.ok === true) {
+      await linkEnquiryToConversation(
+        {
+          sessionId: validation.data.sessionId,
+          sourceMode: validation.data.sourceMode,
+          enquiryId: saved.record.id,
+          customerName: validation.data.enquiry.customerName,
+          contactNumber: validation.data.enquiry.contactNumber,
+          detectedLanguage: validation.data.detectedLanguage
+        },
+        process.env
+      );
+
       return res.status(201).json({
         success: true,
         referenceCode: saved.record.reference_code,
@@ -3596,6 +3801,17 @@ app.post('/api/receptionist/enquiry', async (req: Request, res: Response) => {
     if (!isProd && (saveFailure.unconfigured || saveFailure.tableMissing)) {
       const memRecord = buildInMemoryEnquiryRecord(validation.data);
       previewReceptionistEnquiries.unshift(memRecord);
+      await linkEnquiryToConversation(
+        {
+          sessionId: validation.data.sessionId,
+          sourceMode: validation.data.sourceMode,
+          enquiryId: memRecord.id,
+          customerName: validation.data.enquiry.customerName,
+          contactNumber: validation.data.enquiry.contactNumber,
+          detectedLanguage: validation.data.detectedLanguage
+        },
+        process.env
+      );
       return res.status(201).json({
         success: true,
         referenceCode: memRecord.reference_code,
@@ -3702,6 +3918,86 @@ app.patch(
   requireAdminAuth,
   requireRole(['superadmin', 'admin']),
   handleAdminEnquiryPatch
+);
+
+app.get('/api/admin/receptionist-conversations', requireAdminAuth, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const conversationId = sanitizePlainText(req.query.id, 64);
+
+  try {
+    if (conversationId) {
+      const detail = await getAdminConversationDetail(conversationId, process.env);
+      return res.status(200).json(detail);
+    }
+
+    const list = await listAdminConversations(
+      {
+        channel: sanitizePlainText(req.query.channel, 32) || undefined,
+        mode: sanitizePlainText(req.query.mode, 32) || undefined,
+        status: sanitizePlainText(req.query.status, 32) || undefined,
+        language: sanitizePlainText(req.query.language, 32) || undefined,
+        search: sanitizePlainText(req.query.search, 160) || undefined
+      },
+      process.env
+    );
+    return res.status(200).json(list);
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in GET /api/admin/receptionist-conversations:', err);
+    return res.status(500).json({ error: 'Failed to load customer conversations.' });
+  }
+});
+
+app.get('/api/admin/receptionist-conversations/:id', requireAdminAuth, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const detail = await getAdminConversationDetail(String(req.params.id || '').trim(), process.env);
+    return res.status(200).json(detail);
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in GET /api/admin/receptionist-conversations/:id:', err);
+    return res.status(500).json({ error: 'Failed to load conversation thread.' });
+  }
+});
+
+const handleAdminConversationPatch = async (req: Request, res: Response) => {
+  const conversationId = String(req.params.id || req.query.id || req.body?.id || '').trim();
+  if (!conversationId) {
+    return res.status(400).json({ error: 'Conversation id is required.' });
+  }
+
+  const validation = validateAdminConversationUpdatePayload(req.body);
+  if (validation.ok === false) {
+    return res.status(400).json({ error: validation.error });
+  }
+
+  try {
+    const conversation = await updateAdminConversation(conversationId, validation.data, process.env);
+    return res.status(200).json({ success: true, conversation });
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in PATCH /api/admin/receptionist-conversations:', err);
+    return res.status(500).json({ error: 'Failed to update conversation.' });
+  }
+};
+
+app.patch(
+  '/api/admin/receptionist-conversations',
+  requireAdminAuth,
+  requireRole(['superadmin', 'admin']),
+  handleAdminConversationPatch
+);
+app.patch(
+  '/api/admin/receptionist-conversations/:id',
+  requireAdminAuth,
+  requireRole(['superadmin', 'admin']),
+  handleAdminConversationPatch
 );
 
 // ====================================================================

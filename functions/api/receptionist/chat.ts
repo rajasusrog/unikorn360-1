@@ -1,7 +1,9 @@
 import {
   createSlidingWindowRateLimiter,
+  detectMessageLanguage,
   validateChatRequestPayload
 } from '../../../src/lib/receptionistKnowledge';
+import { persistConversationMessages } from '../../../src/lib/receptionistConversationStore';
 import {
   handleReceptionistChat,
   ReceptionistApiError,
@@ -57,9 +59,107 @@ export async function onRequestPost(context: {
     return jsonResponse({ error: validation.error, code: 'VALIDATION_ERROR' }, 400);
   }
 
+  const chatReq = validation.data;
+  const sessionToken = chatReq.sessionToken;
+  const sourceChannel = chatReq.sourceChannel || 'website';
+  const sourceMode = chatReq.sourceMode || chatReq.mode;
+  const customerMsgId = chatReq.clientMessageId || `usr_${crypto.randomUUID()}`;
+  const assistantMsgId = chatReq.assistantMessageId || `ast_${crypto.randomUUID()}`;
+  const detectedLang = chatReq.detectedLanguage || detectMessageLanguage(chatReq.message);
+  let conversationId: string | undefined;
+
   try {
-    const result = await handleReceptionistChat(validation.data, env);
-    return jsonResponse(result, 200);
+    if (sessionToken) {
+      try {
+        const persistedCustomer = await persistConversationMessages(
+          {
+            sessionId: chatReq.sessionId,
+            sessionToken,
+            sourceChannel,
+            sourceMode,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: detectedLang,
+            messages: [
+              {
+                messageId: customerMsgId,
+                senderType: 'customer',
+                messageContent: chatReq.message,
+                messageMetadata: {
+                  quickActionId: chatReq.quickActionId,
+                  currentPage: chatReq.currentPage || '/',
+                  detectedLanguage: detectedLang
+                },
+                deliveryStatus: 'received'
+              }
+            ]
+          },
+          env
+        );
+        conversationId = persistedCustomer.conversationId;
+      } catch (persistErr: unknown) {
+        if (persistErr instanceof ReceptionistApiError && persistErr.code === 'INVALID_SESSION_TOKEN') {
+          throw persistErr;
+        }
+        console.warn('Non-fatal customer message persistence warning:', persistErr);
+      }
+    }
+
+    const result = await handleReceptionistChat(chatReq, env);
+    let persisted = false;
+
+    if (sessionToken) {
+      try {
+        const customerIdentifier =
+          result.extractedFields?.customerName ||
+          chatReq.collectedDraft?.customerName ||
+          result.extractedFields?.contactNumber ||
+          undefined;
+
+        const persistedReply = await persistConversationMessages(
+          {
+            sessionId: chatReq.sessionId,
+            sessionToken,
+            sourceChannel,
+            sourceMode,
+            currentPage: chatReq.currentPage || '/',
+            detectedLanguage: result.detectedLanguage || detectedLang,
+            customerIdentifier,
+            messages: [
+              {
+                messageId: assistantMsgId,
+                senderType: 'assistant',
+                messageContent: result.reply,
+                messageMetadata: {
+                  recommendedLinks: result.recommendedLinks,
+                  suggestEnquiryForm: result.suggestEnquiryForm,
+                  suggestHumanHandover: result.suggestHumanHandover,
+                  currentPage: chatReq.currentPage || '/',
+                  detectedLanguage: result.detectedLanguage
+                },
+                aiModel: result.model || null,
+                deliveryStatus: 'delivered'
+              }
+            ]
+          },
+          env
+        );
+        conversationId = persistedReply.conversationId;
+        persisted = true;
+      } catch (persistErr) {
+        console.warn('Non-fatal assistant reply persistence warning:', persistErr);
+      }
+    }
+
+    return jsonResponse(
+      {
+        ...result,
+        conversationId,
+        customerMessageId: customerMsgId,
+        assistantMessageId: assistantMsgId,
+        persisted
+      },
+      200
+    );
   } catch (err: unknown) {
     if (err instanceof ReceptionistApiError) {
       return jsonResponse({ error: err.message, code: err.code }, err.status);

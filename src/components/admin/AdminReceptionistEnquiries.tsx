@@ -10,7 +10,8 @@ import {
   AlertTriangle,
   X,
   Save,
-  ExternalLink
+  ExternalLink,
+  Inbox
 } from 'lucide-react';
 import {
   LEAD_STATUS_OPTIONS,
@@ -19,6 +20,7 @@ import {
 } from '../../types/receptionist';
 import { receptionistService } from '../../services/receptionistService';
 import { buildReceptionistWhatsAppUrl } from '../../lib/receptionistKnowledge';
+import { AdminReceptionistInbox } from './AdminReceptionistInbox';
 
 interface AdminReceptionistEnquiriesProps {
   currentRole: 'superadmin' | 'admin' | 'evaluator';
@@ -51,6 +53,7 @@ function getStatusMeta(status: ReceptionistLeadStatus) {
 export const AdminReceptionistEnquiries: React.FC<AdminReceptionistEnquiriesProps> = ({
   currentRole
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'enquiries' | 'inbox'>('enquiries');
   const [enquiries, setEnquiries] = useState<ReceptionistEnquiryRecord[]>([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -168,8 +171,53 @@ export const AdminReceptionistEnquiries: React.FC<AdminReceptionistEnquiriesProp
 
   return (
     <div className="space-y-6">
-      {/* KPI SUMMARY STRIP */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* RECEPTIONIST SUB-TABS: ENQUIRIES | CONVERSATION INBOX */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#E4DFD5] rounded-xl p-2">
+        <div className="flex items-center gap-1.5" role="tablist" aria-label="AI Receptionist sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubTab === 'enquiries'}
+            onClick={() => setActiveSubTab('enquiries')}
+            className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              activeSubTab === 'enquiries'
+                ? 'bg-[#0B1426] text-white'
+                : 'text-[#526176] hover:text-[#0B1426] hover:bg-[#F6F5F1]'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-[#C49A36]" />
+            <span>Submitted Enquiries ({stats.total})</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubTab === 'inbox'}
+            onClick={() => setActiveSubTab('inbox')}
+            className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              activeSubTab === 'inbox'
+                ? 'bg-[#0B1426] text-white'
+                : 'text-[#526176] hover:text-[#0B1426] hover:bg-[#F6F5F1]'
+            }`}
+          >
+            <Inbox className="w-3.5 h-3.5 text-[#C49A36]" />
+            <span>Conversation Inbox</span>
+          </button>
+        </div>
+
+        <span className="text-[11px] text-[#526176] px-2">
+          {activeSubTab === 'inbox'
+            ? 'Every Live AI, Demo & future WhatsApp chat turn'
+            : 'Structured lead forms captured by AI Receptionist'}
+        </span>
+      </div>
+
+      {activeSubTab === 'inbox' ? (
+        <AdminReceptionistInbox currentRole={currentRole} />
+      ) : (
+        <>
+          {/* KPI SUMMARY STRIP */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white border border-[#E4DFD5] rounded-xl p-5">
           <p className="text-xs font-medium text-[#526176]">Total Enquiries</p>
           <p className="mt-1 text-2xl font-bold text-[#0B1426] tabular-nums">{stats.total}</p>
@@ -682,6 +730,8 @@ export const AdminReceptionistEnquiries: React.FC<AdminReceptionistEnquiriesProp
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

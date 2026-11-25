@@ -2,6 +2,7 @@ import {
   createSlidingWindowRateLimiter,
   validateEnquirySubmissionPayload
 } from '../../../src/lib/receptionistKnowledge';
+import { linkEnquiryToConversation } from '../../../src/lib/receptionistConversationStore';
 import {
   insertEnquiryIntoSupabaseRest,
   ReceptionistRuntimeEnv
@@ -74,6 +75,18 @@ export async function onRequestPost(context: {
         503
       );
     }
+
+    await linkEnquiryToConversation(
+      {
+        sessionId: validation.data.sessionId,
+        sourceMode: validation.data.sourceMode,
+        enquiryId: saved.record.id,
+        customerName: validation.data.enquiry.customerName,
+        contactNumber: validation.data.enquiry.contactNumber,
+        detectedLanguage: validation.data.detectedLanguage
+      },
+      env
+    );
 
     return jsonResponse(
       {

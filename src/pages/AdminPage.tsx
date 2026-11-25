@@ -426,7 +426,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
             }`}
           >
             <MessageSquare className="w-4 h-4 text-[#C49A36]" />
-            <span>AI Receptionist Enquiries</span>
+            <span>AI Receptionist CRM</span>
           </button>
         </div>
 
