@@ -25,6 +25,7 @@ import { BusinessReviewModal } from './components/BusinessReviewModal';
 import { QuoteModal } from './components/QuoteModal';
 import { ServiceDetailModal } from './components/ServiceDetailModal';
 import { MobileBottomBar } from './components/MobileBottomBar';
+import { ReceptionistWidget } from './components/ReceptionistWidget';
 import { ServiceItem } from './types';
 import { SERVICES_LIST } from './data/servicesData';
 import { SOLUTIONS_DATA } from './data/solutionsData';
@@ -580,6 +581,12 @@ export default function App({ initialPath, initialSearch }: AppProps = {}) {
       <MobileBottomBar
         onOpenReviewModal={() => handleOpenReviewModal('Mobile Quick Inquiry')}
         onScrollToFinder={() => handleScrollToSection('service-finder')}
+      />
+
+      {/* UNIKORN360 AI Website Receptionist Floating Chat Widget */}
+      <ReceptionistWidget
+        currentPath={currentPath}
+        onNavigate={navigate}
       />
 
       {/* Modals */}

@@ -14,6 +14,22 @@ import {
   resolveCanonicalRedirect,
   resolvePublicRouteMeta
 } from './src/lib/seo';
+import {
+  createSlidingWindowRateLimiter,
+  validateAdminEnquiryUpdatePayload,
+  validateChatRequestPayload,
+  validateEnquirySubmissionPayload
+} from './src/lib/receptionistKnowledge';
+import {
+  buildInMemoryEnquiryRecord,
+  computeEnquiryStats,
+  handleReceptionistChat,
+  insertEnquiryIntoSupabaseRest,
+  listEnquiriesFromSupabaseRest,
+  ReceptionistApiError,
+  updateEnquiryInSupabaseRest
+} from './src/lib/receptionistServerCore';
+import { ReceptionistEnquiryRecord } from './src/types/receptionist';
 
 dotenv.config();
 
@@ -3448,6 +3464,202 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
     return res.status(200).send(fallbackXml);
   }
 });
+
+// ====================================================================
+// 12B. UNIKORN360 AI WEBSITE RECEPTIONIST ENDPOINTS (EXPRESS PARITY)
+// ====================================================================
+const receptionistChatLimiter = createSlidingWindowRateLimiter(20, 60_000);
+const receptionistEnquiryLimiter = createSlidingWindowRateLimiter(6, 5 * 60_000);
+const previewReceptionistEnquiries: ReceptionistEnquiryRecord[] = [];
+
+function getRequestClientIp(req: Request): string {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.trim()) {
+    return fwd.split(',')[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+app.post('/api/receptionist/chat', async (req: Request, res: Response) => {
+  const ip = getRequestClientIp(req);
+  const rate = receptionistChatLimiter(`chat:${ip}`);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    return res.status(429).json({
+      error: `Too many chat requests. Please wait ${rate.retryAfterSeconds} seconds and try again.`,
+      code: 'RATE_LIMITED',
+      retryAfterSeconds: rate.retryAfterSeconds
+    });
+  }
+
+  const validation = validateChatRequestPayload(req.body);
+  if (validation.ok === false) {
+    return res.status(400).json({ error: validation.error, code: 'VALIDATION_ERROR' });
+  }
+
+  try {
+    const result = await handleReceptionistChat(validation.data, process.env);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    if (err instanceof ReceptionistApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('Error in POST /api/receptionist/chat:', err);
+    return res.status(500).json({
+      error: 'Unexpected error processing your message. Please try again.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+app.post('/api/receptionist/enquiry', async (req: Request, res: Response) => {
+  const ip = getRequestClientIp(req);
+  const rate = receptionistEnquiryLimiter(`enquiry:${ip}`);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    return res.status(429).json({
+      error: `Please wait ${rate.retryAfterSeconds} seconds before submitting another enquiry.`,
+      code: 'RATE_LIMITED',
+      retryAfterSeconds: rate.retryAfterSeconds
+    });
+  }
+
+  const validation = validateEnquirySubmissionPayload(req.body);
+  if (validation.ok === false) {
+    return res.status(400).json({
+      error: validation.error,
+      fieldErrors: validation.fieldErrors,
+      code: 'VALIDATION_ERROR'
+    });
+  }
+
+  try {
+    const saved = await insertEnquiryIntoSupabaseRest(validation.data, process.env);
+    if (saved.ok === true) {
+      return res.status(201).json({
+        success: true,
+        referenceCode: saved.record.reference_code,
+        enquiryId: saved.record.id,
+        storage: 'supabase',
+        createdAt: saved.record.created_at
+      });
+    }
+
+    const saveFailure = saved as { ok: false; tableMissing?: boolean; unconfigured?: boolean; error: string };
+
+    // In non-production preview/test runtimes where Supabase credentials or table migration
+    // are not yet applied, persist in the preview session store so full workflows can be verified.
+    if (!isProd && (saveFailure.unconfigured || saveFailure.tableMissing)) {
+      const memRecord = buildInMemoryEnquiryRecord(validation.data);
+      previewReceptionistEnquiries.unshift(memRecord);
+      return res.status(201).json({
+        success: true,
+        referenceCode: memRecord.reference_code,
+        enquiryId: memRecord.id,
+        storage: 'preview_memory',
+        createdAt: memRecord.created_at
+      });
+    }
+
+    return res.status(503).json({
+      error: saveFailure.error,
+      code: saveFailure.tableMissing ? 'MIGRATION_REQUIRED' : 'STORAGE_UNAVAILABLE'
+    });
+  } catch (err) {
+    console.error('Error in POST /api/receptionist/enquiry:', err);
+    return res.status(500).json({
+      error: 'Unable to save your enquiry right now. Please try again or reach us on WhatsApp.'
+    });
+  }
+});
+
+app.get('/api/admin/receptionist-enquiries', requireAdminAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await listEnquiriesFromSupabaseRest(process.env);
+    if (result.ok === true) {
+      return res.status(200).json({
+        enquiries: result.enquiries,
+        storage: 'supabase',
+        stats: computeEnquiryStats(result.enquiries)
+      });
+    }
+
+    const listFailure = result as { ok: false; tableMissing?: boolean; unconfigured?: boolean; error: string };
+
+    if (!isProd && (listFailure.unconfigured || listFailure.tableMissing)) {
+      return res.status(200).json({
+        enquiries: previewReceptionistEnquiries,
+        storage: 'preview_memory',
+        notice: listFailure.error,
+        stats: computeEnquiryStats(previewReceptionistEnquiries)
+      });
+    }
+
+    return res.status(listFailure.tableMissing ? 503 : 500).json({ error: listFailure.error });
+  } catch (err) {
+    console.error('Error in GET /api/admin/receptionist-enquiries:', err);
+    return res.status(500).json({ error: 'Failed to load AI receptionist enquiries.' });
+  }
+});
+
+const handleAdminEnquiryPatch = async (req: Request, res: Response) => {
+  const enquiryId = String(req.params.id || req.query.id || req.body?.id || '').trim();
+  if (!enquiryId) {
+    return res.status(400).json({ error: 'Enquiry id is required.' });
+  }
+
+  const validation = validateAdminEnquiryUpdatePayload(req.body);
+  if (validation.ok === false) {
+    return res.status(400).json({ error: validation.error });
+  }
+
+  try {
+    const updated = await updateEnquiryInSupabaseRest(enquiryId, validation.data, process.env);
+    if (updated.ok === true) {
+      return res.status(200).json({ success: true, enquiry: updated.record });
+    }
+
+    const updateFailure = updated as {
+      ok: false;
+      status?: number;
+      tableMissing?: boolean;
+      unconfigured?: boolean;
+      error: string;
+    };
+
+    if (!isProd && (updateFailure.unconfigured || updateFailure.tableMissing)) {
+      const idx = previewReceptionistEnquiries.findIndex((item) => item.id === enquiryId);
+      if (idx === -1) {
+        return res.status(404).json({ error: 'Enquiry not found.' });
+      }
+      previewReceptionistEnquiries[idx] = {
+        ...previewReceptionistEnquiries[idx],
+        ...validation.data,
+        updated_at: new Date().toISOString()
+      };
+      return res.status(200).json({ success: true, enquiry: previewReceptionistEnquiries[idx] });
+    }
+
+    return res.status(updateFailure.status || 500).json({ error: updateFailure.error });
+  } catch (err) {
+    console.error('Error in PATCH /api/admin/receptionist-enquiries:', err);
+    return res.status(500).json({ error: 'Failed to update enquiry.' });
+  }
+};
+
+app.patch(
+  '/api/admin/receptionist-enquiries',
+  requireAdminAuth,
+  requireRole(['superadmin', 'admin']),
+  handleAdminEnquiryPatch
+);
+app.patch(
+  '/api/admin/receptionist-enquiries/:id',
+  requireAdminAuth,
+  requireRole(['superadmin', 'admin']),
+  handleAdminEnquiryPatch
+);
 
 // ====================================================================
 // 13. CRAWLER TEXT FILES (/robots.txt & /llms.txt) & CANONICAL REDIRECTS

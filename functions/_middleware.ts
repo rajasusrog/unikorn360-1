@@ -74,8 +74,9 @@ export async function onRequest(context: PagesFunctionContext): Promise<Response
 
   const pathname = url.pathname || '/';
 
-  // 2. Pass through crawler manifests, static assets, and explicit file extensions (except .html)
+  // 2. Pass through API endpoints, crawler manifests, static assets, and explicit file extensions (except .html)
   if (
+    pathname.startsWith('/api/') ||
     PASS_THROUGH_EXACT_PATHS.has(pathname) ||
     pathname.startsWith('/assets/') ||
     (STATIC_FILE_EXTENSION_REGEX.test(pathname) && !pathname.toLowerCase().endsWith('.html'))

@@ -18,12 +18,14 @@ import {
   Search,
   Filter,
   Check,
-  Sparkles
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
 import { servicesDb } from '../lib/supabase';
 import { ServiceDivision, ServiceCatalogItem, RecordStatus, ServicePackage } from '../types/database';
 import { AdminCreatorManager } from '../components/admin/AdminCreatorManager';
+import { AdminReceptionistEnquiries } from '../components/admin/AdminReceptionistEnquiries';
 
 interface AdminPageProps {
   onNavigate: (path: string) => void;
@@ -33,7 +35,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
   const [sessionLoading, setSessionLoading] = useState<boolean>(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentRole, setCurrentRole] = useState<'superadmin' | 'admin' | 'evaluator' | null>(null);
-  const [adminTab, setAdminTab] = useState<'creators' | 'services'>('creators');
+  const [adminTab, setAdminTab] = useState<'creators' | 'services' | 'enquiries'>('creators');
 
   // Data states
   const [services, setServices] = useState<(ServiceCatalogItem & { division_name: string; division_slug: string })[]>([]);
@@ -388,37 +390,54 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Top-Level Admin Navigation Tabs */}
-        <div className="flex border-b border-[#D8DEE5] gap-2 pb-1">
+        <div className="flex flex-wrap border-b border-[#D8DEE5] gap-2 pb-1">
           <button
             onClick={() => setAdminTab('creators')}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 ${
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 whitespace-nowrap ${
               adminTab === 'creators'
-                ? 'bg-white text-[#214E78] border-[#214E78] shadow-xs'
+                ? 'bg-white text-[#0B1426] border-[#0B1426] shadow-xs'
                 : 'text-[#505B66] hover:text-[#30363D] border-transparent hover:bg-white/50'
             }`}
           >
-            <Sparkles className="w-4 h-4 text-[#A57C35]" />
+            <Sparkles className="w-4 h-4 text-[#C49A36]" />
             <span>Creator Intelligence Dashboard</span>
           </button>
 
           {currentRole !== 'evaluator' && (
             <button
               onClick={() => setAdminTab('services')}
-              className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 ${
+              className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 whitespace-nowrap ${
                 adminTab === 'services'
-                  ? 'bg-white text-[#214E78] border-[#214E78] shadow-xs'
+                  ? 'bg-white text-[#0B1426] border-[#0B1426] shadow-xs'
                   : 'text-[#505B66] hover:text-[#30363D] border-transparent hover:bg-white/50'
               }`}
             >
-              <Layers className="w-4 h-4 text-[#214E78]" />
+              <Layers className="w-4 h-4 text-[#0B1426]" />
               <span>Services Catalog ({stats.totalServices})</span>
             </button>
           )}
+
+          <button
+            onClick={() => setAdminTab('enquiries')}
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-t-lg transition-colors cursor-pointer flex items-center gap-2 border-b-2 whitespace-nowrap ${
+              adminTab === 'enquiries'
+                ? 'bg-white text-[#0B1426] border-[#0B1426] shadow-xs'
+                : 'text-[#505B66] hover:text-[#30363D] border-transparent hover:bg-white/50'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-[#C49A36]" />
+            <span>AI Receptionist Enquiries</span>
+          </button>
         </div>
 
         {/* TAB 1: CREATOR NETWORK */}
         {adminTab === 'creators' && (
           <AdminCreatorManager currentRole={currentRole || 'evaluator'} />
+        )}
+
+        {/* TAB 3: AI RECEPTIONIST ENQUIRIES */}
+        {adminTab === 'enquiries' && (
+          <AdminReceptionistEnquiries currentRole={currentRole || 'evaluator'} />
         )}
 
         {/* TAB 2: SERVICES CATALOG */}

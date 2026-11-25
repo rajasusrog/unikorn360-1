@@ -1,0 +1,44 @@
+# UNIKORN360 Business Intelligence
+
+> Business & Technology Partner for MSMEs, startups, founders, teams, and digital creators. Websites, custom software, e-commerce, cybersecurity, digital marketing, creator campaigns, AI automation, strategic research, and business setup documentation.
+
+- Canonical Website: https://www.unikorn360.com/
+- Founder: S. Rajkumar
+- Registered Office: 1st Floor, Shop No. 3, VK Complex, P.J.N. Road, Kamarajapuram, Vaniyambadi, Tamil Nadu 635751, India
+- Contact Phone / WhatsApp: +91 98848 24360
+- Email: contact.unikorn360@gmail.com
+- GSTIN: 33ANBPR6486P2Z7
+- Sitemap: https://www.unikorn360.com/sitemap.xml
+
+## Core Pages
+
+- [Home](https://www.unikorn360.com/): Overview of UNIKORN360 services, products, enterprise workflows, and inquiry pathways.
+- [Services Directory](https://www.unikorn360.com/services): Complete catalog of 6 specialized divisions and 37 delivery capabilities.
+- [Software Products](https://www.unikorn360.com/products): Standalone software applications operated by UNIKORN360.
+- [Enterprise Solutions](https://www.unikorn360.com/solutions): Six outcome-oriented business lifecycle pathways.
+- [Creator Network](https://www.unikorn360.com/creators): Private Tamil content creator roster for brand video campaigns.
+- [Resources & Guides](https://www.unikorn360.com/resources): Practical MSME checklists and regulatory guides.
+- [About UNIKORN360](https://www.unikorn360.com/about): Company profile, methodology, and delivery discipline.
+- [Contact Advisory Desk](https://www.unikorn360.com/contact): Direct consultation and office details.
+
+## Six Service Divisions
+
+- [Websites & Software](https://www.unikorn360.com/services/websites-software): Custom websites, e-commerce stores, web applications, mobile apps, SaaS MVPs, and API integrations.
+- [Security & Maintenance](https://www.unikorn360.com/services/security-maintenance): Application security reviews, AI code audits, API security, database reviews, server hardening, and maintenance.
+- [Marketing & Creator Campaigns](https://www.unikorn360.com/services/marketing-creator-campaigns): Technical & local SEO, paid advertising, social media content, UGC video production, and creator campaigns.
+- [AI, Automation & Business Systems](https://www.unikorn360.com/services/ai-automation-business-systems): AI chatbots, custom AI agents, workflow automation, CRM pipelines, WhatsApp Business systems, and executive dashboards.
+- [Research & Business Strategy](https://www.unikorn360.com/services/research-business-strategy): Customer & competitor research, industry trends, business performance diagnostics, financial feasibility, and startup consulting.
+- [Business Setup & Documentation](https://www.unikorn360.com/services/business-setup-documentation): Company registration, GST & Udyam, trademark filing coordination, government schemes, bank DPRs, and property documentation.
+
+## Standalone Software Products
+
+- [InvoicePro360](https://www.unikorn360.com/products/invoicepro360) ([Open App](https://invoicepro360.unikorn360.com/)): GST billing, quotations, inventory, and client invoicing application.
+- [Deeds360](https://www.unikorn360.com/products/deeds360) ([Open App](https://deeds360.unikorn360.com/)): Bilingual English & Tamil property deed drafting system for document writers.
+- [Property360](https://www.unikorn360.com/products/property360) ([Open App](https://property360.unikorn360.com/)): Property verification and legal case evaluation platform.
+- [Advocate360](https://www.unikorn360.com/products/advocate360) ([Open App](https://advocate360.unikorn360.com/)): Legal chamber practice, court docket, and case brief management workspace.
+
+## Disallowed Utility Routes
+
+- `/admin`, `/admin/login` (administrative console, noindex)
+- `/creators/apply`, `/creators/success` (registration flow, noindex)
+- `/api/*` (backend endpoints)
