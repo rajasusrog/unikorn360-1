@@ -11,7 +11,12 @@ import {
   sanitizeRecommendedLinks,
   validateEnquirySubmissionPayload
 } from '../src/lib/receptionistKnowledge';
-import { handleReceptionistChat, ReceptionistApiError } from '../src/lib/receptionistServerCore';
+import {
+  CLOUDFLARE_RECEPTIONIST_CHAT_URL,
+  ReceptionistApiError,
+  buildCloudflareChatPayload,
+  handleReceptionistChat
+} from '../src/lib/receptionistServerCore';
 
 async function runTests() {
   console.log('Running UNIKORN360 AI Website Receptionist verification suite...');
@@ -48,7 +53,7 @@ async function runTests() {
   assert.equal(detectMessageLanguage('Vanakkam, enaku website development venum'), 'tanglish');
   assert.equal(detectMessageLanguage('हमें वेबसाइट और ऑटोमेशन चाहिए'), 'hi');
 
-  // 4. Verify Demo mode vs Live mode separation (Live mode never silently masks missing key)
+  // 4. Verify Demo mode vs Live Cloudflare Worker mode & payload contract
   const demoReply = await handleReceptionistChat(
     {
       sessionId: 'test-session-1',
@@ -64,22 +69,114 @@ async function runTests() {
   assert.equal(demoReply.detectedLanguage, 'tanglish');
   assert.equal(demoReply.extractedFields.contactNumber, '9876543210');
 
-  let threwOnMissingKey = false;
+  const mappedPayload = buildCloudflareChatPayload({
+    message: 'How does WhatsApp automation work?',
+    history: [
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Welcome to UNIKORN360.' }
+    ]
+  });
+  assert.deepEqual(mappedPayload, {
+    message: 'How does WhatsApp automation work?',
+    history: [
+      { role: 'user', text: 'Hi' },
+      { role: 'assistant', text: 'Welcome to UNIKORN360.' }
+    ]
+  });
+
+  let capturedUrl = '';
+  let capturedInit: RequestInit | undefined;
+  const mockSuccessFetch: typeof fetch = async (input, init) => {
+    capturedUrl = String(input);
+    capturedInit = init;
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        reply: 'UNIKORN360 offers InvoicePro360 for billing and GST workflows.',
+        text: 'UNIKORN360 offers InvoicePro360 for billing and GST workflows.',
+        model: 'gemini-3.8-flash'
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+
+  const liveSuccess = await handleReceptionistChat(
+    {
+      sessionId: 'test-session-live-1',
+      message: 'Tell me about InvoicePro360',
+      history: [{ role: 'user', content: 'Hello UNIKORN360' }],
+      mode: 'live',
+      currentPage: '/products'
+    },
+    {},
+    mockSuccessFetch
+  );
+  assert.equal(capturedUrl, CLOUDFLARE_RECEPTIONIST_CHAT_URL);
+  assert.equal(capturedInit?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+    message: 'Tell me about InvoicePro360',
+    history: [{ role: 'user', text: 'Hello UNIKORN360' }]
+  });
+  assert.equal(liveSuccess.mode, 'live');
+  assert.equal(liveSuccess.simulated, false);
+  assert.equal(liveSuccess.model, 'gemini-3.8-flash');
+  assert.ok(liveSuccess.reply.includes('InvoicePro360'));
+  assert.ok(liveSuccess.recommendedLinks.some((l) => l.path === '/products/invoicepro360'));
+
+  // Upstream failure must throw explicit error and NEVER fabricate an AI response
+  let threwOnUpstreamBusy = false;
+  const mockBusyFetch: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: 'AI service is busy. Please try again shortly.'
+      }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
+    );
+
   try {
     await handleReceptionistChat(
       {
-        sessionId: 'test-session-2',
+        sessionId: 'test-session-live-2',
         message: 'Tell me about InvoicePro360',
         history: [],
         mode: 'live',
         currentPage: '/products'
       },
-      { GEMINI_API_KEY: '' }
+      {},
+      mockBusyFetch
     );
   } catch (err) {
-    threwOnMissingKey = err instanceof ReceptionistApiError && err.code === 'GEMINI_NOT_CONFIGURED';
+    threwOnUpstreamBusy =
+      err instanceof ReceptionistApiError &&
+      err.status === 503 &&
+      err.code === 'CLOUDFLARE_BACKEND_ERROR' &&
+      err.message.includes('AI service is busy');
   }
-  assert.ok(threwOnMissingKey, 'Live mode must throw explicit error when GEMINI_API_KEY is unset');
+  assert.ok(threwOnUpstreamBusy, 'Live mode must throw explicit error when Cloudflare backend fails');
+
+  let threwOnNetworkFailure = false;
+  const mockNetworkFailFetch: typeof fetch = async () => {
+    throw new Error('ECONNREFUSED');
+  };
+  try {
+    await handleReceptionistChat(
+      {
+        sessionId: 'test-session-live-3',
+        message: 'Hello',
+        history: [],
+        mode: 'live',
+        currentPage: '/'
+      },
+      {},
+      mockNetworkFailFetch
+    );
+  } catch (err) {
+    threwOnNetworkFailure =
+      err instanceof ReceptionistApiError &&
+      err.status === 502 &&
+      err.code === 'CLOUDFLARE_NETWORK_ERROR';
+  }
+  assert.ok(threwOnNetworkFailure, 'Live mode must throw explicit error on network failure');
 
   // 5. Verify link allowlist sanitization blocks arbitrary URLs
   const cleanLinks = sanitizeRecommendedLinks([
@@ -133,6 +230,19 @@ async function runTests() {
     const chatData = (await chatRes.json()) as { simulated: boolean; recommendedLinks: Array<{ path: string }> };
     assert.equal(chatData.simulated, true);
     assert.ok(chatData.recommendedLinks.some((l) => l.path === '/products'));
+
+    // Reject empty/invalid chat payload cleanly with HTTP 400
+    const badChatRes = await fetch(`${baseUrl}/api/receptionist/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'http-test-bad',
+        message: '   ',
+        history: [],
+        mode: 'live'
+      })
+    });
+    assert.equal(badChatRes.status, 400);
 
     // Enquiry submission endpoint with all 8 fields
     const enquiryRes = await fetch(`${baseUrl}/api/receptionist/enquiry`, {

@@ -26,6 +26,7 @@ export interface ReceptionistChatMessage {
   recommendedLinks?: RecommendedLink[];
   quickActionId?: string;
   suggestEnquiryForm?: boolean;
+  model?: string;
 }
 
 export interface ReceptionistEnquiryDraft {

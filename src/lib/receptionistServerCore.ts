@@ -1,21 +1,18 @@
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import {
   ReceptionistChatRequest,
   ReceptionistChatResponse,
-  ReceptionistEnquiryDraft,
   ReceptionistEnquiryRecord,
   ReceptionistEnquirySubmissionRequest,
-  ReceptionistLanguage,
   ReceptionistLeadStatus
 } from '../types/receptionist';
 import {
-  buildReceptionistSystemPrompt,
-  detectMessageLanguage,
-  extractBasicLeadFieldsFromText,
   generateDemoReceptionistReply,
-  sanitizePlainText,
-  sanitizeRecommendedLinks
+  inferReceptionistMetadataFromConversation,
+  sanitizePlainText
 } from './receptionistKnowledge';
+
+export const CLOUDFLARE_RECEPTIONIST_CHAT_URL =
+  'https://inbox360-whatsapp-webhook.raj-asusrog.workers.dev/api/chat';
 
 export interface ReceptionistRuntimeEnv {
   GEMINI_API_KEY?: string;
@@ -41,12 +38,7 @@ export class ReceptionistApiError extends Error {
   }
 }
 
-const GEMINI_RECEPTIONIST_MODEL = 'gemini-4-hydrogen';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function generateReferenceCode(): string {
   const randomPart = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
@@ -101,228 +93,103 @@ export function resolveWorkerSupabaseConfig(env: ReceptionistRuntimeEnv) {
   };
 }
 
+export interface CloudflareWorkerChatPayload {
+  message: string;
+  history: Array<{ role: 'user' | 'assistant'; text: string }>;
+}
+
+export function buildCloudflareChatPayload(
+  req: Pick<ReceptionistChatRequest, 'message' | 'history'>
+): CloudflareWorkerChatPayload {
+  return {
+    message: req.message,
+    history: req.history.slice(-14).map((turn) => ({
+      role: turn.role,
+      text: turn.content
+    }))
+  };
+}
+
 /**
- * Generates a grounded UNIKORN360 receptionist reply using either Demo Mode
- * (only when explicitly requested) or Live Gemini API (`gemini-4-hydrogen`).
+ * Generates a UNIKORN360 receptionist reply using either Demo Mode
+ * (only when explicitly requested) or Live AI routed strictly to the
+ * UNIKORN360 Cloudflare Worker backend. Never fabricates AI responses
+ * when the Cloudflare backend is unavailable or returns an error.
  */
 export async function handleReceptionistChat(
   req: ReceptionistChatRequest,
-  env: ReceptionistRuntimeEnv
+  _env: ReceptionistRuntimeEnv,
+  fetchImpl: typeof fetch = fetch
 ): Promise<ReceptionistChatResponse> {
   if (req.mode === 'demo') {
     return generateDemoReceptionistReply(req);
   }
 
-  const apiKey = (env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) {
+  const upstreamPayload = buildCloudflareChatPayload(req);
+
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await fetchImpl(CLOUDFLARE_RECEPTIONIST_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(upstreamPayload)
+    });
+  } catch (err) {
+    console.error('Cloudflare AI backend network error:', err);
     throw new ReceptionistApiError(
-      'Live Gemini AI is not configured on the server yet. You can switch to Demo Mode to preview responses or contact UNIKORN360 on WhatsApp.',
-      503,
-      'GEMINI_NOT_CONFIGURED'
+      'Unable to connect to the UNIKORN360 Live AI service right now. Please try again or reach us on WhatsApp.',
+      502,
+      'CLOUDFLARE_NETWORK_ERROR'
     );
   }
 
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build'
-      }
-    }
-  });
+  const data = (await upstreamRes.json().catch(() => null)) as {
+    ok?: boolean;
+    reply?: string;
+    text?: string;
+    model?: string;
+    error?: string;
+  } | null;
 
-  const systemInstruction = buildReceptionistSystemPrompt(req.currentPage, req.collectedDraft);
-
-  const contents = [
-    ...req.history.map((turn) => ({
-      role: turn.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: turn.content }]
-    })),
-    {
-      role: 'user',
-      parts: [{ text: req.message }]
-    }
-  ];
-
-  const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-      reply: {
-        type: Type.STRING,
-        description:
-          'Helpful, concise receptionist reply in the visitor language (English, Tamil, Tanglish, or Hindi). Never invent prices or commitments.'
-      },
-      detectedLanguage: {
-        type: Type.STRING,
-        description: 'One of: en, ta, tanglish, hi'
-      },
-      recommendedLinks: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            label: { type: Type.STRING },
-            path: { type: Type.STRING }
-          },
-          required: ['label', 'path']
-        }
-      },
-      extractedFields: {
-        type: Type.OBJECT,
-        properties: {
-          customerName: { type: Type.STRING },
-          businessName: { type: Type.STRING },
-          contactNumber: { type: Type.STRING },
-          email: { type: Type.STRING },
-          serviceRequired: { type: Type.STRING },
-          projectDescription: { type: Type.STRING },
-          budgetRange: { type: Type.STRING },
-          expectedTimeline: { type: Type.STRING }
-        }
-      },
-      suggestEnquiryForm: {
-        type: Type.BOOLEAN
-      },
-      suggestHumanHandover: {
-        type: Type.BOOLEAN
-      }
-    },
-    required: ['reply', 'detectedLanguage', 'recommendedLinks', 'suggestEnquiryForm', 'suggestHumanHandover']
-  };
-
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await ai.models.generateContent({
-        model: GEMINI_RECEPTIONIST_MODEL,
-        contents,
-        config: {
-          systemInstruction,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          },
-          responseMimeType: 'application/json',
-          responseSchema
-        }
-      });
-
-      const rawText = (response.text ?? '').trim();
-      if (!rawText) {
-        throw new ReceptionistApiError(
-          'The AI receptionist returned an empty reply. Please try again.',
-          502,
-          'EMPTY_AI_RESPONSE'
-        );
-      }
-
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(rawText);
-      } catch {
-        // Fallback if model returned plain prose despite schema
-        parsed = {
-          reply: rawText,
-          detectedLanguage: detectMessageLanguage(req.message),
-          recommendedLinks: [],
-          extractedFields: extractBasicLeadFieldsFromText(req.message),
-          suggestEnquiryForm: false,
-          suggestHumanHandover: false
-        };
-      }
-
-      const replyText = sanitizePlainText(parsed.reply, 2400);
-      if (!replyText) {
-        throw new ReceptionistApiError(
-          'The AI receptionist could not formulate a response. Please try again.',
-          502,
-          'EMPTY_AI_RESPONSE'
-        );
-      }
-
-      const rawLang = String(parsed.detectedLanguage || '').toLowerCase();
-      const detectedLanguage: ReceptionistLanguage =
-        rawLang === 'ta' || rawLang === 'tanglish' || rawLang === 'hi' || rawLang === 'en'
-          ? (rawLang as ReceptionistLanguage)
-          : detectMessageLanguage(req.message);
-
-      const rawExtracted =
-        parsed.extractedFields && typeof parsed.extractedFields === 'object'
-          ? (parsed.extractedFields as Record<string, unknown>)
-          : {};
-      const heuristicFields = extractBasicLeadFieldsFromText(req.message);
-      const extractedFields: Partial<ReceptionistEnquiryDraft> = {};
-
-      const fieldKeys: Array<keyof ReceptionistEnquiryDraft> = [
-        'customerName',
-        'businessName',
-        'contactNumber',
-        'email',
-        'serviceRequired',
-        'projectDescription',
-        'budgetRange',
-        'expectedTimeline'
-      ];
-      for (const key of fieldKeys) {
-        const val = sanitizePlainText(rawExtracted[key], key === 'projectDescription' ? 1200 : 160);
-        if (val) {
-          extractedFields[key] = val;
-        } else if (heuristicFields[key]) {
-          extractedFields[key] = heuristicFields[key];
-        }
-      }
-
-      return {
-        reply: replyText,
-        mode: 'live',
-        simulated: false,
-        detectedLanguage,
-        recommendedLinks: sanitizeRecommendedLinks(parsed.recommendedLinks),
-        extractedFields,
-        suggestEnquiryForm: Boolean(parsed.suggestEnquiryForm),
-        suggestHumanHandover: Boolean(parsed.suggestHumanHandover),
-        model: GEMINI_RECEPTIONIST_MODEL
-      };
-    } catch (err: unknown) {
-      lastError = err;
-      const errObj = err as { status?: number; message?: string };
-      const status = Number(errObj?.status || 0);
-      const msg = String(errObj?.message || '');
-
-      if (status === 400 || status === 401 || status === 403 || /API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) {
-        throw new ReceptionistApiError(
-          'Live AI credentials could not be verified. Please verify GEMINI_API_KEY in server secrets, or switch to Demo Mode.',
-          502,
-          'GEMINI_AUTH_ERROR'
-        );
-      }
-      if (status === 429 || /RESOURCE_EXHAUSTED/i.test(msg)) {
-        throw new ReceptionistApiError(
-          'Live AI is temporarily busy due to quota limits. Please wait a moment and retry, or contact us on WhatsApp.',
-          429,
-          'GEMINI_QUOTA_EXCEEDED'
-        );
-      }
-      if (status === 404 || /NOT_FOUND/i.test(msg)) {
-        throw new ReceptionistApiError(
-          'The configured AI model is temporarily unavailable. Please retry shortly or contact UNIKORN360 on WhatsApp.',
-          502,
-          'GEMINI_MODEL_UNAVAILABLE'
-        );
-      }
-
-      if (attempt < 2) {
-        await sleep(300 * (attempt + 1));
-        continue;
-      }
-    }
+  if (!upstreamRes.ok || !data || data.ok !== true) {
+    const upstreamMsg = sanitizePlainText(data?.error, 300);
+    const status = upstreamRes.status >= 400 && upstreamRes.status < 600 ? upstreamRes.status : 502;
+    throw new ReceptionistApiError(
+      upstreamMsg || 'The UNIKORN360 Live AI service is temporarily unavailable. Please try again shortly.',
+      status,
+      status === 429 ? 'CLOUDFLARE_RATE_LIMITED' : 'CLOUDFLARE_BACKEND_ERROR'
+    );
   }
 
-  console.error('Gemini receptionist request failed:', lastError);
-  throw new ReceptionistApiError(
-    'Unable to reach the live AI receptionist right now. Please try again or reach UNIKORN360 directly on WhatsApp.',
-    502,
-    'GEMINI_UPSTREAM_ERROR'
+  const replyText = sanitizePlainText(data.reply || data.text, 4000);
+  if (!replyText) {
+    throw new ReceptionistApiError(
+      'The UNIKORN360 Live AI service returned an empty reply. Please try again.',
+      502,
+      'CLOUDFLARE_EMPTY_REPLY'
+    );
+  }
+
+  const inferred = inferReceptionistMetadataFromConversation(
+    req.message,
+    replyText,
+    req.quickActionId,
+    req.collectedDraft
   );
+
+  return {
+    reply: replyText,
+    mode: 'live',
+    simulated: false,
+    detectedLanguage: inferred.detectedLanguage,
+    recommendedLinks: inferred.recommendedLinks,
+    extractedFields: inferred.extractedFields,
+    suggestEnquiryForm: inferred.suggestEnquiryForm,
+    suggestHumanHandover: inferred.suggestHumanHandover,
+    model: sanitizePlainText(data.model, 80) || 'gemini-3.8-flash'
+  };
 }
 
 // ====================================================================

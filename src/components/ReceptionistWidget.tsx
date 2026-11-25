@@ -213,10 +213,13 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       quickActionId: options?.quickActionId
     };
 
-    const historyForApi = messages.slice(-14).map((m) => ({
-      role: m.role,
-      content: m.content
-    }));
+    const historyForApi = messages
+      .filter((m) => !m.id.startsWith('welcome-') && !m.id.startsWith('receipt-'))
+      .slice(-14)
+      .map((m) => ({
+        role: m.role,
+        content: m.content
+      }));
 
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
@@ -256,7 +259,8 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
         mode: response.mode,
         language: response.detectedLanguage,
         recommendedLinks: response.recommendedLinks,
-        suggestEnquiryForm: response.suggestEnquiryForm
+        suggestEnquiryForm: response.suggestEnquiryForm,
+        model: response.model
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -893,7 +897,11 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
                       {!isUser && (
                         <>
                           <span className={msg.mode === 'demo' ? 'text-[#8A6510] font-medium' : ''}>
-                            {msg.mode === 'demo' ? 'Demo Mode (Simulated)' : 'Live AI'}
+                            {msg.mode === 'demo'
+                              ? 'Demo Mode (Simulated)'
+                              : msg.model
+                              ? `Live AI · ${msg.model}`
+                              : 'Live AI'}
                           </span>
                           <span aria-hidden="true">·</span>
                         </>

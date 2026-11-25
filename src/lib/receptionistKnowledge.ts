@@ -595,6 +595,155 @@ export function sanitizePlainText(value: unknown, maxLen: number): string {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, maxLen);
 }
 
+/**
+ * Infers language, approved UNIKORN360 page links, captured enquiry fields,
+ * and handover prompts from user text + Cloudflare AI reply text without
+ * inventing any pricing or AI response content.
+ */
+export function inferReceptionistMetadataFromConversation(
+  userMessage: string,
+  replyText: string,
+  quickActionId?: string,
+  currentDraft?: Partial<ReceptionistEnquiryDraft>
+): {
+  detectedLanguage: ReceptionistLanguage;
+  recommendedLinks: RecommendedLink[];
+  extractedFields: Partial<ReceptionistEnquiryDraft>;
+  suggestEnquiryForm: boolean;
+  suggestHumanHandover: boolean;
+} {
+  const userLang = detectMessageLanguage(userMessage);
+  const detectedLanguage =
+    userLang !== 'en' ? userLang : detectMessageLanguage(replyText);
+
+  const extractedFields = extractBasicLeadFieldsFromText(userMessage);
+  const combined = `${userMessage} ${replyText}`.toLowerCase();
+  const quickId = (quickActionId || '').trim();
+
+  const candidateLinks: RecommendedLink[] = [];
+  const pushApproved = (path: string, label?: string) => {
+    const entry = APPROVED_PUBLIC_LINKS.get(path);
+    if (entry && !candidateLinks.some((c) => c.path === entry.path)) {
+      candidateLinks.push({ label: label || entry.label, path: entry.path });
+    }
+  };
+
+  if (
+    quickId === 'explore-software-products' ||
+    /(invoicepro360|deeds360|property360|advocate360|software product)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'UNIKORN360 Software Products';
+    if (/invoicepro/i.test(combined)) pushApproved('/products/invoicepro360');
+    if (/deeds360/i.test(combined)) pushApproved('/products/deeds360');
+    if (/property360/i.test(combined)) pushApproved('/products/property360');
+    if (/advocate360/i.test(combined)) pushApproved('/products/advocate360');
+    pushApproved('/products', 'Explore All Software Products');
+  }
+
+  if (
+    quickId === 'whatsapp-automation' ||
+    /(whatsapp automation|whatsapp bot|whatsapp business|crm pipeline)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'WhatsApp Automation';
+    pushApproved('/services/ai-automation-business-systems');
+  }
+
+  if (
+    quickId === 'ai-automation' ||
+    /(ai automation|workflow automation|chatbot|ai agent|executive dashboard)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'AI & Automation';
+    pushApproved('/services/ai-automation-business-systems');
+  }
+
+  if (
+    quickId === 'website-development' ||
+    /(website|e-commerce|ecommerce|web portal|landing page|company site)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Website Development';
+    pushApproved('/services/websites-software/website-development');
+    pushApproved('/services/websites-software');
+  }
+
+  if (
+    quickId === 'software-development' ||
+    /(custom software|web application|mobile app|saas mvp|api integration)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Software Development';
+    pushApproved('/services/websites-software');
+  }
+
+  if (
+    quickId === 'cybersecurity' ||
+    /(cybersecurity|security review|security audit|maintenance|server hardening)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Cybersecurity & Maintenance';
+    pushApproved('/services/security-maintenance');
+  }
+
+  if (
+    quickId === 'digital-marketing' ||
+    /(digital marketing|\bseo\b|paid ads|meta ads|google ads|creator campaign|\bugc\b)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Digital Marketing & Creator Campaigns';
+    pushApproved('/services/marketing-creator-campaigns');
+  }
+
+  if (
+    quickId === 'business-documentation' ||
+    /(gst|udyam|\bdpr\b|trademark|registration|business documentation|subsidy)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Business Setup & Documentation';
+    pushApproved('/services/business-setup-documentation');
+  }
+
+  if (
+    quickId === 'business-consulting' ||
+    /(consulting|feasibility|market research|business strategy|competitor)/i.test(combined)
+  ) {
+    extractedFields.serviceRequired =
+      extractedFields.serviceRequired || 'Business Consulting & Strategy';
+    pushApproved('/services/research-business-strategy');
+  }
+
+  if (candidateLinks.length === 0 && /(service|solution|division)/i.test(combined)) {
+    pushApproved('/services', 'Browse All Services');
+  }
+
+  const mergedDraft = { ...(currentDraft || {}), ...extractedFields };
+  const hasLeadInterest = Boolean(
+    mergedDraft.serviceRequired ||
+      mergedDraft.customerName ||
+      mergedDraft.contactNumber ||
+      mergedDraft.email ||
+      /(quote|enquiry|inquiry|proposal|project|build|need|want|demo|venum|chahiye|வேண்டும்)/i.test(
+        userMessage
+      )
+  );
+
+  const suggestHumanHandover =
+    quickId === 'talk-to-human' ||
+    /(whatsapp|talk to human|speak to|call me|human|representative|98848|pesanum|baat karni|மனிதர்|தொடர்பு)/i.test(
+      combined
+    );
+
+  return {
+    detectedLanguage,
+    recommendedLinks: candidateLinks.slice(0, 3),
+    extractedFields,
+    suggestEnquiryForm: hasLeadInterest,
+    suggestHumanHandover
+  };
+}
+
 export function validateChatRequestPayload(
   raw: unknown
 ): { ok: true; data: ReceptionistChatRequest } | { ok: false; error: string } {
@@ -616,8 +765,10 @@ export function validateChatRequestPayload(
   const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   for (const item of historyRaw) {
     if (!item || typeof item !== 'object') continue;
-    const role = (item as Record<string, unknown>).role;
-    const content = sanitizePlainText((item as Record<string, unknown>).content, 1500);
+    const itemObj = item as Record<string, unknown>;
+    const role = itemObj.role;
+    const rawContent = itemObj.content !== undefined ? itemObj.content : itemObj.text;
+    const content = sanitizePlainText(rawContent, 1500);
     if ((role === 'user' || role === 'assistant') && content) {
       history.push({ role, content });
     }
