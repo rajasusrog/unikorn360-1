@@ -1063,6 +1063,13 @@ export function validateChatRequestPayload(
 
   const sessionId = sanitizePlainText(obj.sessionId, 80) || 'anonymous-session';
   const mode = obj.mode === 'demo' ? 'demo' : 'live';
+  const turnstileToken = sanitizePlainText(obj.turnstileToken, 2048) || undefined;
+  if (mode === 'live' && !turnstileToken) {
+    return {
+      ok: false,
+      error: 'Security verification (Turnstile) token is required for Live AI requests.'
+    };
+  }
   const currentPage = sanitizePlainText(obj.currentPage, 160) || '/';
   const quickActionId = sanitizePlainText(obj.quickActionId, 60) || undefined;
 
@@ -1101,6 +1108,7 @@ export function validateChatRequestPayload(
       message,
       history,
       mode,
+      turnstileToken,
       currentPage,
       quickActionId,
       collectedDraft

@@ -74,14 +74,24 @@ export const receptionistService = {
       return generateDemoReceptionistReply(payload);
     }
 
-    // Production origin (www.unikorn360.com): call Cloudflare Worker directly via fetch()
+    const turnstileToken = sanitizePlainText(payload.turnstileToken, 2048);
+    if (!turnstileToken) {
+      throw new ReceptionistClientError(
+        'Security verification (Cloudflare Turnstile) is required before contacting Live AI.',
+        400,
+        'TURNSTILE_TOKEN_REQUIRED'
+      );
+    }
+
+    // Production origin (www.unikorn360.com / unikorn360.com): call Cloudflare Worker directly via fetch()
     if (isProductionUnikornOrigin()) {
       const workerBody = {
         message: payload.message,
         history: payload.history.slice(-14).map((turn) => ({
           role: turn.role,
           text: turn.content
-        }))
+        })),
+        turnstileToken
       };
 
       let res: Response;

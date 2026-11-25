@@ -68,6 +68,7 @@ export interface ReceptionistChatRequest {
     content: string;
   }>;
   mode: ReceptionistMode;
+  turnstileToken?: string;
   currentPage?: string;
   quickActionId?: string;
   collectedDraft?: Partial<ReceptionistEnquiryDraft>;

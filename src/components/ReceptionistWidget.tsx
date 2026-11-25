@@ -37,6 +37,10 @@ import {
   ReceptionistClientError,
   receptionistService
 } from '../services/receptionistService';
+import {
+  TurnstileChallengeController,
+  TurnstileVerificationError
+} from '../lib/turnstile';
 
 interface ReceptionistWidgetProps {
   currentPath: string;
@@ -86,6 +90,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isVerifyingSecurity, setIsVerifyingSecurity] = useState(false);
   const [chatError, setChatError] = useState<{ message: string; retryText?: string } | null>(null);
   const [detectedLanguage, setDetectedLanguage] = useState<ReceptionistLanguage>('en');
   const [showQuickActions, setShowQuickActions] = useState(true);
@@ -109,10 +114,22 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileControllerRef = useRef<TurnstileChallengeController | null>(null);
 
   const capturedFieldCount = useMemo(() => {
     return (Object.values(enquiryDraft) as string[]).filter((v) => typeof v === 'string' && v.trim().length > 0).length;
   }, [enquiryDraft]);
+
+  const whatsAppMessage = useMemo(() => {
+    if (submittedReceipt) {
+      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} Reference: ${submittedReceipt.referenceCode} (${submittedReceipt.serviceRequired}).`;
+    }
+    if (enquiryDraft.serviceRequired.trim()) {
+      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} I am interested in ${enquiryDraft.serviceRequired.trim()}.`;
+    }
+    return RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE;
+  }, [enquiryDraft.serviceRequired, submittedReceipt]);
 
   useEffect(() => {
     if (widgetState === 'open') {
@@ -129,20 +146,35 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     }
   }, [widgetState]);
 
+  useEffect(() => {
+    if (currentPath.startsWith('/admin') || widgetState !== 'open' || mode !== 'live') {
+      turnstileControllerRef.current?.destroy();
+      turnstileControllerRef.current = null;
+      return;
+    }
+
+    const container = turnstileContainerRef.current;
+    if (!container) return;
+
+    const controller = new TurnstileChallengeController();
+    turnstileControllerRef.current = controller;
+
+    controller.mount(container).catch(() => {
+      // Surfacing occurs cleanly if the user sends a Live AI message while Turnstile is unavailable
+    });
+
+    return () => {
+      controller.destroy();
+      if (turnstileControllerRef.current === controller) {
+        turnstileControllerRef.current = null;
+      }
+    };
+  }, [widgetState, mode, currentPath]);
+
   // Hide visitor chat widget inside /admin routes so admin dashboard stays unobstructed
   if (currentPath.startsWith('/admin')) {
     return null;
   }
-
-  const whatsAppMessage = useMemo(() => {
-    if (submittedReceipt) {
-      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} Reference: ${submittedReceipt.referenceCode} (${submittedReceipt.serviceRequired}).`;
-    }
-    if (enquiryDraft.serviceRequired.trim()) {
-      return `${RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE} I am interested in ${enquiryDraft.serviceRequired.trim()}.`;
-    }
-    return RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE;
-  }, [enquiryDraft.serviceRequired, submittedReceipt]);
 
   const defaultWhatsAppHref = buildReceptionistWhatsAppUrl(RECEPTIONIST_WHATSAPP_DEFAULT_MESSAGE);
   const contextualWhatsAppHref = buildReceptionistWhatsAppUrl(whatsAppMessage);
@@ -174,12 +206,17 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
     setFieldErrors({});
     setEnquirySubmitError('');
     setSubmittedReceipt(null);
+    turnstileControllerRef.current?.reset();
   };
 
   const handleModeSwitch = (nextMode: ReceptionistMode) => {
     if (nextMode === mode) return;
     setMode(nextMode);
     setChatError(null);
+    if (nextMode === 'demo') {
+      turnstileControllerRef.current?.destroy();
+      turnstileControllerRef.current = null;
+    }
   };
 
   const sendMessageText = async (
@@ -221,16 +258,41 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
         content: m.content
       }));
 
-    setMessages((prev) => [...prev, userMsg]);
-    setInputValue('');
     setIsSending(true);
 
     try {
+      let turnstileToken: string | undefined;
+
+      if (activeMode === 'live') {
+        setIsVerifyingSecurity(true);
+        try {
+          if (!turnstileControllerRef.current) {
+            turnstileControllerRef.current = new TurnstileChallengeController();
+          }
+          turnstileToken = await turnstileControllerRef.current.executeFreshChallenge(
+            turnstileContainerRef.current
+          );
+        } finally {
+          setIsVerifyingSecurity(false);
+        }
+
+        if (!turnstileToken || !turnstileToken.trim()) {
+          throw new TurnstileVerificationError(
+            'Security verification did not return a valid token. Please retry.',
+            'TURNSTILE_FAILED'
+          );
+        }
+      }
+
+      setMessages((prev) => [...prev, userMsg]);
+      setInputValue('');
+
       const response = await receptionistService.sendMessage({
         sessionId,
         message: trimmed,
         history: historyForApi,
         mode: activeMode,
+        turnstileToken,
         currentPage: currentPath,
         quickActionId: options?.quickActionId,
         collectedDraft: nextDraft
@@ -270,11 +332,15 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
       }
     } catch (err: unknown) {
       const message =
-        err instanceof ReceptionistClientError
+        err instanceof ReceptionistClientError || err instanceof TurnstileVerificationError
           ? err.message
           : 'Unable to reach the receptionist service right now. Please try again.';
       setChatError({ message, retryText: trimmed });
     } finally {
+      if (activeMode === 'live') {
+        turnstileControllerRef.current?.reset();
+      }
+      setIsVerifyingSecurity(false);
       setIsSending(false);
     }
   };
@@ -912,11 +978,15 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
                 );
               })}
 
-              {/* TYPING INDICATOR */}
+              {/* TYPING / SECURITY VERIFICATION INDICATOR */}
               {isSending && (
                 <div className="flex items-start">
                   <div className="bg-white border border-[#E4DFD5] rounded-xl px-3.5 py-2.5 text-xs text-[#526176]">
-                    {mode === 'demo' ? 'Preparing Demo Mode response...' : 'UNIKORN360 Receptionist is typing...'}
+                    {mode === 'demo'
+                      ? 'Preparing Demo Mode response...'
+                      : isVerifyingSecurity
+                      ? 'Verifying browser security check...'
+                      : 'UNIKORN360 Receptionist is typing...'}
                   </div>
                 </div>
               )}
@@ -1025,7 +1095,7 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
             </div>
           )}
 
-          {/* PROMINENT HUMAN HANDOVER BAR + MESSAGE COMPOSER */}
+          {/* PROMINENT HUMAN HANDOVER BAR + TURNSTILE + MESSAGE COMPOSER */}
           <footer className="bg-white border-t border-[#E4DFD5] px-3.5 py-2.5 space-y-2 shrink-0">
             <a
               id="receptionist-talk-to-unikorn360"
@@ -1037,6 +1107,15 @@ export const ReceptionistWidget: React.FC<ReceptionistWidgetProps> = ({
               <PhoneCall className="w-3.5 h-3.5 text-[#C49A36] shrink-0" />
               <span>Talk to UNIKORN360 on WhatsApp ({RECEPTIONIST_WHATSAPP_DISPLAY})</span>
             </a>
+
+            {mode === 'live' && (
+              <div
+                ref={turnstileContainerRef}
+                id="receptionist-turnstile-container"
+                className="min-h-0 flex justify-center"
+                aria-live="polite"
+              />
+            )}
 
             {!showEnquiryForm && (
               <form onSubmit={handleChatSubmit} className="flex items-center gap-2">

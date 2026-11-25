@@ -74,15 +74,44 @@ async function runTests() {
     history: [
       { role: 'user', content: 'Hi' },
       { role: 'assistant', content: 'Welcome to UNIKORN360.' }
-    ]
+    ],
+    turnstileToken: 'test-turnstile-token-mapped'
   });
   assert.deepEqual(mappedPayload, {
     message: 'How does WhatsApp automation work?',
     history: [
       { role: 'user', text: 'Hi' },
       { role: 'assistant', text: 'Welcome to UNIKORN360.' }
-    ]
+    ],
+    turnstileToken: 'test-turnstile-token-mapped'
   });
+
+  // Live mode without Turnstile token must fail closed before any network call
+  let liveCalledWithoutToken = false;
+  let threwMissingToken = false;
+  try {
+    await handleReceptionistChat(
+      {
+        sessionId: 'test-session-missing-token',
+        message: 'Tell me about InvoicePro360',
+        history: [],
+        mode: 'live',
+        currentPage: '/products'
+      },
+      {},
+      async () => {
+        liveCalledWithoutToken = true;
+        return new Response('{}', { status: 200 });
+      }
+    );
+  } catch (err) {
+    threwMissingToken =
+      err instanceof ReceptionistApiError &&
+      err.status === 400 &&
+      err.code === 'TURNSTILE_TOKEN_REQUIRED';
+  }
+  assert.ok(threwMissingToken, 'Live mode must reject requests missing turnstileToken');
+  assert.equal(liveCalledWithoutToken, false, 'Must never call Cloudflare Worker without Turnstile token');
 
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
@@ -106,7 +135,8 @@ async function runTests() {
       message: 'Tell me about InvoicePro360',
       history: [{ role: 'user', content: 'Hello UNIKORN360' }],
       mode: 'live',
-      currentPage: '/products'
+      currentPage: '/products',
+      turnstileToken: 'fresh-turnstile-token-123'
     },
     {},
     mockSuccessFetch
@@ -115,7 +145,8 @@ async function runTests() {
   assert.equal(capturedInit?.method, 'POST');
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     message: 'Tell me about InvoicePro360',
-    history: [{ role: 'user', text: 'Hello UNIKORN360' }]
+    history: [{ role: 'user', text: 'Hello UNIKORN360' }],
+    turnstileToken: 'fresh-turnstile-token-123'
   });
   assert.equal(liveSuccess.mode, 'live');
   assert.equal(liveSuccess.simulated, false);
@@ -140,7 +171,8 @@ async function runTests() {
         message: 'Tell me about InvoicePro360',
         history: [],
         mode: 'live',
-        currentPage: '/products'
+        currentPage: '/products',
+        turnstileToken: 'fresh-turnstile-token-456'
       },
       {},
       mockBusyFetch
@@ -165,7 +197,8 @@ async function runTests() {
         message: 'Hello',
         history: [],
         mode: 'live',
-        currentPage: '/'
+        currentPage: '/',
+        turnstileToken: 'fresh-turnstile-token-789'
       },
       {},
       mockNetworkFailFetch

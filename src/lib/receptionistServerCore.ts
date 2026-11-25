@@ -99,17 +99,20 @@ export function resolveWorkerSupabaseConfig(env: ReceptionistRuntimeEnv) {
 export interface CloudflareWorkerChatPayload {
   message: string;
   history: Array<{ role: 'user' | 'assistant'; text: string }>;
+  turnstileToken: string;
 }
 
 export function buildCloudflareChatPayload(
-  req: Pick<ReceptionistChatRequest, 'message' | 'history'>
+  req: Pick<ReceptionistChatRequest, 'message' | 'history' | 'turnstileToken'>
 ): CloudflareWorkerChatPayload {
+  const token = (req.turnstileToken || '').trim();
   return {
     message: req.message,
     history: req.history.slice(-14).map((turn) => ({
       role: turn.role,
       text: turn.content
-    }))
+    })),
+    turnstileToken: token
   };
 }
 
@@ -117,7 +120,8 @@ export function buildCloudflareChatPayload(
  * Generates a UNIKORN360 receptionist reply using either Demo Mode
  * (only when explicitly requested) or Live AI routed strictly to the
  * UNIKORN360 Cloudflare Worker backend. Never fabricates AI responses
- * when the Cloudflare backend is unavailable or returns an error.
+ * when the Cloudflare backend is unavailable or returns an error, and
+ * never calls Live AI without a valid Turnstile token.
  */
 export async function handleReceptionistChat(
   req: ReceptionistChatRequest,
@@ -129,6 +133,13 @@ export async function handleReceptionistChat(
   }
 
   const upstreamPayload = buildCloudflareChatPayload(req);
+  if (!upstreamPayload.turnstileToken) {
+    throw new ReceptionistApiError(
+      'Security verification (Cloudflare Turnstile) is required before contacting Live AI.',
+      400,
+      'TURNSTILE_TOKEN_REQUIRED'
+    );
+  }
 
   let upstreamRes: Response;
   try {
