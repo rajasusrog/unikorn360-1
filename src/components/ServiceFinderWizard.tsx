@@ -1,22 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Compass, 
-  Check, 
-  ArrowRight, 
-  RotateCcw, 
-  Sparkles, 
-  Globe, 
+    RotateCcw, 
+    Globe, 
   BarChart3, 
   AppWindow, 
   Cpu, 
   Briefcase, 
   ShieldCheck, 
   HelpCircle,
-  Clock,
-  MessageSquare
+    MessageSquare
 } from 'lucide-react';
 import { getSeedDivisionsWithCounts, getSeedPublishedServices } from '../data/seedData';
-import { ServiceCatalogItem } from '../types/database';
+import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
+import type { ServiceCatalogItem, ServiceDivision } from '../types/database';
 
 interface ServiceFinderWizardProps {
   onOpenReviewModal: (prefill?: string) => void;
@@ -60,7 +57,8 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
 }) => {
   const [step, setStep] = useState<number>(1);
   const [selectedArea, setSelectedArea] = useState<string>('');
-  const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
+  const [availableServices, setAvailableServices] = useState<ServiceCatalogItem[]>(() => getSeedPublishedServices());
+  const [availableDivisions, setAvailableDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
   const [selectedBottleneck, setSelectedBottleneck] = useState<string>('');
 
   const handleSelectArea = (areaId: string) => {
@@ -68,8 +66,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
     setStep(2);
   };
 
-  const handleSelectBusinessType = (typeId: string) => {
-    setSelectedBusinessType(typeId);
+  const handleSelectBusinessType = (_typeId: string) => {
     setStep(3);
   };
 
@@ -77,6 +74,25 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
     setSelectedBottleneck(bottleneckId);
     setStep(4);
   };
+
+  useEffect(() => {
+    if (!isRemoteSupabaseConfigured) return;
+
+    let cancelled = false;
+    Promise.all([servicesDb.getDivisions(), servicesDb.getAllPublishedServices()])
+      .then(([divisions, services]) => {
+        if (cancelled) return;
+        setAvailableDivisions(divisions);
+        setAvailableServices(services);
+      })
+      .catch((error) => {
+        console.warn('Could not load published services for the service finder:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleReset = () => {
     setStep(1);
@@ -87,7 +103,6 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
 
   // Compute recommendation
   const getRecommendation = () => {
-    let pathway: 'verify' | 'protect' | 'guardian' = 'verify';
     let pathwayTitle = 'Business Requirement Review';
     let summaryRationale = '';
     let matchedServiceSlugs: string[] = [];
@@ -135,19 +150,16 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
       matchedServiceSlugs = ['business-performance-analysis', 'business-planning-financial-feasibility'];
     }
 
-    const publishedServices = getSeedPublishedServices();
-    const divisions = getSeedDivisionsWithCounts();
     const matchedServices: ServiceCatalogItem[] = matchedServiceSlugs
-      .map((slug) => publishedServices.find((service) => service.slug === slug))
+      .map((slug) => availableServices.find((service) => service.slug === slug))
       .filter((service): service is ServiceCatalogItem => Boolean(service));
 
     return {
-      pathway,
       pathwayTitle,
       summaryRationale,
       matchedServices,
       recommendedDivisionSlug,
-      recommendedDivision: divisions.find((division) => division.slug === recommendedDivisionSlug) || null
+      recommendedDivision: availableDivisions.find((division) => division.slug === recommendedDivisionSlug) || null
     };
   };
 
