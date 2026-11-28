@@ -1,5 +1,5 @@
 import { ServiceDivision, ServiceCatalogItem, ProductItem } from '../types/database';
-import { SERVICE_PAGE_CONTENT } from './servicePageContent';
+import { applyServicePageContent } from './servicePageContent';
 
 // ====================================================================
 // 1. THE SIX CANONICAL DIVISIONS (Ordered 1 to 6)
@@ -2128,17 +2128,7 @@ const RAW_SEED_SERVICES: ServiceCatalogItem[] = [
  * Runtime service catalogue: editorial content is joined by canonical slug so
  * the app reads one fully-shaped ServiceCatalogItem per service.
  */
-export const SEED_SERVICES: ServiceCatalogItem[] = RAW_SEED_SERVICES.map((service) => {
-  const editorial = SERVICE_PAGE_CONTENT[service.slug];
-  if (!editorial) return service;
-
-  return {
-    ...service,
-    full_description: editorial.description,
-    scope_includes: [...editorial.scope],
-    estimated_timeline: editorial.timeline
-  };
-});
+export const SEED_SERVICES: ServiceCatalogItem[] = RAW_SEED_SERVICES.map(applyServicePageContent);
 
 
 // ====================================================================
