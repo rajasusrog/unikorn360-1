@@ -394,7 +394,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                         className="p-4 bg-white border border-[#E4DFD5] rounded-lg space-y-2 hover:border-[#0B1426] transition-colors"
                       >
                         <h5 className="text-xs font-bold text-[#0B1426]">{service.service_name}</h5>
-                        <p className="text-xs text-[#526176] line-clamp-2">{service.short_description}</p>
+                        <p className="text-xs text-[#526176] line-clamp-2">{service.full_description || service.short_description}</p>
                         <div className="pt-2 flex items-center justify-between text-xs border-t border-[#E4DFD5]">
                           <button
                             type="button"
