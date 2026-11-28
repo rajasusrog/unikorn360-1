@@ -58,13 +58,13 @@ export const ServicesCatalog: React.FC<ServicesCatalogProps> = ({
         <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-white border border-[#D8DEE5] rounded-full text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] mb-3 shadow-2xs">
             <Layers className="w-3.5 h-3.5 text-[#214E78]" />
-            <span>6 Service Divisions</span>
+            <span>6 Service Areas</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-[#30363D] tracking-tight">
-            Comprehensive Service Divisions
+            Services organised around your business needs
           </h2>
           <p className="mt-3 text-sm sm:text-base text-[#505B66] leading-relaxed max-w-2xl mx-auto">
-            From custom software, e-commerce, and application security to creator marketing, AI workflow automation, strategic research, and business documentation.
+            Choose an area to explore the specific services, included work, deliverables, required inputs and quotation approach.
           </p>
         </div>
 
