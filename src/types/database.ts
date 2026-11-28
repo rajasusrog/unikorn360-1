@@ -45,6 +45,12 @@ export interface ServiceFaq {
   answer: string;
 }
 
+export interface ServicePageEditorialContent {
+  description: string;
+  scope: string[];
+  timeline: string;
+}
+
 export interface ServiceDivision {
   id: string;
   name: string;
@@ -69,6 +75,8 @@ export interface ServiceCatalogItem {
   slug: string;
   short_description: string;
   full_description: string;
+  scope_includes?: string[];
+  estimated_timeline?: string;
   problems_solved: string[];
   target_customers: string[];
   benefits: string[];

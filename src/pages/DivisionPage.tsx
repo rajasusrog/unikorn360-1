@@ -216,12 +216,12 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
               <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-[#505B66]">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-[#214E78]" />
-                  <span>Itemized Scope of Work</span>
+                  <span>Written scope before work starts</span>
                 </span>
                 <span className="text-[#D8DEE5]">|</span>
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-[#214E78]" />
-                  <span>No Lock-In Hidden Fees</span>
+                  <span>Costs and exclusions stated in the proposal</span>
                 </span>
                 <span className="text-[#D8DEE5]">|</span>
                 <span className="flex items-center gap-1.5">
@@ -285,23 +285,23 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
         <div className="flex items-center justify-between mb-8">
           <div>
             <span className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em]">
-              Published Delivery Capabilities
+              Available services
             </span>
             <h2 className="text-2xl font-bold font-serif text-[#30363D] mt-1">
               Available Services in {division.name}
             </h2>
           </div>
           <p className="text-xs text-[#505B66]">
-            Showing {publishedCount} published {publishedCount === 1 ? 'service' : 'services'}
+            {publishedCount} {publishedCount === 1 ? 'service' : 'services'} currently listed
           </p>
         </div>
 
         {services.length === 0 ? (
           <div className="bg-white border border-[#D8DEE5] rounded-xl p-12 text-center max-w-lg mx-auto">
             <HelpCircle className="w-12 h-12 text-[#505B66] mx-auto mb-3 opacity-40" />
-            <h3 className="text-base font-bold text-[#30363D]">No Services Published Yet</h3>
+            <h3 className="text-base font-bold text-[#30363D]">No individual services listed yet</h3>
             <p className="text-xs text-[#505B66] mt-2">
-              Services under {division.name} are currently undergoing internal scoping and verification. Check back shortly or discuss custom requirements directly.
+              Individual service listings for this division are not published yet. Tell us what you need and we can review whether a suitable scope can be prepared.
             </p>
             <button
               onClick={() => onOpenReviewModal(`Custom Scope Enquiry: ${division.name}`)}
@@ -324,18 +324,11 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
                     {/* Price Header / Type */}
                     <div className="flex items-center justify-between mb-3 text-[11px]">
                       <span className="text-[#A57C35] font-bold uppercase tracking-wider">
-                        {approvedPackage ? (
-                          approvedPackage.price_type === 'starting-from' && approvedPackage.price
-                            ? `Starting from ₹${approvedPackage.price.toLocaleString('en-IN')}`
-                            : approvedPackage.price_type === 'starting-from'
-                            ? 'Approved Starting Pricing'
-                            : 'Pre-Scoped Package'
-                        ) : (
-                          'Scope-Based Quotation'
-                        )}
-                      </span>
-                      <span className="text-[10px] bg-[#F5F6F7] text-[#505B66] px-2 py-0.5 rounded border border-[#D8DEE5]">
-                        Verified
+                        {approvedPackage?.price && approvedPackage.price_type === 'starting-from'
+                          ? `Starting from ₹${approvedPackage.price.toLocaleString('en-IN')}`
+                          : approvedPackage
+                          ? 'Approved package • Fee on request'
+                          : 'Custom quotation'}
                       </span>
                     </div>
 
@@ -355,7 +348,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
 
                     {/* Description */}
                     <p className="mt-2.5 text-xs text-[#505B66] line-clamp-3 leading-relaxed">
-                      {service.short_description}
+                      {service.full_description || service.short_description}
                     </p>
 
                     {/* Deliverables snippet */}

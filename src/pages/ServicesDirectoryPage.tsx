@@ -20,7 +20,7 @@ import {
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
-import { SEED_SERVICES, getSeedDivisionsWithCounts } from '../data/seedData';
+import { getSeedPublishedServices, getSeedDivisionsWithCounts } from '../data/seedData';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { getDivisionBanner } from '../data/mediaAssets';
@@ -46,7 +46,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
   onOpenQuoteModal
 }) => {
   const [divisions, setDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
-  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>(() => SEED_SERVICES);
+  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>(() => getSeedPublishedServices());
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDivisionSlug, setSelectedDivisionSlug] = useState<string>('all');
@@ -83,11 +83,13 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(s => 
-        s.service_name.toLowerCase().includes(q) ||
-        s.short_description.toLowerCase().includes(q) ||
-        s.problems_solved.some(p => p.toLowerCase().includes(q)) ||
-        s.deliverables.some(d => d.toLowerCase().includes(q))
+      list = list.filter((service) =>
+        service.service_name.toLowerCase().includes(q) ||
+        service.short_description.toLowerCase().includes(q) ||
+        (service.full_description || '').toLowerCase().includes(q) ||
+        service.problems_solved.some((problem) => problem.toLowerCase().includes(q)) ||
+        service.deliverables.some((deliverable) => deliverable.toLowerCase().includes(q)) ||
+        (service.scope_includes || []).some((scopeItem) => scopeItem.toLowerCase().includes(q))
       );
     }
 
@@ -122,11 +124,11 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
             </div>
             
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-[#30363D] tracking-tight leading-tight">
-              Intelligent Systems Architecture for Growing Enterprises
+              Business services with clear scope and deliverables
             </h1>
             
             <p className="mt-4 text-base sm:text-lg text-[#505B66] leading-relaxed">
-              We organize business capabilities across six customer-focused divisions. From high-speed web platforms and security reviews to workflow automation, strategic market research, and statutory documentation, explore solutions built around your business goals.
+              Choose the service area that matches your requirement. Each published service explains the work included, what you receive, what we need from you, exclusions and how pricing is confirmed.
             </p>
 
             {/* Quick Stats Banner */}
@@ -138,12 +140,12 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
               <span className="text-[#D8DEE5]">|</span>
               <div className="flex items-center gap-2">
                 <span className="font-serif font-bold text-lg text-[#A57C35]">{totalPublishedCount}</span>
-                <span className="uppercase tracking-wider font-semibold">Published Delivery Services</span>
+                <span className="uppercase tracking-wider font-semibold">Published Services</span>
               </div>
               <span className="text-[#D8DEE5]">|</span>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#214E78]" />
-                <span>Zero Fake Promises • Scoped Written Quotations</span>
+                <span>Written scope • Defined exclusions</span>
               </div>
             </div>
           </div>
@@ -212,14 +214,14 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
             <div className="flex items-center justify-between mb-8">
               <div>
                 <span className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] block">
-                  Synchronized Commercial Architecture
+                  Browse by service area
                 </span>
                 <h2 className="text-2xl font-bold font-serif text-[#30363D] mt-1">
-                  The Six Core Divisions
+                  Choose a service area
                 </h2>
               </div>
               <p className="hidden sm:block text-xs text-[#505B66] max-w-md text-right">
-                Click any division to explore its dedicated introduction, deliverables, and transparent service packages.
+                Open a division to see its published services and their detailed scope.
               </p>
             </div>
 
@@ -336,15 +338,24 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
           {filteredServices.length === 0 ? (
             <div className="bg-white border border-[#D8DEE5] rounded-lg p-12 text-center max-w-lg mx-auto">
               <HelpCircle className="w-12 h-12 text-[#505B66] mx-auto mb-3 opacity-40" />
-              <h3 className="text-base font-bold text-[#30363D]">No matching services found</h3>
+              <h3 className="text-base font-bold text-[#30363D]">{allServices.length === 0 ? 'Individual service listings are being prepared' : 'No matching services found'}</h3>
               <p className="text-xs text-[#505B66] mt-1">
-                Try searching with different terms like "GST", "Website", "DPR", "Dashboard", or browse our full division catalog.
+                {allServices.length === 0
+                  ? 'The six service areas are available to explore. Individual service pages will appear after their delivery scope and commercial details are approved. You can still discuss a specific requirement with us.'
+                  : 'Try another search term or clear the filters to browse the published catalogue.'}
               </p>
               <button
-                onClick={() => { setSearchQuery(''); setSelectedDivisionSlug('all'); }}
+                onClick={() => {
+                  if (allServices.length === 0) {
+                    onOpenReviewModal('Help me identify the right UNIKORN360 service for my business requirement');
+                  } else {
+                    setSearchQuery('');
+                    setSelectedDivisionSlug('all');
+                  }
+                }}
                 className="mt-4 px-4 py-2 bg-[#214E78] text-white text-xs font-semibold rounded hover:bg-[#173858] transition-colors"
               >
-                View All Services
+                {allServices.length === 0 ? 'Discuss Your Requirement' : 'View All Services'}
               </button>
             </div>
           ) : (
@@ -367,7 +378,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                         </span>
                         {approvedPkg?.price_type === 'starting-from' && (
                           <span className="bg-[#E9EDF0] text-[#214E78] px-2 py-0.5 rounded font-medium">
-                            Approved Starting Pricing
+                            Starting price
                           </span>
                         )}
                       </div>
@@ -388,7 +399,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
                       {/* Short Description */}
                       <p className="mt-2 text-xs text-[#505B66] line-clamp-3 leading-relaxed">
-                        {service.short_description}
+                        {service.full_description || service.short_description}
                       </p>
 
                       {/* Deliverables preview */}

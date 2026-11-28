@@ -12,7 +12,6 @@ import {
   HelpCircle, 
   ChevronDown, 
   MessageSquare,
-  Sparkles,
   Phone
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
@@ -239,6 +238,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
   }
 
   const { service, division, relatedServices } = data;
+  const approvedPackages = (service.packages || []).filter((pkg) => pkg.approval_status === 'approved');
   const serviceCanonicalUrl = `https://www.unikorn360.com/services/${division.slug}/${service.slug}`;
 
   // Generate Schema.org JSON-LD structured data for Service, BreadcrumbList, and FAQPage
@@ -326,9 +326,6 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                 <span className="px-2.5 py-1 bg-[#214E78]/10 text-[#214E78] text-[10px] font-bold uppercase tracking-wider rounded">
                   Division: {division.name}
                 </span>
-                <span className="px-2.5 py-1 bg-[#F5F6F7] border border-[#D8DEE5] text-[#505B66] text-[10px] font-semibold uppercase tracking-wider rounded">
-                  Status: Published &amp; Verified
-                </span>
               </div>
 
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-[#30363D] tracking-tight leading-tight">
@@ -339,60 +336,22 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                 {service.full_description || service.short_description}
               </p>
 
-              {/* Problems Solved Section */}
-              {service.problems_solved && service.problems_solved.length > 0 && (
-                <div className="mt-8 p-5 bg-[#F5F6F7] border border-[#D8DEE5] rounded-xl">
-                  <p className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>Business Friction We Eliminate</span>
+              {service.target_customers && service.target_customers.length > 0 && (
+                <div className="mt-8 max-w-xl p-4 bg-white border border-[#D8DEE5] rounded-lg">
+                  <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Suitable for</span>
                   </p>
-                  <ul className="space-y-2">
-                    {service.problems_solved.map((prob, i) => (
-                      <li key={i} className="text-xs text-[#30363D] flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#A57C35] mt-1.5 shrink-0"></span>
-                        <span className="leading-relaxed">{prob}</span>
+                  <ul className="space-y-1 text-xs text-[#505B66]">
+                    {service.target_customers.map((customer, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5">
+                        <span className="text-[#214E78]">•</span>
+                        <span>{customer}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Target Customers & Core Benefits */}
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {service.target_customers && service.target_customers.length > 0 && (
-                  <div className="p-4 bg-white border border-[#D8DEE5] rounded-lg">
-                    <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Target Enterprises</span>
-                    </p>
-                    <ul className="space-y-1 text-xs text-[#505B66]">
-                      {service.target_customers.map((c, idx) => (
-                        <li key={idx} className="flex items-center gap-1.5">
-                          <span className="text-[#214E78]">•</span>
-                          <span>{c}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {service.benefits && service.benefits.length > 0 && (
-                  <div className="p-4 bg-white border border-[#D8DEE5] rounded-lg">
-                    <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Key Strategic Benefits</span>
-                    </p>
-                    <ul className="space-y-1 text-xs text-[#505B66]">
-                      {service.benefits.map((b, idx) => (
-                        <li key={idx} className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#214E78] shrink-0" />
-                          <span>{b}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Right 4 Cols: Quick Enquiry Box */}
@@ -404,7 +363,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                 Enquire for {service.service_name}
               </h3>
               <p className="text-xs text-[#505B66] mt-1.5 leading-relaxed">
-                Discuss exact requirements, timelines, and receive a pre-scoped written quotation.
+                Tell us about your requirements. We will confirm the proposed work, deliverables, dependencies and fee in writing before work starts.
               </p>
 
               {/* Quick Input Fields */}
@@ -483,6 +442,51 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
         </div>
       </section>
 
+
+
+      {/* Included work */}
+      {service.scope_includes && service.scope_includes.length > 0 && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="bg-white border border-[#D8DEE5] rounded-xl p-8 sm:p-10 shadow-sm">
+            <span className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] block mb-1">
+              Included Work
+            </span>
+            <h2 className="text-2xl font-bold font-serif text-[#30363D]">
+              What We Will Do
+            </h2>
+            <p className="text-xs text-[#505B66] mt-1 mb-6">
+              These are the standard work areas for this service. The final scope is limited to the items listed in your approved proposal.
+            </p>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {service.scope_includes.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-2.5 rounded-lg bg-[#F5F6F7] border border-[#D8DEE5] p-4 text-xs text-[#505B66] leading-relaxed">
+                  <CheckCircle2 className="w-4 h-4 text-[#214E78] shrink-0 mt-0.5" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {/* Indicative delivery window */}
+      {service.estimated_timeline && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="bg-[#F5F6F7] border border-[#D8DEE5] rounded-xl p-6 flex flex-col sm:flex-row sm:items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-white border border-[#D8DEE5] flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-[#214E78]" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[#30363D]">Indicative Delivery Timeline</h2>
+              <p className="mt-1 text-xs text-[#505B66] leading-relaxed">{service.estimated_timeline}</p>
+              <p className="mt-2 text-[11px] text-[#505B66]">
+                This is a planning estimate, not a service-level commitment. The confirmed schedule depends on the agreed scope, client inputs, access, review time and third-party or authority processing.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Concrete Deliverables Section */}
       {service.deliverables && service.deliverables.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -494,7 +498,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
               What You Receive (Deliverables)
             </h2>
             <p className="text-xs text-[#505B66] mt-1 mb-6">
-              Every deliverable is handed over in pristine, industry-standard digital formats with full enterprise ownership.
+              The exact files, formats, access and handover arrangements will be confirmed in the approved written scope.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -506,7 +510,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                   <div>
                     <h3 className="text-xs font-bold text-[#30363D]">{del}</h3>
                     <p className="text-[11px] text-[#505B66] mt-0.5">
-                      Verified by Unikorn360 Technical Desk before final client sign-off.
+                      Included in the agreed service scope and confirmed at handover.
                     </p>
                   </div>
                 </div>
@@ -523,16 +527,16 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
             Commercial Structure
           </span>
           <h2 className="text-2xl font-bold font-serif text-[#30363D] mt-1">
-            Packages &amp; Scope Options
+            Pricing and quotation
           </h2>
           <p className="text-xs text-[#505B66] mt-1">
             Only approved prices are displayed publicly. Custom requirements are priced via transparent, itemized quotations.
           </p>
         </div>
 
-        {service.packages && service.packages.length > 0 ? (
+        {approvedPackages.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {service.packages.map((pkg) => {
+            {approvedPackages.map((pkg) => {
               const isApproved = pkg.approval_status === 'approved';
               const isSelected = selectedPackage?.id === pkg.id;
 
@@ -657,7 +661,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
           <div className="bg-white border border-[#D8DEE5] rounded-xl p-8 max-w-xl text-center">
             <h3 className="text-base font-bold text-[#30363D]">Quotation-Based Service</h3>
             <p className="text-xs text-[#505B66] mt-1.5 leading-relaxed">
-              Due to variable plant capacities and scope requirements, pricing is tailored via an itemized written quotation following discovery.
+              No public price or package is currently approved for this service. We will confirm the work, deliverables, third-party costs and fee in an itemised quotation after reviewing your requirement.
             </p>
             <button
               onClick={() => onOpenQuoteModal(service.service_name)}
@@ -680,7 +684,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
               How We Deliver (Execution Steps)
             </h2>
             <p className="text-xs text-[#505B66] mt-1 mb-8">
-              Predictable, transparent 4-stage protocol ensuring zero delays and complete procedural accountability.
+              The steps below describe the usual delivery checkpoints. The final sequence and review points are agreed for each project.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -698,7 +702,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
         </section>
       )}
 
-      {/* Client Responsibilities & Exclusions */}
+      {/* What We Need From You & Exclusions */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {service.client_responsibilities && service.client_responsibilities.length > 0 && (
@@ -722,7 +726,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
             <div className="bg-white border border-[#D8DEE5] rounded-xl p-6">
               <p className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>Exclusions (Honest Boundary)</span>
+                <span>Not Included Unless Agreed Separately</span>
               </p>
               <ul className="space-y-2 text-xs text-[#505B66]">
                 {service.exclusions.map((e, i) => (

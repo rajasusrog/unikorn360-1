@@ -6,6 +6,7 @@ import {
   RecordStatus
 } from '../types/database';
 import { LEGACY_URL_REDIRECTS } from '../data/seedData';
+import { applyServicePageContent } from '../data/servicePageContent';
 import { UNIKORN_FOUR_PRODUCTS } from '../data/productsData';
 import { generateSitemapXml, getSitemapEntries, SitemapUrlEntry } from './sitemap';
 
@@ -247,6 +248,7 @@ export class ResilientServicesService {
 
     const publishedServices = rawSvcs
       .filter((s) => s.status === 'published' && publishedDivIds.has(s.division_id))
+      .map(applyServicePageContent)
       .sort((a, b) => a.display_order - b.display_order);
 
     const publishedServiceIds = new Set(publishedServices.map((s) => s.id));
@@ -678,6 +680,7 @@ export class ResilientServicesService {
 
     const filteredServices = ((services || []) as ServiceCatalogItem[])
       .filter((s) => includeDrafts || s.status === 'published')
+      .map(applyServicePageContent)
       .sort((a, b) => a.display_order - b.display_order);
 
     const publishedCount = filteredServices.filter((s) => s.status === 'published').length;
@@ -820,9 +823,9 @@ export class ResilientServicesService {
     }
 
     return {
-      service: service as ServiceCatalogItem,
+      service: applyServicePageContent(service as ServiceCatalogItem),
       division,
-      relatedServices
+      relatedServices: relatedServices.map(applyServicePageContent)
     };
   }
 
@@ -858,6 +861,7 @@ export class ResilientServicesService {
 
     return ((svcRes.data || []) as ServiceCatalogItem[])
       .filter((s) => s.status === 'published' && publishedDivisionIds.has(s.division_id))
+      .map(applyServicePageContent)
       .sort((a, b) => a.display_order - b.display_order);
   }
 
@@ -916,7 +920,7 @@ export class ResilientServicesService {
     const enrichedServices = rawServices.map((s) => {
       const parent = divisionMap.get(s.division_id);
       return {
-        ...s,
+        ...applyServicePageContent(s),
         division_name: parent?.name || 'Unknown Division',
         division_slug: parent?.slug || 'unknown'
       };

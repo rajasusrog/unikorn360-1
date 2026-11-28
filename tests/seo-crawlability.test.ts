@@ -8,7 +8,8 @@ import { app } from '../server.js';
 import { onRequest as cloudflareMiddleware, PagesAssetsBinding } from '../functions/_middleware.js';
 import { UNIKORN_FOUR_PRODUCTS } from '../src/data/productsData.js';
 import { RESOURCE_GUIDES } from '../src/data/resourcesData.js';
-import { SEED_DIVISIONS, SEED_SERVICES } from '../src/data/seedData.js';
+import { SEED_DIVISIONS, SEED_SERVICES, getSeedPublishedServices, getSeedServiceByDivisionAndSlug } from '../src/data/seedData.js';
+import { SERVICE_PAGE_CONTENT, applyServicePageContent } from '../src/data/servicePageContent.js';
 import { SOLUTIONS_DATA } from '../src/data/solutionsData.js';
 import {
   CANONICAL_ORIGIN,
@@ -107,6 +108,43 @@ async function runSuite() {
 
   try {
     const checks = [
+      record('0. Canonical service editorial content covers every primary service and preserves publication gates', () => {
+        assert.strictEqual(SEED_SERVICES.length, 37, 'Expected 37 canonical primary service records');
+        assert.strictEqual(Object.keys(SERVICE_PAGE_CONTENT).length, 37, 'Expected one editorial content record per canonical service');
+
+        for (const service of SEED_SERVICES) {
+          const content = SERVICE_PAGE_CONTENT[service.slug];
+          assert.ok(content, `Missing editorial content for ${service.slug}`);
+          assert.ok(content.description.trim().length > 30, `Description is too short for ${service.slug}`);
+          assert.ok(content.scope.length >= 3, `Scope must be explicit for ${service.slug}`);
+          assert.ok(content.timeline.startsWith('Indicative planning estimate:'), `Timeline must be labelled as an estimate for ${service.slug}`);
+
+          const enriched = applyServicePageContent(service);
+          assert.deepStrictEqual(enriched.scope_includes, content.scope);
+          assert.strictEqual(enriched.estimated_timeline, content.timeline);
+        }
+
+        const expectedPublicServices = SEED_SERVICES.filter((service) =>
+          service.status === 'published' &&
+          SEED_DIVISIONS.some((division) => division.id === service.division_id && division.status === 'published')
+        );
+        assert.deepStrictEqual(
+          getSeedPublishedServices().map((service) => service.id),
+          expectedPublicServices.map((service) => service.id)
+        );
+
+        for (const service of SEED_SERVICES.filter((item) => item.status !== 'published')) {
+          const division = SEED_DIVISIONS.find((item) => item.id === service.division_id);
+          if (division) {
+            assert.strictEqual(
+              getSeedServiceByDivisionAndSlug(division.slug, service.slug),
+              null,
+              `Unpublished service must not resolve publicly: ${service.slug}`
+            );
+          }
+        }
+      }),
+
       record('1. /robots.txt serves canonical www sitemap and disallows utility routes', async () => {
         const res = await rawHttpRequest(baseUrl, '/robots.txt');
         assert.strictEqual(res.status, 200);
@@ -127,7 +165,7 @@ async function runSuite() {
         assert.ok(res.body.includes('https://invoicepro360.unikorn360.com/'));
       }),
 
-      record('3. /sitemap.xml includes all 66 canonical indexable URLs and zero legacy/admin URLs', async () => {
+      record('3. /sitemap.xml includes only canonical indexable URLs and excludes draft services', async () => {
         const res = await rawHttpRequest(baseUrl, '/sitemap.xml');
         assert.strictEqual(res.status, 200);
         assert.ok(String(res.headers['content-type']).includes('application/xml'));
@@ -145,8 +183,8 @@ async function runSuite() {
           Object.keys(RESOURCE_GUIDES).length +
           1 +
           1 +
-          SEED_DIVISIONS.length +
-          SEED_SERVICES.length;
+          SEED_DIVISIONS.filter((division) => division.status === 'published').length +
+          SEED_SERVICES.filter((service) => service.status === 'published').length;
         assert.strictEqual(locs.length, expectedCount, `Expected ${expectedCount} sitemap URLs, got ${locs.length}`);
 
         for (const loc of locs) {
@@ -155,6 +193,13 @@ async function runSuite() {
         assert.ok(!locs.some((l) => l.includes('/creator-network')));
         assert.ok(!locs.some((l) => l.includes('/admin')));
         assert.ok(!locs.some((l) => l.includes('/creators/apply')));
+        const publishedDivisionsById = new Map(SEED_DIVISIONS.filter((division) => division.status === 'published').map((division) => [division.id, division]));
+        for (const draftService of SEED_SERVICES.filter((service) => service.status !== 'published')) {
+          const parent = publishedDivisionsById.get(draftService.division_id);
+          if (parent) {
+            assert.ok(!locs.includes(`${CANONICAL_ORIGIN}/services/${parent.slug}/${draftService.slug}`), `Draft service must not be listed: ${draftService.slug}`);
+          }
+        }
         assert.ok(!res.body.includes('<lastmod>'), 'Sitemap must not contain fabricated static lastmod timestamps');
       }),
 
@@ -275,6 +320,7 @@ async function runSuite() {
           '/does-not-exist',
           '/services/unknown-division',
           '/services/websites-software/unknown-service',
+          '/services/websites-software/website-development',
           '/products/unknown-product',
           '/solutions/unknown-solution',
           '/resources/unknown-guide'
@@ -371,7 +417,7 @@ async function runSuite() {
         assert.strictEqual(slashRes.headers.get('location'), 'https://www.unikorn360.com/services');
 
         // Canonical routes return 200 directly (no 308 bounce!)
-        for (const p of ['/', '/services', '/services/websites-software', '/services/websites-software/website-development']) {
+        for (const p of ['/', '/services', '/services/websites-software']) {
           const res = await runEdge(`https://www.unikorn360.com${p}`);
           assert.strictEqual(res.status, 200, `Expected direct 200 for ${p}, got ${res.status}`);
           const body = await res.text();

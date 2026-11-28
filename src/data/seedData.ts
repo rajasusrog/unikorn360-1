@@ -1,4 +1,5 @@
 import { ServiceDivision, ServiceCatalogItem, ProductItem } from '../types/database';
+import { applyServicePageContent } from './servicePageContent';
 
 // ====================================================================
 // 1. THE SIX CANONICAL DIVISIONS (Ordered 1 to 6)
@@ -93,7 +94,7 @@ export const SEED_DIVISIONS: ServiceDivision[] = [
 // ====================================================================
 // 2. THE 37 PRIMARY CANONICAL SERVICES
 // ====================================================================
-export const SEED_SERVICES: ServiceCatalogItem[] = [
+const RAW_SEED_SERVICES: ServiceCatalogItem[] = [
   // ------------------------------------------------------------------
   // 01. WEBSITES & SOFTWARE (6 Services)
   // ------------------------------------------------------------------
@@ -2123,6 +2124,13 @@ export const SEED_SERVICES: ServiceCatalogItem[] = [
   }
 ];
 
+/**
+ * Runtime service catalogue: editorial content is joined by canonical slug so
+ * the app reads one fully-shaped ServiceCatalogItem per service.
+ */
+export const SEED_SERVICES: ServiceCatalogItem[] = RAW_SEED_SERVICES.map(applyServicePageContent);
+
+
 // ====================================================================
 // 3. SECONDARY OFFERINGS OUTSIDE THE MAIN 37 SERVICES
 // ====================================================================
@@ -2458,17 +2466,28 @@ export const LEGACY_URL_REDIRECTS: Record<string, string> = {
 // ====================================================================
 // 5. LOCAL SEED FALLBACK HELPERS (Used only when Supabase is unconfigured)
 // ====================================================================
+export function getSeedPublishedServices(): ServiceCatalogItem[] {
+  const publishedDivisionIds = new Set(
+    SEED_DIVISIONS.filter((division) => division.status === 'published').map((division) => division.id)
+  );
+
+  return SEED_SERVICES
+    .filter((service) => service.status === 'published' && publishedDivisionIds.has(service.division_id))
+    .sort((a, b) => a.display_order - b.display_order);
+}
+
 export function getSeedDivisionsWithCounts(): ServiceDivision[] {
   const counts = new Map<string, number>();
-  for (const svc of SEED_SERVICES) {
-    counts.set(svc.division_id, (counts.get(svc.division_id) || 0) + 1);
+  for (const service of getSeedPublishedServices()) {
+    counts.set(service.division_id, (counts.get(service.division_id) || 0) + 1);
   }
+
   return SEED_DIVISIONS
-    .filter((d) => d.status === 'published')
+    .filter((division) => division.status === 'published')
     .sort((a, b) => a.display_order - b.display_order)
-    .map((d) => ({
-      ...d,
-      published_service_count: counts.get(d.id) || 0
+    .map((division) => ({
+      ...division,
+      published_service_count: counts.get(division.id) || 0
     }));
 }
 
@@ -2477,13 +2496,12 @@ export function getSeedDivisionBySlug(
 ): { division: ServiceDivision; services: ServiceCatalogItem[] } | null {
   const normalizedSlug = slug.toLowerCase().trim();
   const division = SEED_DIVISIONS.find(
-    (d) => d.slug === normalizedSlug && d.status === 'published'
+    (item) => item.slug === normalizedSlug && item.status === 'published'
   );
   if (!division) return null;
 
-  const services = SEED_SERVICES
-    .filter((s) => s.division_id === division.id)
-    .sort((a, b) => a.display_order - b.display_order);
+  const services = getSeedPublishedServices()
+    .filter((service) => service.division_id === division.id);
 
   return {
     division: {
@@ -2502,21 +2520,20 @@ export function getSeedServiceByDivisionAndSlug(
   division: ServiceDivision;
   relatedServices: ServiceCatalogItem[];
 } | null {
-  const divResult = getSeedDivisionBySlug(divisionSlug);
-  if (!divResult) return null;
+  const divisionResult = getSeedDivisionBySlug(divisionSlug);
+  if (!divisionResult) return null;
 
   const normalizedServiceSlug = serviceSlug.toLowerCase().trim();
-  const service = divResult.services.find((s) => s.slug === normalizedServiceSlug);
+  const service = divisionResult.services.find((item) => item.slug === normalizedServiceSlug);
   if (!service) return null;
 
-  const relatedServices = divResult.services
-    .filter((s) => s.id !== service.id)
+  const relatedServices = divisionResult.services
+    .filter((item) => item.id !== service.id)
     .slice(0, 3);
 
   return {
     service,
-    division: divResult.division,
+    division: divisionResult.division,
     relatedServices
   };
 }
-
