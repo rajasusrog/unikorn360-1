@@ -8,7 +8,8 @@ import { app } from '../server.js';
 import { onRequest as cloudflareMiddleware, PagesAssetsBinding } from '../functions/_middleware.js';
 import { UNIKORN_FOUR_PRODUCTS } from '../src/data/productsData.js';
 import { RESOURCE_GUIDES } from '../src/data/resourcesData.js';
-import { SEED_DIVISIONS, SEED_SERVICES } from '../src/data/seedData.js';
+import { SEED_DIVISIONS, SEED_SERVICES, getSeedPublishedServices, getSeedServiceByDivisionAndSlug } from '../src/data/seedData.js';
+import { SERVICE_PAGE_CONTENT, applyServicePageContent } from '../src/data/servicePageContent.js';
 import { SOLUTIONS_DATA } from '../src/data/solutionsData.js';
 import {
   CANONICAL_ORIGIN,
@@ -107,6 +108,43 @@ async function runSuite() {
 
   try {
     const checks = [
+      record('0. Canonical service editorial content covers every primary service and preserves publication gates', () => {
+        assert.strictEqual(SEED_SERVICES.length, 37, 'Expected 37 canonical primary service records');
+        assert.strictEqual(Object.keys(SERVICE_PAGE_CONTENT).length, 37, 'Expected one editorial content record per canonical service');
+
+        for (const service of SEED_SERVICES) {
+          const content = SERVICE_PAGE_CONTENT[service.slug];
+          assert.ok(content, `Missing editorial content for ${service.slug}`);
+          assert.ok(content.description.trim().length > 30, `Description is too short for ${service.slug}`);
+          assert.ok(content.scope.length >= 3, `Scope must be explicit for ${service.slug}`);
+          assert.ok(content.timeline.startsWith('Indicative planning estimate:'), `Timeline must be labelled as an estimate for ${service.slug}`);
+
+          const enriched = applyServicePageContent(service);
+          assert.deepStrictEqual(enriched.scope_includes, content.scope);
+          assert.strictEqual(enriched.estimated_timeline, content.timeline);
+        }
+
+        const expectedPublicServices = SEED_SERVICES.filter((service) =>
+          service.status === 'published' &&
+          SEED_DIVISIONS.some((division) => division.id === service.division_id && division.status === 'published')
+        );
+        assert.deepStrictEqual(
+          getSeedPublishedServices().map((service) => service.id),
+          expectedPublicServices.map((service) => service.id)
+        );
+
+        for (const service of SEED_SERVICES.filter((item) => item.status !== 'published')) {
+          const division = SEED_DIVISIONS.find((item) => item.id === service.division_id);
+          if (division) {
+            assert.strictEqual(
+              getSeedServiceByDivisionAndSlug(division.slug, service.slug),
+              null,
+              `Unpublished service must not resolve publicly: ${service.slug}`
+            );
+          }
+        }
+      }),
+
       record('1. /robots.txt serves canonical www sitemap and disallows utility routes', async () => {
         const res = await rawHttpRequest(baseUrl, '/robots.txt');
         assert.strictEqual(res.status, 200);
