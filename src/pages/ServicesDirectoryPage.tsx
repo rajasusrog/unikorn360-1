@@ -83,11 +83,13 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(s => 
-        s.service_name.toLowerCase().includes(q) ||
-        s.short_description.toLowerCase().includes(q) ||
-        s.problems_solved.some(p => p.toLowerCase().includes(q)) ||
-        s.deliverables.some(d => d.toLowerCase().includes(q))
+      list = list.filter((service) =>
+        service.service_name.toLowerCase().includes(q) ||
+        service.short_description.toLowerCase().includes(q) ||
+        (service.full_description || '').toLowerCase().includes(q) ||
+        service.problems_solved.some((problem) => problem.toLowerCase().includes(q)) ||
+        service.deliverables.some((deliverable) => deliverable.toLowerCase().includes(q)) ||
+        (service.scope_includes || []).some((scopeItem) => scopeItem.toLowerCase().includes(q))
       );
     }
 
