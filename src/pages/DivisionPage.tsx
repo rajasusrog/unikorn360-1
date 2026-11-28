@@ -355,7 +355,7 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
 
                     {/* Description */}
                     <p className="mt-2.5 text-xs text-[#505B66] line-clamp-3 leading-relaxed">
-                      {service.short_description}
+                      {service.full_description || service.short_description}
                     </p>
 
                     {/* Deliverables snippet */}
