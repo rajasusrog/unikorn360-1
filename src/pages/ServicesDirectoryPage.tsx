@@ -145,7 +145,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
               <span className="text-[#D8DEE5]">|</span>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#214E78]" />
-                <span>Zero Fake Promises • Scoped Written Quotations</span>
+                <span>Written scope • Defined exclusions</span>
               </div>
             </div>
           </div>
