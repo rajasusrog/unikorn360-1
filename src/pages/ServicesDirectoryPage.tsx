@@ -399,7 +399,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
 
                       {/* Short Description */}
                       <p className="mt-2 text-xs text-[#505B66] line-clamp-3 leading-relaxed">
-                        {service.short_description}
+                        {service.full_description || service.short_description}
                       </p>
 
                       {/* Deliverables preview */}
