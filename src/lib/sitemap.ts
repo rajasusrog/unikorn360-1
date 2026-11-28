@@ -40,9 +40,9 @@ function toIsoDateOnly(isoOrDate?: string, fallback?: string): string | undefine
  * covering only canonical HTTP 200 indexable routes (no admin, login,
  * form/success routes, legacy redirect URLs, 404s, or external subdomains).
  *
- * When `options.services` is omitted (seed fallback mode), includes all seed services
- * belonging to published divisions; when `options.services` is explicitly supplied
- * from Supabase, includes only `status === 'published'` services.
+ * When `options.services` is omitted (seed fallback mode), includes only seed services
+ * explicitly marked `published` and belonging to published divisions. Supabase reads
+ * are filtered to the same public publication rule.
  */
 export function getSitemapEntries(options: GenerateSitemapOptions = {}): SitemapUrlEntry[] {
   const baseUrl = (options.baseUrl || 'https://www.unikorn360.com').replace(/\/+$/, '');
@@ -57,7 +57,7 @@ export function getSitemapEntries(options: GenerateSitemapOptions = {}): Sitemap
   const services = (
     hasLiveServices
       ? options.services!.filter((s) => s.status === 'published')
-      : SEED_SERVICES
+      : SEED_SERVICES.filter((service) => service.status === 'published')
   )
     .filter((s) => divisionById.has(s.division_id))
     .sort((a, b) => a.display_order - b.display_order);
