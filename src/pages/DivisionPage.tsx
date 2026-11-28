@@ -324,18 +324,11 @@ export const DivisionPage: React.FC<DivisionPageProps> = ({
                     {/* Price Header / Type */}
                     <div className="flex items-center justify-between mb-3 text-[11px]">
                       <span className="text-[#A57C35] font-bold uppercase tracking-wider">
-                        {approvedPackage ? (
-                          approvedPackage.price_type === 'starting-from' && approvedPackage.price
-                            ? `Starting from ₹${approvedPackage.price.toLocaleString('en-IN')}`
-                            : approvedPackage.price_type === 'starting-from'
-                            ? 'Approved Starting Pricing'
-                            : 'Pre-Scoped Package'
-                        ) : (
-                          'Scope-Based Quotation'
-                        )}
-                      </span>
-                      <span className="text-[10px] bg-[#F5F6F7] text-[#505B66] px-2 py-0.5 rounded border border-[#D8DEE5]">
-                        Verified
+                        {approvedPackage?.price && approvedPackage.price_type === 'starting-from'
+                          ? `Starting from ₹${approvedPackage.price.toLocaleString('en-IN')}`
+                          : approvedPackage
+                          ? 'Approved package • Fee on request'
+                          : 'Custom quotation'}
                       </span>
                     </div>
 
