@@ -232,7 +232,7 @@ export default function App({ initialPath, initialSearch }: AppProps = {}) {
           <ServiceFinderWizard
             onOpenReviewModal={handleOpenReviewModal}
             onOpenQuoteModal={handleOpenQuoteModal}
-            onSelectService={handleOpenDetailModal}
+            onNavigate={navigate}
           />
 
           {/* Six service categories */}
