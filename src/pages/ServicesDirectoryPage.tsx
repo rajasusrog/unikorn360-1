@@ -20,7 +20,7 @@ import {
 import { SEOHead } from '../components/SEOHead';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
-import { SEED_SERVICES, getSeedDivisionsWithCounts } from '../data/seedData';
+import { getSeedPublishedServices, getSeedDivisionsWithCounts } from '../data/seedData';
 import { ServiceDivision, ServiceCatalogItem } from '../types/database';
 import { BUSINESS_INFO } from '../data/servicesData';
 import { getDivisionBanner } from '../data/mediaAssets';
@@ -46,7 +46,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
   onOpenQuoteModal
 }) => {
   const [divisions, setDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
-  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>(() => SEED_SERVICES);
+  const [allServices, setAllServices] = useState<ServiceCatalogItem[]>(() => getSeedPublishedServices());
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDivisionSlug, setSelectedDivisionSlug] = useState<string>('all');
@@ -122,11 +122,11 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
             </div>
             
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold font-serif text-[#30363D] tracking-tight leading-tight">
-              Intelligent Systems Architecture for Growing Enterprises
+              Business services with clear scope and deliverables
             </h1>
             
             <p className="mt-4 text-base sm:text-lg text-[#505B66] leading-relaxed">
-              We organize business capabilities across six customer-focused divisions. From high-speed web platforms and security reviews to workflow automation, strategic market research, and statutory documentation, explore solutions built around your business goals.
+              Choose the service area that matches your requirement. Each published service explains the work included, what you receive, what we need from you, exclusions and how pricing is confirmed.
             </p>
 
             {/* Quick Stats Banner */}
@@ -138,7 +138,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
               <span className="text-[#D8DEE5]">|</span>
               <div className="flex items-center gap-2">
                 <span className="font-serif font-bold text-lg text-[#A57C35]">{totalPublishedCount}</span>
-                <span className="uppercase tracking-wider font-semibold">Published Delivery Services</span>
+                <span className="uppercase tracking-wider font-semibold">Published Services</span>
               </div>
               <span className="text-[#D8DEE5]">|</span>
               <div className="flex items-center gap-2">
@@ -212,14 +212,14 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
             <div className="flex items-center justify-between mb-8">
               <div>
                 <span className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] block">
-                  Synchronized Commercial Architecture
+                  Browse by service area
                 </span>
                 <h2 className="text-2xl font-bold font-serif text-[#30363D] mt-1">
-                  The Six Core Divisions
+                  Choose a service area
                 </h2>
               </div>
               <p className="hidden sm:block text-xs text-[#505B66] max-w-md text-right">
-                Click any division to explore its dedicated introduction, deliverables, and transparent service packages.
+                Open a division to see its published services and their detailed scope.
               </p>
             </div>
 
@@ -367,7 +367,7 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                         </span>
                         {approvedPkg?.price_type === 'starting-from' && (
                           <span className="bg-[#E9EDF0] text-[#214E78] px-2 py-0.5 rounded font-medium">
-                            Approved Starting Pricing
+                            Starting price
                           </span>
                         )}
                       </div>
