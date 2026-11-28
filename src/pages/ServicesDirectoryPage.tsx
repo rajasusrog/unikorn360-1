@@ -343,10 +343,17 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
                   : 'Try another search term or clear the filters to browse the published catalogue.'}
               </p>
               <button
-                onClick={() => allServices.length === 0 ? onOpenReviewModal('Help me identify the right UNIKORN360 service for my business requirement') : (setSearchQuery(''), setSelectedDivisionSlug('all'))}
+                onClick={() => {
+                  if (allServices.length === 0) {
+                    onOpenReviewModal('Help me identify the right UNIKORN360 service for my business requirement');
+                  } else {
+                    setSearchQuery('');
+                    setSelectedDivisionSlug('all');
+                  }
+                }}
                 className="mt-4 px-4 py-2 bg-[#214E78] text-white text-xs font-semibold rounded hover:bg-[#173858] transition-colors"
               >
-                View All Services
+                {allServices.length === 0 ? 'Discuss Your Requirement' : 'View All Services'}
               </button>
             </div>
           ) : (
