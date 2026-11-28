@@ -1,8 +1,8 @@
-import type { ServicePageEditorialContent } from '../types/database';
+import type { ServiceCatalogItem, ServicePageEditorialContent } from '../types/database';
 
 /**
  * Customer-facing scope and planning guidance for the canonical seed service catalogue.
- * This content is joined to each ServiceCatalogItem by canonical slug in seedData.ts.
+ * This content is joined to each ServiceCatalogItem by canonical slug, including database records.
  * Timelines are estimates only; signed proposals remain the source of contractual dates.
  */
 export const SERVICE_PAGE_CONTENT: Record<string, ServicePageEditorialContent> = 
