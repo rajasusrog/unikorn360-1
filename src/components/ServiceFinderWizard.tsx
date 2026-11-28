@@ -15,13 +15,13 @@ import {
   Clock,
   MessageSquare
 } from 'lucide-react';
-import { SERVICES_LIST } from '../data/servicesData';
-import { ServiceItem } from '../types';
+import { getSeedDivisionsWithCounts, getSeedPublishedServices } from '../data/seedData';
+import { ServiceCatalogItem } from '../types/database';
 
 interface ServiceFinderWizardProps {
   onOpenReviewModal: (prefill?: string) => void;
-  onOpenQuoteModal: (service: ServiceItem) => void;
-  onSelectService: (service: ServiceItem) => void;
+  onOpenQuoteModal: (serviceTitle: string) => void;
+  onNavigate: (path: string) => void;
 }
 
 const PRIMARY_AREAS = [
@@ -56,7 +56,7 @@ const BOTTLENECKS = [
 export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
   onOpenReviewModal,
   onOpenQuoteModal,
-  onSelectService
+  onNavigate
 }) => {
   const [step, setStep] = useState<number>(1);
   const [selectedArea, setSelectedArea] = useState<string>('');
@@ -88,63 +88,66 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
   // Compute recommendation
   const getRecommendation = () => {
     let pathway: 'verify' | 'protect' | 'guardian' = 'verify';
-    let pathwayTitle = 'VERIFY DIAGNOSTIC & SCOPING PATHWAY';
+    let pathwayTitle = 'Business Requirement Review';
     let summaryRationale = '';
-    let matchedServiceIds: string[] = [];
+    let matchedServiceSlugs: string[] = [];
+    let recommendedDivisionSlug = 'research-business-strategy';
 
     if (selectedArea === 'websites' || selectedBottleneck === 'no-online-credibility') {
-      pathway = 'verify';
-      pathwayTitle = 'DIGITAL PRESENCE & B2B WEB ARCHITECTURE';
-      summaryRationale = 'Your immediate priority is establishing a high-performance web presence that demonstrates technical capability and captures buyer inquiries directly.';
-      matchedServiceIds = selectedBusinessType === 'cctv-services' 
-        ? ['cctv-services-website', 'quotation-estimation-tools', 'modern-website']
-        : ['modern-website', 'corporate-identity', 'crm-order-tracking'];
+      pathwayTitle = 'Website Development';
+      recommendedDivisionSlug = 'websites-software';
+      summaryRationale = 'You need a clear business website that explains your offer, shows relevant products or services and captures customer enquiries.';
+      matchedServiceSlugs = ['website-development', 'api-system-integration'];
     } else if (selectedArea === 'ecommerce') {
-      pathway = 'guardian';
-      pathwayTitle = 'COMMERCE & DIGITAL ORDERING ARCHITECTURE';
-      summaryRationale = 'You are looking to digitise product sales. We recommend scoping a custom B2B e-commerce platform with dealer pricing, catalog filters, and automated order confirmation.';
-      matchedServiceIds = ['ecommerce-stores', 'inventory-billing-systems', 'whatsapp-order-notifications'];
+      pathwayTitle = 'E-commerce and Online Ordering';
+      recommendedDivisionSlug = 'websites-software';
+      summaryRationale = 'You need customers or dealers to browse a catalogue, submit orders and use the agreed payment or enquiry process.';
+      matchedServiceSlugs = ['ecommerce-development', 'api-system-integration'];
     } else if (selectedArea === 'custom-apps' || selectedBottleneck === 'manual-calc') {
-      pathway = 'verify';
-      pathwayTitle = 'CUSTOM OPERATIONAL SOFTWARE PATHWAY';
-      summaryRationale = 'Eliminate manual spreadsheet errors with a custom web application designed around your exact cost calculations, quotation templates, and order tracking.';
-      matchedServiceIds = ['quotation-estimation-tools', 'crm-order-tracking', 'inventory-billing-systems'];
+      pathwayTitle = 'Custom Business Software';
+      recommendedDivisionSlug = 'websites-software';
+      summaryRationale = 'You need a browser-based tool to manage a business process such as quotations, job tracking, stock or customer access.';
+      matchedServiceSlugs = ['custom-web-applications', 'mobile-app-development'];
     } else if (selectedArea === 'dashboards' || selectedBottleneck === 'lack-visibility') {
-      pathway = 'guardian';
-      pathwayTitle = 'BUSINESS INTELLIGENCE & EXECUTIVE COCKPIT';
-      summaryRationale = 'Consolidate multiple spreadsheets and accounting records into a single executive dashboard for real-time visibility into sales, aged debtors, and stock.';
-      matchedServiceIds = ['custom-dashboards', 'inventory-sales-analytics', 'bookkeeping-mis'];
+      pathwayTitle = 'Business Dashboards and Reporting';
+      recommendedDivisionSlug = 'research-business-strategy';
+      summaryRationale = 'You need agreed business numbers—such as sales, stock, receivables or margins—organised into a reporting view for management.';
+      matchedServiceSlugs = ['business-dashboards-reporting-systems', 'business-performance-analysis'];
     } else if (selectedArea === 'automation' || selectedBottleneck === 'double-entry' || selectedBottleneck === 'inquiry-leak') {
-      pathway = 'protect';
-      pathwayTitle = 'AI & WORKFLOW AUTOMATION PATHWAY';
-      summaryRationale = 'Automate repetitive staff communication, connect WhatsApp notifications to order milestones, and auto-route customer inquiries to sales reps.';
-      matchedServiceIds = ['systems-automation', 'whatsapp-order-notifications', 'lead-inquiry-automation'];
+      pathwayTitle = 'AI and Workflow Automation';
+      recommendedDivisionSlug = 'ai-automation-business-systems';
+      summaryRationale = 'You want to reduce repeated data entry, route enquiries or automate selected customer and staff notifications.';
+      matchedServiceSlugs = ['ai-chatbots-knowledge-assistants', 'business-workflow-automation', 'whatsapp-business-automation'];
     } else if (selectedArea === 'operations') {
-      pathway = 'verify';
-      pathwayTitle = 'BUSINESS OPERATIONS & CONSULTING PATHWAY';
-      summaryRationale = 'Streamline internal processes with written Standard Operating Procedures (SOPs), margin economics scrutiny, and secure digital document rooms.';
-      matchedServiceIds = ['standard-operating-procedures', 'business-structuring', 'digital-file-room'];
+      pathwayTitle = 'Business Operations and Growth Advisory';
+      recommendedDivisionSlug = 'research-business-strategy';
+      summaryRationale = 'You need help reviewing a business process, setting priorities, defining operating measures or preparing an improvement plan.';
+      matchedServiceSlugs = ['startup-growth-consulting', 'business-performance-analysis'];
     } else if (selectedArea === 'compliance' || selectedBottleneck === 'statutory-stress') {
-      pathway = 'protect';
-      pathwayTitle = 'FINANCE, COMPLIANCE & BANK LOAN SUPPORT';
-      summaryRationale = 'Address statutory licensing, build bank-ready Detailed Project Reports (DPR), CMA data for credit enhancements, or apply for government MSME subsidies.';
-      matchedServiceIds = ['detailed-project-report', 'cma-data', 'gst-registration', 'government-subsidy-assistance'];
+      pathwayTitle = 'Business Setup and Documentation';
+      recommendedDivisionSlug = 'business-setup-documentation';
+      summaryRationale = 'You need support preparing business registration, GST/Udyam, government-scheme, project-report or property-documentation records.';
+      matchedServiceSlugs = ['business-registration-assistance', 'gst-udyam-assistance', 'government-scheme-application-support', 'dpr-loan-documentation'];
     } else {
-      pathway = 'verify';
-      pathwayTitle = 'SYSTEMS & OPERATIONS DISCOVERY';
-      summaryRationale = 'An objective, no-cost diagnostic meeting to audit your existing tools, spreadsheets, and statutory records to pinpoint your highest-leverage software opportunities.';
-      matchedServiceIds = ['custom-dashboards', 'quotation-estimation-tools', 'modern-website', 'detailed-project-report'];
+      pathwayTitle = 'Business Requirement Review';
+      recommendedDivisionSlug = 'research-business-strategy';
+      summaryRationale = 'You are unsure which service fits. We can review the current process, records and business goal before recommending a defined scope.';
+      matchedServiceSlugs = ['business-performance-analysis', 'business-planning-financial-feasibility'];
     }
 
-    const matchedServices = matchedServiceIds
-      .map(id => SERVICES_LIST.find(s => s.id === id))
-      .filter((s): s is ServiceItem => Boolean(s));
+    const publishedServices = getSeedPublishedServices();
+    const divisions = getSeedDivisionsWithCounts();
+    const matchedServices: ServiceCatalogItem[] = matchedServiceSlugs
+      .map((slug) => publishedServices.find((service) => service.slug === slug))
+      .filter((service): service is ServiceCatalogItem => Boolean(service));
 
     return {
       pathway,
       pathwayTitle,
       summaryRationale,
-      matchedServices
+      matchedServices,
+      recommendedDivisionSlug,
+      recommendedDivision: divisions.find((division) => division.slug === recommendedDivisionSlug) || null
     };
   };
 
@@ -341,44 +344,52 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
 
               <div>
                 <h4 className="text-xs font-bold text-[#0B1426] uppercase tracking-wider mb-3">
-                  Recommended Services &amp; Systems
+                  Published services matching this requirement
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {recommendation.matchedServices.map((service) => (
-                    <div
-                      key={service.id}
-                      className="p-4 bg-white border border-[#E4DFD5] rounded-lg space-y-2 hover:border-[#0B1426] transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <h5 className="text-xs font-bold text-[#0B1426]">
-                          {service.title}
-                        </h5>
-                        <span className="text-[10px] font-semibold uppercase text-[#0B1426] px-2 py-0.5 bg-[#EFECE5] rounded shrink-0">
-                          {service.serviceType === 'custom-development' ? 'Custom Dev' : service.serviceType === 'consulting' ? 'Consulting' : 'Support'}
-                        </span>
+                {recommendation.matchedServices.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {recommendation.matchedServices.map((service) => (
+                      <div
+                        key={service.id}
+                        className="p-4 bg-white border border-[#E4DFD5] rounded-lg space-y-2 hover:border-[#0B1426] transition-colors"
+                      >
+                        <h5 className="text-xs font-bold text-[#0B1426]">{service.service_name}</h5>
+                        <p className="text-xs text-[#526176] line-clamp-2">{service.short_description}</p>
+                        <div className="pt-2 flex items-center justify-between text-xs border-t border-[#E4DFD5]">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate(`/services/${recommendation.recommendedDivisionSlug}/${service.slug}`)}
+                            className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-semibold text-xs cursor-pointer"
+                          >
+                            View Scope →
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onOpenQuoteModal(service.service_name)}
+                            className="px-3 py-1.5 bg-[#0B1426] hover:bg-[#172744] text-white text-xs font-semibold rounded-lg cursor-pointer"
+                          >
+                            Get Quote
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-[#526176] line-clamp-2">
-                        {service.subtitle}
-                      </p>
-                      <div className="pt-2 flex items-center justify-between text-xs border-t border-[#E4DFD5]">
-                        <button
-                          type="button"
-                          onClick={() => onSelectService(service)}
-                          className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-semibold text-xs cursor-pointer"
-                        >
-                          View Scope →
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenQuoteModal(service)}
-                          className="px-3 py-1.5 bg-[#0B1426] hover:bg-[#172744] text-white text-xs font-semibold rounded-lg cursor-pointer"
-                        >
-                          Get Quote
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#E4DFD5] bg-white p-4">
+                    <p className="text-xs text-[#526176]">
+                      Your requirement maps to the {recommendation.recommendedDivision?.name || 'relevant'} service area. Individual service listings are not published yet; tell us what you need and we can review a suitable scope.
+                    </p>
+                    {recommendation.recommendedDivision && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(`/services/${recommendation.recommendedDivision.slug}`)}
+                        className="mt-3 text-xs font-semibold text-[#0B1426] hover:text-[#C49A36] hover:underline"
+                      >
+                        Browse {recommendation.recommendedDivision.name} →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Action Banner */}
