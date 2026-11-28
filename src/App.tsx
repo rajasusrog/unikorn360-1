@@ -27,7 +27,6 @@ import { ServiceDetailModal } from './components/ServiceDetailModal';
 import { MobileBottomBar } from './components/MobileBottomBar';
 import { ReceptionistWidget } from './components/ReceptionistWidget';
 import { ServiceItem } from './types';
-import { SERVICES_LIST } from './data/servicesData';
 import { SOLUTIONS_DATA } from './data/solutionsData';
 import { RESOURCE_GUIDES } from './data/resourcesData';
 import { servicesDb } from './lib/supabase';
@@ -167,23 +166,19 @@ export default function App({ initialPath, initialSearch }: AppProps = {}) {
   // Trigger Quote Modal for a service object or title
   const handleOpenQuoteModal = (serviceOrTitle: ServiceItem | string) => {
     if (typeof serviceOrTitle === 'string') {
-      const matched = SERVICES_LIST.find(s => s.title.toLowerCase() === serviceOrTitle.toLowerCase() || s.id === serviceOrTitle);
-      if (matched) {
-        setSelectedQuoteService(matched);
-      } else {
-        // Construct fallback service object
-        setSelectedQuoteService({
-          id: 'custom-scope',
-          title: serviceOrTitle,
-          subtitle: 'Professional Service Engagement',
-          category: 'bi-dashboards',
-          typicalTimeline: '3 to 7 working days',
-          deliverables: ['Written Scope of Work', 'Itemized Commercial Proposal'],
-          targetAudience: ['Business Promoters & Founders'],
-          scopeList: ['Requirement Scrutiny', 'Implementation Roadmap'],
-          description: `Custom scope discussion for ${serviceOrTitle}.`
-        });
-      }
+      // String-based enquiries use a neutral scope placeholder. The canonical
+      // service catalogue remains the source of customer-facing service detail.
+      setSelectedQuoteService({
+        id: 'custom-scope',
+        title: serviceOrTitle,
+        subtitle: 'Service requirement review',
+        category: 'bi-dashboards',
+        typicalTimeline: 'Confirmed after scope review',
+        deliverables: ['Written Scope of Work', 'Itemised Quotation'],
+        targetAudience: ['Businesses and organisations'],
+        scopeList: ['Requirement review', 'Scope and deliverable confirmation'],
+        description: `Request a scoped quotation for ${serviceOrTitle}.`
+      });
     } else {
       setSelectedQuoteService(serviceOrTitle);
     }
