@@ -337,60 +337,22 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                 {service.full_description || service.short_description}
               </p>
 
-              {/* Problems Solved Section */}
-              {service.problems_solved && service.problems_solved.length > 0 && (
-                <div className="mt-8 p-5 bg-[#F5F6F7] border border-[#D8DEE5] rounded-xl">
-                  <p className="text-[10px] font-bold text-[#A57C35] uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>Problems this service can help address</span>
+              {service.target_customers && service.target_customers.length > 0 && (
+                <div className="mt-8 max-w-xl p-4 bg-white border border-[#D8DEE5] rounded-lg">
+                  <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Suitable for</span>
                   </p>
-                  <ul className="space-y-2">
-                    {service.problems_solved.map((prob, i) => (
-                      <li key={i} className="text-xs text-[#30363D] flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#A57C35] mt-1.5 shrink-0"></span>
-                        <span className="leading-relaxed">{prob}</span>
+                  <ul className="space-y-1 text-xs text-[#505B66]">
+                    {service.target_customers.map((customer, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5">
+                        <span className="text-[#214E78]">•</span>
+                        <span>{customer}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-
-              {/* Target Customers & Core Benefits */}
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {service.target_customers && service.target_customers.length > 0 && (
-                  <div className="p-4 bg-white border border-[#D8DEE5] rounded-lg">
-                    <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Who this service is for</span>
-                    </p>
-                    <ul className="space-y-1 text-xs text-[#505B66]">
-                      {service.target_customers.map((c, idx) => (
-                        <li key={idx} className="flex items-center gap-1.5">
-                          <span className="text-[#214E78]">•</span>
-                          <span>{c}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {service.benefits && service.benefits.length > 0 && (
-                  <div className="p-4 bg-white border border-[#D8DEE5] rounded-lg">
-                    <p className="text-[10px] font-bold text-[#214E78] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>What this service is designed to improve</span>
-                    </p>
-                    <ul className="space-y-1 text-xs text-[#505B66]">
-                      {service.benefits.map((b, idx) => (
-                        <li key={idx} className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#214E78] shrink-0" />
-                          <span>{b}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Right 4 Cols: Quick Enquiry Box */}
