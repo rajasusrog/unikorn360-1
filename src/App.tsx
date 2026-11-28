@@ -226,6 +226,7 @@ export default function App({ initialPath, initialSearch }: AppProps = {}) {
           <Hero
             onOpenReviewModal={() => handleOpenReviewModal('New Project Enquiry')}
             onScrollToSection={handleScrollToSection}
+            onNavigate={navigate}
           />
 
           {/* Service Finder Wizard */}
