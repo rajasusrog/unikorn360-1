@@ -97,7 +97,6 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
   const handleReset = () => {
     setStep(1);
     setSelectedArea('');
-    setSelectedBusinessType('');
     setSelectedBottleneck('');
   };
 
