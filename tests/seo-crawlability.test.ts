@@ -127,7 +127,7 @@ async function runSuite() {
         assert.ok(res.body.includes('https://invoicepro360.unikorn360.com/'));
       }),
 
-      record('3. /sitemap.xml includes all 66 canonical indexable URLs and zero legacy/admin URLs', async () => {
+      record('3. /sitemap.xml includes only canonical indexable URLs and excludes draft services', async () => {
         const res = await rawHttpRequest(baseUrl, '/sitemap.xml');
         assert.strictEqual(res.status, 200);
         assert.ok(String(res.headers['content-type']).includes('application/xml'));
@@ -145,8 +145,8 @@ async function runSuite() {
           Object.keys(RESOURCE_GUIDES).length +
           1 +
           1 +
-          SEED_DIVISIONS.length +
-          SEED_SERVICES.length;
+          SEED_DIVISIONS.filter((division) => division.status === 'published').length +
+          SEED_SERVICES.filter((service) => service.status === 'published').length;
         assert.strictEqual(locs.length, expectedCount, `Expected ${expectedCount} sitemap URLs, got ${locs.length}`);
 
         for (const loc of locs) {
@@ -155,6 +155,13 @@ async function runSuite() {
         assert.ok(!locs.some((l) => l.includes('/creator-network')));
         assert.ok(!locs.some((l) => l.includes('/admin')));
         assert.ok(!locs.some((l) => l.includes('/creators/apply')));
+        const publishedDivisionsById = new Map(SEED_DIVISIONS.filter((division) => division.status === 'published').map((division) => [division.id, division]));
+        for (const draftService of SEED_SERVICES.filter((service) => service.status !== 'published')) {
+          const parent = publishedDivisionsById.get(draftService.division_id);
+          if (parent) {
+            assert.ok(!locs.includes(`${CANONICAL_ORIGIN}/services/${parent.slug}/${draftService.slug}`), `Draft service must not be listed: ${draftService.slug}`);
+          }
+        }
         assert.ok(!res.body.includes('<lastmod>'), 'Sitemap must not contain fabricated static lastmod timestamps');
       }),
 
@@ -275,6 +282,7 @@ async function runSuite() {
           '/does-not-exist',
           '/services/unknown-division',
           '/services/websites-software/unknown-service',
+          '/services/websites-software/website-development',
           '/products/unknown-product',
           '/solutions/unknown-solution',
           '/resources/unknown-guide'
@@ -371,7 +379,7 @@ async function runSuite() {
         assert.strictEqual(slashRes.headers.get('location'), 'https://www.unikorn360.com/services');
 
         // Canonical routes return 200 directly (no 308 bounce!)
-        for (const p of ['/', '/services', '/services/websites-software', '/services/websites-software/website-development']) {
+        for (const p of ['/', '/services', '/services/websites-software']) {
           const res = await runEdge(`https://www.unikorn360.com${p}`);
           assert.strictEqual(res.status, 200, `Expected direct 200 for ${p}, got ${res.status}`);
           const body = await res.text();
