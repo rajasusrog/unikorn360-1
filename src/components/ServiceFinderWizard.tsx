@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Compass, 
-    RotateCcw, 
-    Globe, 
-  BarChart3, 
-  AppWindow, 
-  Cpu, 
-  Briefcase, 
-  ShieldCheck, 
+import {
+  Compass,
+  RotateCcw,
+  Globe,
+  BarChart3,
+  AppWindow,
+  Cpu,
+  Briefcase,
+  ShieldCheck,
   HelpCircle,
-    MessageSquare
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { getSeedDivisionsWithCounts, getSeedPublishedServices } from '../data/seedData';
 import { servicesDb, isRemoteSupabaseConfigured } from '../lib/supabase';
@@ -26,8 +27,11 @@ const PRIMARY_AREAS = [
   { id: 'ecommerce', label: 'E-Commerce & Digital Catalogues', icon: Globe, desc: 'Online order portal, wholesale dealer pricing, shopping cart' },
   { id: 'custom-apps', label: 'Custom Apps & Business Software', icon: AppWindow, desc: 'Quotation builder, CRM lead pipeline, billing system' },
   { id: 'dashboards', label: 'Business Intelligence & Dashboards', icon: BarChart3, desc: 'Consolidated sales, aged debtors, inventory, and margin cockpits' },
-  { id: 'automation', label: 'AI & Workflow Automation', icon: Cpu, desc: 'WhatsApp order notifications, invoice OCR, paperless pipelines' },
-  { id: 'operations', label: 'Business Operations & SOP Consulting', icon: Briefcase, desc: 'Standard operating procedures, pricing strategy, digital document vaults' },
+  { id: 'automation', label: 'AI & Workflow Automation', icon: Cpu, desc: 'AI assistants, WhatsApp workflows, document processing and task automation' },
+  { id: 'security', label: 'Security & Technical Maintenance', icon: ShieldCheck, desc: 'Website, application, API and database reviews; server hardening and maintenance' },
+  { id: 'marketing', label: 'Marketing & Lead Generation', icon: Sparkles, desc: 'SEO, paid ads, social content, creator campaigns and campaign measurement' },
+  { id: 'research', label: 'Market & Business Research', icon: BarChart3, desc: 'Customer demand, competitor analysis, industry opportunities and business performance' },
+  { id: 'operations', label: 'Business Operations & Growth Advisory', icon: Briefcase, desc: 'Operating priorities, process reviews, business planning and growth advisory' },
   { id: 'compliance', label: 'Finance, Loans & Regulatory Compliance', icon: ShieldCheck, desc: 'Bank DPRs, CMA data, Udyam MSME, GST filings, factory licences' },
   { id: 'dont-know', label: 'Help Me Identify What We Need', icon: HelpCircle, desc: 'Discuss our operational bottlenecks in an assessment meeting' }
 ];
@@ -57,6 +61,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
 }) => {
   const [step, setStep] = useState<number>(1);
   const [selectedArea, setSelectedArea] = useState<string>('');
+  const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
   const [availableServices, setAvailableServices] = useState<ServiceCatalogItem[]>(() => getSeedPublishedServices());
   const [availableDivisions, setAvailableDivisions] = useState<ServiceDivision[]>(() => getSeedDivisionsWithCounts());
   const [selectedBottleneck, setSelectedBottleneck] = useState<string>('');
@@ -66,7 +71,8 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
     setStep(2);
   };
 
-  const handleSelectBusinessType = (_typeId: string) => {
+  const handleSelectBusinessType = (typeId: string) => {
+    setSelectedBusinessType(typeId);
     setStep(3);
   };
 
@@ -97,6 +103,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
   const handleReset = () => {
     setStep(1);
     setSelectedArea('');
+    setSelectedBusinessType('');
     setSelectedBottleneck('');
   };
 
@@ -107,7 +114,22 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
     let matchedServiceSlugs: string[] = [];
     let recommendedDivisionSlug = 'research-business-strategy';
 
-    if (selectedArea === 'websites' || selectedBottleneck === 'no-online-credibility') {
+    if (selectedArea === 'security') {
+      pathwayTitle = 'Security Reviews and Technical Maintenance';
+      recommendedDivisionSlug = 'security-maintenance';
+      summaryRationale = 'You want an existing website, application, API, database or server reviewed, hardened or maintained within an agreed technical scope.';
+      matchedServiceSlugs = ['website-application-security-review', 'ai-generated-code-security-review', 'api-security-review', 'database-supabase-security-review', 'cloud-server-hardening', 'website-application-maintenance'];
+    } else if (selectedArea === 'marketing') {
+      pathwayTitle = 'Marketing and Lead Generation';
+      recommendedDivisionSlug = 'marketing-creator-campaigns';
+      summaryRationale = 'You need a clearer route to attract, reach and measure prospective customers through search, advertising, content or creator campaigns.';
+      matchedServiceSlugs = ['seo-local-search', 'paid-advertising-management', 'social-media-content-management', 'influencer-campaign-management', 'marketing-tracking-reporting'];
+    } else if (selectedArea === 'research') {
+      pathwayTitle = 'Market and Business Research';
+      recommendedDivisionSlug = 'research-business-strategy';
+      summaryRationale = 'You need evidence about customers, competitors, market opportunities or business performance before deciding what to do next.';
+      matchedServiceSlugs = ['market-customer-research', 'competitor-advertising-research', 'industry-opportunity-research', 'business-performance-analysis'];
+    } else if (selectedArea === 'websites' || selectedBottleneck === 'no-online-credibility') {
       pathwayTitle = 'Website Development';
       recommendedDivisionSlug = 'websites-software';
       summaryRationale = 'You need a clear business website that explains your offer, shows relevant products or services and captures customer enquiries.';
@@ -124,7 +146,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
       matchedServiceSlugs = ['custom-web-applications', 'mobile-app-development'];
     } else if (selectedArea === 'dashboards' || selectedBottleneck === 'lack-visibility') {
       pathwayTitle = 'Business Dashboards and Reporting';
-      recommendedDivisionSlug = 'research-business-strategy';
+      recommendedDivisionSlug = 'ai-automation-business-systems';
       summaryRationale = 'You need agreed business numbers—such as sales, stock, receivables or margins—organised into a reporting view for management.';
       matchedServiceSlugs = ['business-dashboards-reporting-systems', 'business-performance-analysis'];
     } else if (selectedArea === 'automation' || selectedBottleneck === 'double-entry' || selectedBottleneck === 'inquiry-leak') {
@@ -149,6 +171,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
       matchedServiceSlugs = ['business-performance-analysis', 'business-planning-financial-feasibility'];
     }
 
+    const businessTypeLabel = BUSINESS_TYPES.find((type) => type.id === selectedBusinessType)?.label || 'Not specified';
     const matchedServices: ServiceCatalogItem[] = matchedServiceSlugs
       .map((slug) => availableServices.find((service) => service.slug === slug))
       .filter((service): service is ServiceCatalogItem => Boolean(service));
@@ -156,6 +179,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
     return {
       pathwayTitle,
       summaryRationale,
+      businessTypeLabel,
       matchedServices,
       recommendedDivisionSlug,
       recommendedDivision: availableDivisions.find((division) => division.slug === recommendedDivisionSlug) || null
@@ -351,6 +375,9 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                 <p className="text-xs text-[#263449] leading-relaxed">
                   {recommendation.summaryRationale}
                 </p>
+                <p className="mt-2 text-[11px] text-[#526176]">
+                  Business type: {recommendation.businessTypeLabel}
+                </p>
               </div>
 
               <div>
@@ -359,7 +386,9 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                 </h4>
                 {recommendation.matchedServices.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {recommendation.matchedServices.map((service) => (
+                    {recommendation.matchedServices.map((service) => {
+                      const serviceDivisionSlug = availableDivisions.find((division) => division.id === service.division_id)?.slug || recommendation.recommendedDivisionSlug;
+                      return (
                       <div
                         key={service.id}
                         className="p-4 bg-white border border-[#E4DFD5] rounded-lg space-y-2 hover:border-[#0B1426] transition-colors"
@@ -369,7 +398,7 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                         <div className="pt-2 flex items-center justify-between text-xs border-t border-[#E4DFD5]">
                           <button
                             type="button"
-                            onClick={() => onNavigate(`/services/${recommendation.recommendedDivisionSlug}/${service.slug}`)}
+                            onClick={() => onNavigate(`/services/${serviceDivisionSlug}/${service.slug}`)}
                             className="text-[#0B1426] hover:text-[#C49A36] hover:underline font-semibold text-xs cursor-pointer"
                           >
                             View Scope →
@@ -383,7 +412,8 @@ export const ServiceFinderWizard: React.FC<ServiceFinderWizardProps> = ({
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="rounded-lg border border-[#E4DFD5] bg-white p-4">
