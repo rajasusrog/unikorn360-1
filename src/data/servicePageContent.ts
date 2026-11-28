@@ -452,3 +452,20 @@ export const SERVICE_PAGE_CONTENT: Record<string, ServicePageEditorialContent> =
     "timeline": "Indicative planning estimate: 1–3 weeks for document collation and coordination on a single property file. Record availability, office response and advocate review can extend the period."
   }
 };
+
+/**
+ * Apply the editorial baseline to seed or database service rows by canonical slug.
+ * Commercial package data and publication status are deliberately preserved.
+ */
+export function applyServicePageContent(service: ServiceCatalogItem): ServiceCatalogItem {
+  const editorial = SERVICE_PAGE_CONTENT[service.slug];
+  if (!editorial) return service;
+
+  return {
+    ...service,
+    full_description: editorial.description,
+    scope_includes: [...editorial.scope],
+    estimated_timeline: editorial.timeline
+  };
+}
+
