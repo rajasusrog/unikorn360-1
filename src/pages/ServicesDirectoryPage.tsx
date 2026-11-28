@@ -336,12 +336,14 @@ export const ServicesDirectoryPage: React.FC<ServicesDirectoryPageProps> = ({
           {filteredServices.length === 0 ? (
             <div className="bg-white border border-[#D8DEE5] rounded-lg p-12 text-center max-w-lg mx-auto">
               <HelpCircle className="w-12 h-12 text-[#505B66] mx-auto mb-3 opacity-40" />
-              <h3 className="text-base font-bold text-[#30363D]">No matching services found</h3>
+              <h3 className="text-base font-bold text-[#30363D]">{allServices.length === 0 ? 'Individual service listings are being prepared' : 'No matching services found'}</h3>
               <p className="text-xs text-[#505B66] mt-1">
-                Try searching with different terms like "GST", "Website", "DPR", "Dashboard", or browse our full division catalog.
+                {allServices.length === 0
+                  ? 'The six service areas are available to explore. Individual service pages will appear after their delivery scope and commercial details are approved. You can still discuss a specific requirement with us.'
+                  : 'Try another search term or clear the filters to browse the published catalogue.'}
               </p>
               <button
-                onClick={() => { setSearchQuery(''); setSelectedDivisionSlug('all'); }}
+                onClick={() => allServices.length === 0 ? onOpenReviewModal('Help me identify the right UNIKORN360 service for my business requirement') : (setSearchQuery(''), setSelectedDivisionSlug('all'))}
                 className="mt-4 px-4 py-2 bg-[#214E78] text-white text-xs font-semibold rounded hover:bg-[#173858] transition-colors"
               >
                 View All Services
