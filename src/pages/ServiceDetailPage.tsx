@@ -12,7 +12,6 @@ import {
   HelpCircle, 
   ChevronDown, 
   MessageSquare,
-  Sparkles,
   Phone
 } from 'lucide-react';
 import { SEOHead } from '../components/SEOHead';
